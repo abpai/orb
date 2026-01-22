@@ -1,0 +1,41 @@
+{
+  "name": "talk-to-claude",
+  "version": "0.1.0",
+  "description": "Voice-driven code explorer using Claude Agent SDK",
+  "type": "module",
+  "main": "src/index.ts",
+  "files": [
+    "src"
+  ],
+  "engines": {
+    "bun": ">=1.1.0"
+  },
+  "license": "MIT",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "lint": "bunx eslint .",
+    "format": "bunx prettier --write .",
+    "typecheck": "bunx tsc --noEmit",
+    "check": "bun run lint && bun run typecheck",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.2.14",
+    "@inkjs/ui": "2.0.0",
+    "ink": "6.6.0",
+    "react": "19.2.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/bun": "^1.1.22",
+    "@types/react": "19.2.9",
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "prettier": "^3.7.4",
+    "typescript": "^5.7.2"
+  }
+}
