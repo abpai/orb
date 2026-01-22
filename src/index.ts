@@ -1,0 +1,103 @@
+import React from 'react'
+import { basename } from 'path'
+import { render } from 'ink'
+import { App } from './ui/App'
+import { parseCliArgs } from './config'
+
+function showHelp() {
+  console.info(`
+Voice-Driven Code Explorer
+
+Usage: bun dev [projectPath] [options]
+
+Options:
+  --budget=<amount>  Set max budget in USD (e.g., --budget=0.50)
+  --voice=<voice>    TTS voice: alba, marius, jean (default: alba)
+  --tts-mode=<mode>  TTS mode: generate, serve (default: serve)
+  --tts-server-url=<url>  Pocket TTS server URL (implies serve, default: http://localhost:8000)
+  --tts-speed=<rate> TTS speed multiplier (default: 1.5)
+  --model=<model>    Model: haiku, sonnet, opus (default: haiku)
+  --no-tts           Disable text-to-speech
+  --help             Show this help message
+
+Examples:
+  bun dev                           # Current directory with defaults
+  bun dev /path/to/project          # Specific project
+  bun dev --budget=1.00 --voice=marius
+
+Controls:
+  - Type your question and press Enter
+  - Paste MacWhisper transcription with Cmd+V
+  - Ctrl+C to exit
+`)
+}
+
+if (import.meta.main) {
+  const args = process.argv.slice(2)
+
+  if (args.includes('--help') || args.includes('-h')) {
+    showHelp()
+    process.exit(0)
+  }
+
+  const config = parseCliArgs(args)
+  const ttsModeLabel = config.ttsMode === 'serve' ? 'server' : 'generate'
+  const ttsLabel = config.ttsEnabled
+    ? `${config.ttsVoice}, ${ttsModeLabel}, x${config.ttsSpeed}`
+    : 'Disabled'
+  const projectName = basename(config.projectPath) || config.projectPath
+  const budgetLabel =
+    typeof config.maxBudgetUsd === 'number' && Number.isFinite(config.maxBudgetUsd)
+      ? `$${config.maxBudgetUsd.toFixed(2)}`
+      : 'none'
+
+  const MAX_CONTENT_WIDTH = 56
+  const formatLine = (label: string, value: string) => {
+    const prefix = `${label}: `
+    const available = Math.max(0, MAX_CONTENT_WIDTH - prefix.length)
+    const trimmed =
+      value.length > available && available > 1
+        ? `…${value.slice(value.length - (available - 1))}`
+        : value.slice(0, available)
+    return `${prefix}${trimmed}`
+  }
+  const padCenter = (value: string, width: number) => {
+    if (value.length >= width) return value
+    const totalPad = width - value.length
+    const left = Math.floor(totalPad / 2)
+    const right = totalPad - left
+    return `${' '.repeat(left)}${value}${' '.repeat(right)}`
+  }
+
+  const infoLines = [
+    formatLine('Project', projectName),
+    formatLine('Path', config.projectPath),
+    formatLine('Model', config.model),
+    formatLine('Budget', budgetLabel),
+    formatLine('TTS', ttsLabel),
+  ]
+
+  if (config.ttsEnabled && config.ttsMode === 'serve') {
+    infoLines.push(formatLine('TTS URL', config.ttsServerUrl || 'http://localhost:8000'))
+  }
+
+  const contentWidth = Math.max(
+    'Voice-Driven Code Explorer'.length,
+    ...infoLines.map((line) => line.length),
+  )
+  const topBorder = `╭${'─'.repeat(contentWidth + 2)}╮`
+  const bottomBorder = `╰${'─'.repeat(contentWidth + 2)}╯`
+  const titleLine = `│ ${padCenter('Voice-Driven Code Explorer', contentWidth)} │`
+  const spacerLine = `│ ${' '.repeat(contentWidth)} │`
+  const detailLines = infoLines.map((line) => `│ ${line.padEnd(contentWidth)} │`)
+
+  console.info(`
+${topBorder}
+${titleLine}
+${spacerLine}
+${detailLines.join('\n')}
+${bottomBorder}
+`)
+
+  render(React.createElement(App, { config }))
+}
