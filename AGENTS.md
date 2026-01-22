@@ -1,40 +1,43 @@
-# Agent Instructions
+# Repository Guidelines
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
+## Project Structure & Module Organization
 
-## Quick Reference
+- `src/index.ts` is the entry point for the Bun app.
+- `src/ui/` contains the Ink/React UI. Components live in `src/ui/components/` and shared UI pieces in `src/ui/components/shared/`.
+- `src/services/` holds integration logic (Claude agent and TTS helpers).
+- `src/types/` contains shared TypeScript types.
+- `src/config.ts` centralizes runtime configuration.
 
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --status in_progress  # Claim work
-bd close <id>         # Complete work
-bd sync               # Sync with git
-```
+## Build, Test, and Development Commands
 
-## Landing the Plane (Session Completion)
+- `bun install` installs dependencies (commits `bun.lock`).
+- `bun run dev` runs the app in watch mode for local development.
+- `bun run start` runs the app once without watch mode.
+- `bun run lint` checks code with ESLint.
+- `bun run format` formats code with Prettier.
+- `bun run typecheck` runs `tsc --noEmit`.
+- `bun run test` executes Bun’s test runner.
+- `bun run check` runs lint + typecheck.
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+## Coding Style & Naming Conventions
 
-**MANDATORY WORKFLOW:**
+- TypeScript with ES modules (`"type": "module"` in `package.json`).
+- Indentation: 2 spaces; no tabs. Newlines are LF.
+- Prettier settings: no semicolons, single quotes, print width 100.
+- Component files use PascalCase (e.g., `ActiveMessagePanel.tsx`).
+- Utility files use lower camel or descriptive names (e.g., `markdown.ts`).
 
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd sync
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+## Testing Guidelines
 
-**CRITICAL RULES:**
+- Uses Bun’s built-in test runner (`bun test`).
+- There is no dedicated test directory yet; when adding tests, follow Bun’s default discovery patterns (e.g., `*.test.ts` or `*.spec.ts`) and keep tests close to the code they cover.
 
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
+## Commit & Pull Request Guidelines
+
+- Commit messages follow Conventional Commits (examples from history: `feat:`, `docs:`, `chore(scope):`).
+- PRs should include a short summary, testing steps (e.g., `bun run test`), and screenshots or terminal output for UI changes.
+
+## Security & Configuration Tips
+
+- Copy `.env.example` to `.env` for local config; never commit secrets.
+- Target Bun `>= 1.1.0` as specified in `package.json`.

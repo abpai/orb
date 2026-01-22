@@ -18,7 +18,7 @@ export function TTSErrorBanner({ type, message }: TTSErrorBannerProps) {
   const config = ERROR_CONFIG[type]
 
   return (
-    <Box borderStyle="round" borderColor="yellow" paddingX={1} marginBottom={1}>
+    <Box marginBottom={1}>
       <Text color="yellow">
         {config.icon} {config.hint}
         {message && type !== 'command_not_found' && <Text color="gray"> ({message})</Text>}

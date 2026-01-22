@@ -5,10 +5,14 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { unlink, writeFile } from 'fs/promises'
 import { TTSError, type AppConfig, type TTSErrorType } from '../types'
+import { cleanTextForSpeech } from '../ui/utils/markdown'
+
+// Re-export for backward compatibility with existing consumers
+export { cleanTextForSpeech }
 
 const DEFAULT_SERVER_URL = 'http://localhost:8000'
 
-function categorizeTTSError(err: unknown, context: 'generate' | 'playback'): TTSError {
+export function categorizeTTSError(err: unknown, context: 'generate' | 'playback'): TTSError {
   if (err instanceof TTSError) return err
 
   const error = err instanceof Error ? err : new Error(String(err))
@@ -24,6 +28,15 @@ function categorizeTTSError(err: unknown, context: 'generate' | 'playback'): TTS
 }
 
 let currentPlayProcess: ReturnType<typeof spawn> | null = null
+let playbackStoppedManually = false
+
+export function wasPlaybackStopped(): boolean {
+  return playbackStoppedManually
+}
+
+export function resetPlaybackStoppedFlag(): void {
+  playbackStoppedManually = false
+}
 
 export function splitIntoSentences(text: string): string[] {
   const sentences: string[] = []
@@ -55,17 +68,6 @@ export function splitIntoSentences(text: string): string[] {
   return sentences
 }
 
-function cleanTextForSpeech(text: string): string {
-  return text
-    .replace(/```[\s\S]*?```/g, ' code block ')
-    .replace(/`[^`]+`/g, ' code ')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/[#*_~]/g, '')
-    .replace(/\n+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
 function normalizeServerUrl(rawUrl: string): string {
   const trimmed = rawUrl.trim() || DEFAULT_SERVER_URL
 
@@ -86,7 +88,7 @@ function normalizeServerUrl(rawUrl: string): string {
 async function readErrorMessage(response: { text: () => Promise<string> }): Promise<string | null> {
   try {
     const text = await response.text()
-    return text.trim() ? text.trim() : null
+    return text.trim() || null
   } catch {
     return null
   }
@@ -152,7 +154,11 @@ async function runGenerateCommand(
   })
 }
 
-async function generateAudio(text: string, config: AppConfig, outputPath: string): Promise<void> {
+export async function generateAudio(
+  text: string,
+  config: AppConfig,
+  outputPath: string,
+): Promise<void> {
   try {
     if (config.ttsMode === 'serve') {
       const serverUrl = normalizeServerUrl(config.ttsServerUrl ?? DEFAULT_SERVER_URL)
@@ -167,13 +173,17 @@ async function generateAudio(text: string, config: AppConfig, outputPath: string
   }
 }
 
-async function playAudio(path: string): Promise<void> {
+export async function playAudio(path: string): Promise<void> {
   return new Promise((resolve, reject) => {
+    resetPlaybackStoppedFlag()
     currentPlayProcess = spawn('afplay', [path])
 
     currentPlayProcess.on('close', (code) => {
       currentPlayProcess = null
       if (code === 0) {
+        resolve()
+      } else if (playbackStoppedManually) {
+        resetPlaybackStoppedFlag()
         resolve()
       } else {
         reject(new TTSError(`afplay exited with code ${code}`, 'audio_playback'))
@@ -189,6 +199,7 @@ async function playAudio(path: string): Promise<void> {
 
 export function stopSpeaking(): void {
   if (currentPlayProcess) {
+    playbackStoppedManually = true
     currentPlayProcess.kill()
     currentPlayProcess = null
   }
@@ -224,11 +235,7 @@ export async function speak(text: string, config: AppConfig): Promise<void> {
         firstError ??= categorizeTTSError(err, 'generate')
       }
     } finally {
-      try {
-        await unlink(audioPath)
-      } catch {
-        // Cleanup failed - ignore
-      }
+      await unlink(audioPath).catch(() => {})
     }
   }
 
@@ -245,16 +252,7 @@ export async function speakQuick(text: string, config: AppConfig): Promise<void>
   try {
     await generateAudio(text, config, audioPath)
     await playAudio(audioPath)
-  } catch (err) {
-    if (err instanceof TTSError) {
-      throw err
-    }
-    throw categorizeTTSError(err, 'generate')
   } finally {
-    try {
-      await unlink(audioPath)
-    } catch {
-      // Cleanup failed - ignore
-    }
+    await unlink(audioPath).catch(() => {})
   }
 }

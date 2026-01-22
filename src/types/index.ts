@@ -1,10 +1,8 @@
-export type AppState = 'idle' | 'processing' | 'speaking'
+export type AppState = 'idle' | 'processing' | 'processing_speaking' | 'speaking'
 
-export type TTSErrorType =
-  | 'command_not_found' // pocket-tts not installed
-  | 'audio_playback' // afplay failed
-  | 'generation_failed' // pocket-tts exited non-zero
-  | 'unknown'
+export type ViewMode = 'main' | 'transcript'
+
+export type TTSErrorType = 'command_not_found' | 'audio_playback' | 'generation_failed' | 'unknown'
 
 export class TTSError extends Error {
   constructor(
@@ -26,16 +24,29 @@ export interface ToolCall {
   result?: string
 }
 
+export const MODELS = [
+  'claude-haiku-4-5-20251001',
+  'claude-sonnet-4-5-20250929',
+  'claude-opus-4-20250514',
+] as const
+
+export const VOICES = ['alba', 'marius', 'jean'] as const
+
+export type Model = (typeof MODELS)[number]
+export type Voice = (typeof VOICES)[number]
+
 export interface AppConfig {
   projectPath: string
   permissionMode: 'default' | 'acceptEdits'
   maxBudgetUsd?: number
-  model: 'claude-haiku-4-5-20251001' | 'claude-sonnet-4-5-20250929' | 'claude-opus-4-20250514'
-  ttsVoice: 'alba' | 'marius' | 'jean'
+  model: Model
+  ttsVoice: Voice
   ttsMode: 'generate' | 'serve'
   ttsServerUrl?: string
   ttsSpeed: number
   ttsEnabled: boolean
+  ttsStreamingEnabled: boolean
+  ttsBufferSentences: number
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -44,6 +55,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   model: 'claude-haiku-4-5-20251001',
   ttsVoice: 'alba',
   ttsMode: 'serve',
-  ttsSpeed: 1.5,
+  ttsSpeed: 1.75,
   ttsEnabled: true,
+  ttsStreamingEnabled: true,
+  ttsBufferSentences: 1,
 }

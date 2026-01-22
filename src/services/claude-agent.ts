@@ -1,6 +1,19 @@
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { AppConfig, ToolCall } from '../types'
 
+// Voice-aware system prompt for TTS-friendly responses
+const VOICE_SYSTEM_PROMPT = `You are a helpful coding assistant responding via voice.
+
+Guidelines for voice responses:
+- Keep responses concise: 2-4 sentences for simple questions, up to a paragraph for complex topics
+- Use conversational, natural language that sounds good when spoken aloud
+- Avoid code blocks, markdown formatting, bullet lists, and technical symbols
+- When discussing code, describe it verbally rather than showing syntax
+- End with a follow-up question or offer to elaborate if the topic warrants it
+- If a question requires showing code, briefly explain what you would write and ask if they'd like details
+
+Remember: Your response will be read aloud, so optimize for listening, not reading.`
+
 // Tools the model can see and use (context restriction)
 const ALLOWED_TOOLS = ['Read', 'Glob', 'Grep', 'Bash'] as const
 
@@ -90,6 +103,22 @@ export interface AgentCallbacks {
   onSessionId?: (sessionId: string) => void
 }
 
+type TextBlock = { type: 'text'; text: string }
+
+function isTextBlock(value: unknown): value is TextBlock {
+  return typeof value === 'object' && value !== null && (value as TextBlock).type === 'text'
+}
+
+function extractToolResultText(content: unknown): string {
+  if (typeof content === 'string') {
+    return content
+  }
+  if (Array.isArray(content)) {
+    return content.filter(isTextBlock).map((c) => c.text).join('')
+  }
+  return ''
+}
+
 export async function runAgent(
   prompt: string,
   config: AppConfig,
@@ -109,6 +138,8 @@ export async function runAgent(
       maxTurns: 10,
       resume: sessionId,
       permissionMode: config.permissionMode,
+      // Inject voice-aware system prompt when TTS is enabled
+      ...(config.ttsEnabled && { systemPrompt: VOICE_SYSTEM_PROMPT }),
       // Context restriction: only these tools exist for the model
       tools: [...ALLOWED_TOOLS],
       // Auto-approve all allowed tools (no permission prompts)
@@ -189,20 +220,7 @@ export async function runAgent(
       if (Array.isArray(content)) {
         for (const block of content) {
           if (block.type === 'tool_result') {
-            const resultText =
-              typeof block.content === 'string'
-                ? block.content
-                : Array.isArray(block.content)
-                  ? block.content
-                      .filter(
-                        (c: unknown): c is { type: 'text'; text: string } =>
-                          typeof c === 'object' &&
-                          c !== null &&
-                          (c as Record<string, unknown>).type === 'text',
-                      )
-                      .map((c: { type: 'text'; text: string }) => c.text)
-                      .join('')
-                  : ''
+            const resultText = extractToolResultText(block.content)
 
             // Correlate result to tool call by ID (handles parallel tool calls correctly)
             const idx = toolIdToIndex.get(block.tool_use_id)
