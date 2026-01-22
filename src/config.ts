@@ -40,7 +40,10 @@ export function parseCliArgs(args: string[]): AppConfig {
   for (const arg of args) {
     const budget = getArgValue(arg, '--budget=')
     if (budget !== undefined) {
-      config.maxBudgetUsd = parseFloat(budget)
+      const parsed = parsePositiveNumber(budget)
+      if (parsed !== undefined) {
+        config.maxBudgetUsd = parsed
+      }
       continue
     }
 

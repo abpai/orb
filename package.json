@@ -1,23 +1,50 @@
 {
-  "name": "talk-to-claude",
+  "name": "@andypai/vibe-claude",
   "version": "0.1.0",
   "description": "Voice-driven code explorer using Claude Agent SDK",
   "type": "module",
-  "main": "src/index.ts",
+  "bin": {
+    "vibe-claude": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "files": [
-    "src"
+    "dist"
   ],
   "engines": {
+    "node": ">=20",
     "bun": ">=1.1.0"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/andypai/vibe-claude.git"
+  },
+  "keywords": [
+    "claude",
+    "ai",
+    "voice",
+    "tts",
+    "code-explorer",
+    "cli",
+    "terminal"
+  ],
+  "author": "Andy Pai",
   "license": "MIT",
   "scripts": {
-    "dev": "bun --watch src/index.ts",
-    "start": "bun src/index.ts",
+    "build": "tsup",
+    "dev": "bun --watch src/cli.ts",
+    "start": "bun src/cli.ts",
     "lint": "bunx eslint .",
     "format": "bunx prettier --write .",
     "typecheck": "bunx tsc --noEmit",
     "check": "bun run lint && bun run typecheck",
+    "prepublishOnly": "bun run build && bun run check",
     "test": "bun test"
   },
   "dependencies": {
@@ -36,6 +63,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
     "prettier": "^3.7.4",
+    "tsup": "8.5.1",
     "typescript": "^5.7.2"
   }
 }

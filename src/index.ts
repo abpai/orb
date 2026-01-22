@@ -4,11 +4,15 @@ import { render } from 'ink'
 import { App } from './ui/App'
 import { parseCliArgs } from './config'
 
-function showHelp() {
-  console.info(`
-Voice-Driven Code Explorer
+export { App } from './ui/App'
+export { parseCliArgs, DEFAULT_CONFIG } from './config'
+export type { AppConfig, Model, Voice } from './types'
 
-Usage: bun dev [projectPath] [options]
+function showHelp(): void {
+  console.info(`
+vibe-claude - Voice-Driven Code Explorer
+
+Usage: vibe-claude [projectPath] [options]
 
 Options:
   --budget=<amount>  Set max budget in USD (e.g., --budget=0.50)
@@ -16,14 +20,16 @@ Options:
   --tts-mode=<mode>  TTS mode: generate, serve (default: serve)
   --tts-server-url=<url>  Pocket TTS server URL (implies serve, default: http://localhost:8000)
   --tts-speed=<rate> TTS speed multiplier (default: 1.5)
+  --tts-buffer-sentences=<count>  Sentences to buffer before playback (default: 1)
   --model=<model>    Model: haiku, sonnet, opus (default: haiku)
   --no-tts           Disable text-to-speech
+  --no-streaming-tts Disable streaming (batch mode)
   --help             Show this help message
 
 Examples:
-  bun dev                           # Current directory with defaults
-  bun dev /path/to/project          # Specific project
-  bun dev --budget=1.00 --voice=marius
+  vibe-claude                           # Current directory with defaults
+  vibe-claude /path/to/project          # Specific project
+  vibe-claude --budget=1.00 --voice=marius
 
 Controls:
   - Type your question and press Enter
@@ -32,9 +38,7 @@ Controls:
 `)
 }
 
-if (import.meta.main) {
-  const args = process.argv.slice(2)
-
+export function run(args: string[]): void {
   if (args.includes('--help') || args.includes('-h')) {
     showHelp()
     process.exit(0)
@@ -81,13 +85,10 @@ if (import.meta.main) {
     infoLines.push(formatLine('TTS URL', config.ttsServerUrl || 'http://localhost:8000'))
   }
 
-  const contentWidth = Math.max(
-    'Voice-Driven Code Explorer'.length,
-    ...infoLines.map((line) => line.length),
-  )
+  const contentWidth = Math.max('vibe-claude'.length, ...infoLines.map((line) => line.length))
   const topBorder = `╭${'─'.repeat(contentWidth + 2)}╮`
   const bottomBorder = `╰${'─'.repeat(contentWidth + 2)}╯`
-  const titleLine = `│ ${padCenter('Voice-Driven Code Explorer', contentWidth)} │`
+  const titleLine = `│ ${padCenter('vibe-claude', contentWidth)} │`
   const spacerLine = `│ ${' '.repeat(contentWidth)} │`
   const detailLines = infoLines.map((line) => `│ ${line.padEnd(contentWidth)} │`)
 

@@ -55,7 +55,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   model: 'claude-haiku-4-5-20251001',
   ttsVoice: 'alba',
   ttsMode: 'serve',
-  ttsSpeed: 2,
+  ttsSpeed: 1.5,
   ttsEnabled: true,
   ttsStreamingEnabled: true,
   ttsBufferSentences: 1,
