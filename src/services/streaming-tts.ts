@@ -130,7 +130,7 @@ export function createStreamingSpeechController(
     }
 
     try {
-      await playAudio(audio.path)
+      await playAudio(audio.path, config.ttsSpeed)
     } catch (err) {
       // Check if playback was stopped manually (not an error)
       if (!wasPlaybackStopped()) {
@@ -152,19 +152,12 @@ export function createStreamingSpeechController(
     }
   }
 
-  function isComplete(): boolean {
-    return (
-      finalized &&
-      !stopped &&
-      sentenceQueue.length === 0 &&
-      audioQueue.length === 0 &&
-      !isGenerating &&
-      !isPlaying
-    )
+  function hasWorkRemaining(): boolean {
+    return isGenerating || isPlaying || sentenceQueue.length > 0 || audioQueue.length > 0
   }
 
   function checkCompletion(): void {
-    if (!isComplete() || completed) return
+    if (!finalized || stopped || hasWorkRemaining() || completed) return
 
     completed = true
     if (speakingStarted) {
@@ -226,34 +219,34 @@ export function createStreamingSpeechController(
     },
 
     waitForCompletion(): Promise<void> {
-      if (!completionPromise) {
-        completionPromise = new Promise((resolve) => {
-          completionResolve = resolve
-
-          // If already complete or stopped, resolve immediately
-          if (stopped || completed || !config.ttsEnabled || isComplete()) {
-            if (!completed && isComplete()) {
-              completed = true
-              if (speakingStarted) {
-                callbacks.onSpeakingEnd?.()
-              }
-            }
-            resolve()
-          }
-        })
+      if (completionPromise) {
+        return completionPromise
       }
+
+      completionPromise = new Promise((resolve) => {
+        completionResolve = resolve
+
+        const alreadyDone = stopped || completed || !config.ttsEnabled
+        if (alreadyDone) {
+          resolve()
+          return
+        }
+
+        const justCompleted = finalized && !hasWorkRemaining()
+        if (justCompleted) {
+          completed = true
+          if (speakingStarted) {
+            callbacks.onSpeakingEnd?.()
+          }
+          resolve()
+        }
+      })
+
       return completionPromise
     },
 
     isActive(): boolean {
-      return (
-        !stopped &&
-        (isPlaying ||
-          audioQueue.length > 0 ||
-          sentenceQueue.length > 0 ||
-          isGenerating ||
-          speakingStarted)
-      )
+      return !stopped && (hasWorkRemaining() || speakingStarted)
     },
   }
 }

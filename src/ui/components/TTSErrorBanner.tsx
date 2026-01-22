@@ -7,21 +7,27 @@ interface TTSErrorBannerProps {
   message: string
 }
 
-const ERROR_CONFIG: Record<TTSErrorType, { icon: string; hint: string }> = {
+interface ErrorConfig {
+  icon: string
+  hint: string
+}
+
+const ERROR_CONFIG: Record<TTSErrorType, ErrorConfig> = {
   command_not_found: { icon: '⚠', hint: 'Install pocket-tts to enable voice output' },
   audio_playback: { icon: '🔇', hint: 'Audio playback failed' },
   generation_failed: { icon: '🔇', hint: 'Voice synthesis failed' },
   unknown: { icon: '⚠', hint: 'TTS error occurred' },
 }
 
-export function TTSErrorBanner({ type, message }: TTSErrorBannerProps) {
-  const config = ERROR_CONFIG[type]
+export function TTSErrorBanner({ type, message }: TTSErrorBannerProps): React.ReactNode {
+  const { icon, hint } = ERROR_CONFIG[type]
+  const showMessage = message && type !== 'command_not_found'
 
   return (
     <Box marginBottom={1}>
       <Text color="yellow">
-        {config.icon} {config.hint}
-        {message && type !== 'command_not_found' && <Text color="gray"> ({message})</Text>}
+        {icon} {hint}
+        {showMessage && <Text color="gray"> ({message})</Text>}
       </Text>
     </Box>
   )

@@ -1,9 +1,8 @@
 import React from 'react'
 import { Box, Text } from 'ink'
+
 import type { ToolCall } from '../../types'
-import { MessageBox } from './shared/MessageBox'
-import { ToolTree } from './shared/ToolTree'
-import { stripMarkdown } from '../utils/markdown'
+import { EntryContent } from './shared/EntryContent'
 
 export interface HistoryEntry {
   id: string
@@ -29,17 +28,12 @@ const ConversationEntry = React.memo(function ConversationEntry({
 }: ConversationEntryProps) {
   return (
     <Box flexDirection="column" marginBottom={isLast ? 0 : 1}>
-      <MessageBox role="you" content={entry.question} />
-
-      {entry.toolCalls.length > 0 && <ToolTree calls={entry.toolCalls} />}
-
-      {(entry.answer || entry.error) && (
-        <MessageBox
-          role="claude"
-          content={entry.answer ? stripMarkdown(entry.answer) : `Error: ${entry.error}`}
-          isError={!!entry.error}
-        />
-      )}
+      <EntryContent
+        question={entry.question}
+        toolCalls={entry.toolCalls}
+        answer={entry.answer}
+        error={entry.error}
+      />
     </Box>
   )
 })
@@ -50,14 +44,15 @@ export const ConversationPanel = React.memo(function ConversationPanel({
 }: ConversationPanelProps) {
   if (entries.length === 0) return null
 
-  const displayEntries = maxEntries > 0 ? entries.slice(-maxEntries) : entries
-  const truncated = maxEntries > 0 && entries.length > maxEntries
+  const shouldTruncate = maxEntries > 0 && entries.length > maxEntries
+  const displayEntries = shouldTruncate ? entries.slice(-maxEntries) : entries
+  const hiddenCount = entries.length - displayEntries.length
 
   return (
     <Box flexDirection="column" marginY={1}>
-      {truncated && (
+      {hiddenCount > 0 && (
         <Text color="gray" dimColor>
-          ... ({entries.length - maxEntries} earlier messages)
+          ... ({hiddenCount} earlier messages)
         </Text>
       )}
       <Box flexDirection="column">

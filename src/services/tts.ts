@@ -94,6 +94,10 @@ async function readErrorMessage(response: { text: () => Promise<string> }): Prom
   }
 }
 
+function isValidSpeed(speed: number | undefined): speed is number {
+  return speed !== undefined && Number.isFinite(speed) && speed > 0
+}
+
 async function requestServerSpeech(
   serverUrl: string,
   text: string,
@@ -105,7 +109,7 @@ async function requestServerSpeech(
   if (voice) {
     formData.append('voice_url', voice)
   }
-  if (Number.isFinite(speed) && speed > 0) {
+  if (isValidSpeed(speed)) {
     formData.append('speed', String(speed))
   }
 
@@ -135,7 +139,7 @@ async function runGenerateCommand(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const args = ['generate', '--text', text, '--voice', voice, '-o', outputPath]
-    if (Number.isFinite(speed) && speed > 0) {
+    if (isValidSpeed(speed)) {
       args.push('--speed', String(speed))
     }
     const proc = spawn('pocket-tts', args)
@@ -173,17 +177,19 @@ export async function generateAudio(
   }
 }
 
-export async function playAudio(path: string): Promise<void> {
+export async function playAudio(path: string, speed?: number): Promise<void> {
   return new Promise((resolve, reject) => {
     resetPlaybackStoppedFlag()
-    currentPlayProcess = spawn('afplay', [path])
+    const args = isValidSpeed(speed) ? [path, '-r', String(speed)] : [path]
+    currentPlayProcess = spawn('afplay', args)
 
     currentPlayProcess.on('close', (code) => {
       currentPlayProcess = null
-      if (code === 0) {
-        resolve()
-      } else if (playbackStoppedManually) {
+      const success = code === 0 || playbackStoppedManually
+      if (playbackStoppedManually) {
         resetPlaybackStoppedFlag()
+      }
+      if (success) {
         resolve()
       } else {
         reject(new TTSError(`afplay exited with code ${code}`, 'audio_playback'))
@@ -220,7 +226,7 @@ export async function speak(text: string, config: AppConfig): Promise<void> {
 
     try {
       await generateAudio(sentence, config, audioPath)
-      await playAudio(audioPath)
+      await playAudio(audioPath, config.ttsSpeed)
       spokenCount += 1
     } catch (err) {
       if (err instanceof TTSError) {
@@ -251,7 +257,7 @@ export async function speakQuick(text: string, config: AppConfig): Promise<void>
 
   try {
     await generateAudio(text, config, audioPath)
-    await playAudio(audioPath)
+    await playAudio(audioPath, config.ttsSpeed)
   } finally {
     await unlink(audioPath).catch(() => {})
   }

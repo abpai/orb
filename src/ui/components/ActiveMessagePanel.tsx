@@ -1,9 +1,8 @@
 import React from 'react'
 import { Box } from 'ink'
+
 import type { HistoryEntry } from './ConversationPanel'
-import { MessageBox } from './shared/MessageBox'
-import { ToolTree } from './shared/ToolTree'
-import { stripMarkdown } from '../utils/markdown'
+import { EntryContent } from './shared/EntryContent'
 
 interface ActiveMessagePanelProps {
   entry: HistoryEntry | null
@@ -16,17 +15,12 @@ export const ActiveMessagePanel = React.memo(function ActiveMessagePanel({
 
   return (
     <Box flexDirection="column" marginY={1}>
-      <MessageBox role="you" content={entry.question} />
-
-      {entry.toolCalls.length > 0 && <ToolTree calls={entry.toolCalls} />}
-
-      {(entry.answer || entry.error) && (
-        <MessageBox
-          role="claude"
-          content={entry.answer ? stripMarkdown(entry.answer) : `Error: ${entry.error}`}
-          isError={!!entry.error}
-        />
-      )}
+      <EntryContent
+        question={entry.question}
+        toolCalls={entry.toolCalls}
+        answer={entry.answer}
+        error={entry.error}
+      />
     </Box>
   )
 })

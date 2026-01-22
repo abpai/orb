@@ -114,7 +114,10 @@ function extractToolResultText(content: unknown): string {
     return content
   }
   if (Array.isArray(content)) {
-    return content.filter(isTextBlock).map((c) => c.text).join('')
+    return content
+      .filter(isTextBlock)
+      .map((c) => c.text)
+      .join('')
   }
   return ''
 }

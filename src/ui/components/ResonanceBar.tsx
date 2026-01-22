@@ -49,23 +49,29 @@ function StatusIndicator({ status, waveOffset }: StatusIndicatorProps): React.Re
   )
 }
 
-export function ResonanceBar({ status, hasHistory = false }: ResonanceBarProps) {
-  const [offset, setOffset] = useState(0)
-  const isSpeaking = status === 'speaking' || status === 'processing_speaking'
+function isSpeakingState(status: AppState): boolean {
+  return status === 'speaking' || status === 'processing_speaking'
+}
+
+export function ResonanceBar({ status, hasHistory = false }: ResonanceBarProps): React.ReactNode {
+  const [waveOffset, setWaveOffset] = useState(0)
+  const speaking = isSpeakingState(status)
 
   useEffect(() => {
-    if (!isSpeaking) return
-    const interval = setInterval(() => setOffset((o) => o + 1), 80)
+    if (!speaking) return
+    const interval = setInterval(() => setWaveOffset((o) => o + 1), 80)
     return () => clearInterval(interval)
-  }, [isSpeaking])
+  }, [speaking])
+
+  const showTranscriptHint = status === 'idle' && hasHistory
 
   return (
     <Box justifyContent="space-between" marginTop={1}>
       <Box gap={1}>
-        <StatusIndicator status={status} waveOffset={offset} />
+        <StatusIndicator status={status} waveOffset={waveOffset} />
       </Box>
       <Box gap={2}>
-        {status === 'idle' && hasHistory && (
+        {showTranscriptHint && (
           <Text color="gray" dimColor>
             ^O transcript
           </Text>

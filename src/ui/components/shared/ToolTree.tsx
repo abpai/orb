@@ -31,6 +31,12 @@ export interface ToolTreeProps {
   calls: ToolCall[]
 }
 
+const STATUS_CONFIG = {
+  running: { icon: '⠋', color: 'yellow' },
+  error: { icon: '✗', color: 'red' },
+  complete: { icon: '✓', color: 'green' },
+} as const
+
 export const ToolTree = React.memo(function ToolTree({ calls }: ToolTreeProps) {
   return (
     <Box flexDirection="column" paddingLeft={3}>
@@ -39,13 +45,7 @@ export const ToolTree = React.memo(function ToolTree({ calls }: ToolTreeProps) {
         const isLast = i === calls.length - 1
         const prefix = isLast ? '└─' : '├─'
         const inputStr = formatToolInput(call.name, call.input)
-
-        const statusConfig = {
-          running: { icon: '⠋', color: 'yellow' },
-          error: { icon: '✗', color: 'red' },
-          complete: { icon: '✓', color: 'green' },
-        } as const
-        const { icon, color: iconColor } = statusConfig[call.status]
+        const { icon, color: iconColor } = STATUS_CONFIG[call.status]
 
         return (
           <Box key={call.id} justifyContent="space-between">
