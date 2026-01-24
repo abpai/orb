@@ -62,6 +62,7 @@
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
+    "ink-testing-library": "4.0.0",
     "prettier": "^3.7.4",
     "tsup": "8.5.1",
     "typescript": "^5.7.2"

@@ -1,0 +1,95 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`CompletedEntry basic rendering renders simple entry without tools 1`] = `
+"
+┌─ you ───────────────────────────────────────────────────────┐
+│ What is this project?
+└──────────────────────────────────────────────────────────────┘
+┌─ claude ────────────────────────────────────────────────────┐
+│ This is a voice-driven code explorer.
+└──────────────────────────────────────────────────────────────┘
+"
+`;
+
+exports[`CompletedEntry basic rendering renders entry with error 1`] = `
+"
+┌─ you ───────────────────────────────────────────────────────┐
+│ Do something risky
+└──────────────────────────────────────────────────────────────┘
+┌─ claude ────────────────────────────────────────────────────┐
+│ Error: An unexpected error occurred
+└──────────────────────────────────────────────────────────────┘
+"
+`;
+
+exports[`CompletedEntry tool calls renders entry with single tool call 1`] = `
+"
+┌─ you ───────────────────────────────────────────────────────┐
+│ Show me the main file
+└──────────────────────────────────────────────────────────────┘
+   │
+   └─ Read /src/index.ts                                                                           ✓
+   │
+┌─ claude ────────────────────────────────────────────────────┐
+│ Here is the main entry point.
+└──────────────────────────────────────────────────────────────┘
+"
+`;
+
+exports[`CompletedEntry tool calls renders entry with multiple tool calls 1`] = `
+"
+┌─ you ───────────────────────────────────────────────────────┐
+│ Find and fix the bug
+└──────────────────────────────────────────────────────────────┘
+   │
+   ├─ Read /src/index.ts                                                                           ✓
+   ├─ Bash ls -la                                                                                  ✓
+   └─ Read /src/index.ts                                                                           ✓
+   │
+┌─ claude ────────────────────────────────────────────────────┐
+│ I found and fixed the issue.
+└──────────────────────────────────────────────────────────────┘
+"
+`;
+
+exports[`CompletedEntry tool calls renders entry with running tool 1`] = `
+"
+┌─ you ───────────────────────────────────────────────────────┐
+│ What is this project?
+└──────────────────────────────────────────────────────────────┘
+   │
+   └─ Grep TODO                                                                                    ⠋
+   │
+┌─ claude ────────────────────────────────────────────────────┐
+│ This is a voice-driven code explorer.
+└──────────────────────────────────────────────────────────────┘
+"
+`;
+
+exports[`CompletedEntry tool calls renders entry with errored tool 1`] = `
+"
+┌─ you ───────────────────────────────────────────────────────┐
+│ What is this project?
+└──────────────────────────────────────────────────────────────┘
+   │
+   └─ Write /readonly.txt                                                                          ✗
+     ↳ Permission denied
+   │
+┌─ claude ────────────────────────────────────────────────────┐
+│ This is a voice-driven code explorer.
+└──────────────────────────────────────────────────────────────┘
+"
+`;
+
+exports[`CompletedEntry content displays multiline content 1`] = `
+"
+┌─ you ───────────────────────────────────────────────────────┐
+│ Explain briefly
+└──────────────────────────────────────────────────────────────┘
+┌─ claude ────────────────────────────────────────────────────┐
+│ Line one.
+│ Line two.
+│ Line three.
+└──────────────────────────────────────────────────────────────┘
+"
+`;

@@ -1,0 +1,36 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`ResonanceBar status indicator renders idle state as ready 1`] = `
+"
+◉ ready                                                                                      ^C exit"
+`;
+
+exports[`ResonanceBar status indicator renders processing state with spinner 1`] = `
+"
+[spinner] thinking                                                                           ^C exit"
+`;
+
+exports[`ResonanceBar status indicator renders speaking state 1`] = `
+"
+◉ speaking (esc to stop)                                                                     ^C exit"
+`;
+
+exports[`ResonanceBar status indicator renders processing_speaking state with spinner 1`] = `
+"
+[spinner] ◉ speaking (esc to stop)                                                           ^C exit"
+`;
+
+exports[`ResonanceBar transcript hint shows transcript hint when idle with history 1`] = `
+"
+◉ ready                                                                       ^O transcript  ^C exit"
+`;
+
+exports[`ResonanceBar transcript hint hides transcript hint when idle without history 1`] = `
+"
+◉ ready                                                                                      ^C exit"
+`;
+
+exports[`ResonanceBar transcript hint hides transcript hint when processing with history 1`] = `
+"
+[spinner] thinking                                                                           ^C exit"
+`;
