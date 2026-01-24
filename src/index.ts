@@ -15,7 +15,6 @@ vibe-claude - Voice-Driven Code Explorer
 Usage: vibe-claude [projectPath] [options]
 
 Options:
-  --budget=<amount>  Set max budget in USD (e.g., --budget=0.50)
   --voice=<voice>    TTS voice: alba, marius, jean (default: alba)
   --tts-mode=<mode>  TTS mode: generate, serve (default: serve)
   --tts-server-url=<url>  Pocket TTS server URL (implies serve, default: http://localhost:8000)
@@ -29,7 +28,7 @@ Options:
 Examples:
   vibe-claude                           # Current directory with defaults
   vibe-claude /path/to/project          # Specific project
-  vibe-claude --budget=1.00 --voice=marius
+  vibe-claude --voice=marius
 
 Controls:
   - Type your question and press Enter
@@ -50,10 +49,6 @@ export function run(args: string[]): void {
     ? `${config.ttsVoice}, ${ttsModeLabel}, x${config.ttsSpeed}`
     : 'Disabled'
   const projectName = basename(config.projectPath) || config.projectPath
-  const budgetLabel =
-    typeof config.maxBudgetUsd === 'number' && Number.isFinite(config.maxBudgetUsd)
-      ? `$${config.maxBudgetUsd.toFixed(2)}`
-      : 'none'
 
   const MAX_CONTENT_WIDTH = 56
   const formatLine = (label: string, value: string) => {
@@ -77,7 +72,6 @@ export function run(args: string[]): void {
     formatLine('Project', projectName),
     formatLine('Path', config.projectPath),
     formatLine('Model', config.model),
-    formatLine('Budget', budgetLabel),
     formatLine('TTS', ttsLabel),
   ]
 
@@ -100,5 +94,7 @@ ${detailLines.join('\n')}
 ${bottomBorder}
 `)
 
-  render(React.createElement(App, { config }))
+  render(React.createElement(App, { config }), {
+    patchConsole: true,
+  })
 }

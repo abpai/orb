@@ -45,18 +45,18 @@ vibe-claude --model=sonnet --voice=marius --budget=1.00
 
 ### Options
 
-| Option                   | Description                         | Default                 |
-| ------------------------ | ----------------------------------- | ----------------------- |
-| `--budget=<amount>`      | Max budget in USD (e.g., `0.50`)    | none                    |
-| `--voice=<voice>`        | TTS voice: `alba`, `marius`, `jean` | `alba`                  |
-| `--tts-mode=<mode>`      | TTS mode: `generate`, `serve`       | `serve`                 |
-| `--tts-server-url=<url>` | Pocket TTS server URL               | `http://localhost:8000` |
-| `--tts-speed=<rate>`     | TTS speed multiplier                | `1.5`                   |
-| `--tts-buffer-sentences=<count>` | Sentences to buffer before playback | `1`               |
-| `--model=<model>`        | Model: `haiku`, `sonnet`, `opus`    | `haiku`                 |
-| `--no-tts`               | Disable text-to-speech              | -                       |
-| `--no-streaming-tts`     | Disable streaming (batch mode)      | -                       |
-| `--help`                 | Show help message                   | -                       |
+| Option                           | Description                         | Default                 |
+| -------------------------------- | ----------------------------------- | ----------------------- |
+| `--budget=<amount>`              | Max budget in USD (e.g., `0.50`)    | none                    |
+| `--voice=<voice>`                | TTS voice: `alba`, `marius`, `jean` | `alba`                  |
+| `--tts-mode=<mode>`              | TTS mode: `generate`, `serve`       | `serve`                 |
+| `--tts-server-url=<url>`         | Pocket TTS server URL               | `http://localhost:8000` |
+| `--tts-speed=<rate>`             | TTS speed multiplier                | `1.5`                   |
+| `--tts-buffer-sentences=<count>` | Sentences to buffer before playback | `1`                     |
+| `--model=<model>`                | Model: `haiku`, `sonnet`, `opus`    | `haiku`                 |
+| `--no-tts`                       | Disable text-to-speech              | -                       |
+| `--no-streaming-tts`             | Disable streaming (batch mode)      | -                       |
+| `--help`                         | Show help message                   | -                       |
 
 ### Controls
 

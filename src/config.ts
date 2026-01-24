@@ -38,15 +38,6 @@ export function parseCliArgs(args: string[]): AppConfig {
   const config = { ...DEFAULT_CONFIG }
 
   for (const arg of args) {
-    const budget = getArgValue(arg, '--budget=')
-    if (budget !== undefined) {
-      const parsed = parsePositiveNumber(budget)
-      if (parsed !== undefined) {
-        config.maxBudgetUsd = parsed
-      }
-      continue
-    }
-
     const voice = getArgValue(arg, '--voice=')
     if (voice !== undefined && isValidVoice(voice)) {
       config.ttsVoice = voice

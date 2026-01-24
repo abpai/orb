@@ -261,16 +261,16 @@ interface AppConfig {
 
 ### Phase 2: Terminal UI
 
-6. StatusBar component (idle/processing/speaking)
-7. ToolPanel with Static (append-only tool call log)
-8. ResponsePanel (streaming text display)
-9. Wire all components together
+1. StatusBar component (idle/processing/speaking)
+2. ToolPanel with Static (append-only tool call log)
+3. ResponsePanel (streaming text display)
+4. Wire all components together
 
 ### Phase 3: Polish
 
-10. Session continuity (capture/resume session_id)
-11. Error handling & graceful degradation
-12. Configuration via CLI args
+1. Session continuity (capture/resume session_id)
+2. Error handling & graceful degradation
+3. Configuration via CLI args
 
 ## Verification
 

@@ -10,6 +10,7 @@ const bunGlobals = {
   Request: 'readonly',
   Response: 'readonly',
   WebSocket: 'readonly',
+  AbortController: 'readonly',
   console: 'readonly',
   process: 'readonly',
   setTimeout: 'readonly',

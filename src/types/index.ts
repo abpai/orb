@@ -38,7 +38,6 @@ export type Voice = (typeof VOICES)[number]
 export interface AppConfig {
   projectPath: string
   permissionMode: 'default' | 'acceptEdits'
-  maxBudgetUsd?: number
   model: Model
   ttsVoice: Voice
   ttsMode: 'generate' | 'serve'
