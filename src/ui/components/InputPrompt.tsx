@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { memo, useState, useEffect } from 'react'
 import { Box, Text, useInput } from 'ink'
 
 interface InputPromptProps {
@@ -11,7 +11,10 @@ function Cursor({ visible }: { visible: boolean }): React.ReactNode {
   return <Text backgroundColor="white"> </Text>
 }
 
-export function InputPrompt({ onSubmit, disabled }: InputPromptProps): React.ReactNode {
+export const InputPrompt = memo(function InputPrompt({
+  onSubmit,
+  disabled,
+}: InputPromptProps): React.ReactNode {
   const [value, setValue] = useState('')
   const [cursorVisible, setCursorVisible] = useState(true)
 
@@ -34,6 +37,18 @@ export function InputPrompt({ onSubmit, disabled }: InputPromptProps): React.Rea
 
       if (key.backspace || key.delete) {
         setValue((v) => v.slice(0, -1))
+        return
+      }
+
+      // Ctrl+W - delete previous word
+      if (key.ctrl && input === 'w') {
+        setValue((v) => v.replace(/\S+\s*$/, ''))
+        return
+      }
+
+      // Ctrl+U - delete entire line
+      if (key.ctrl && input === 'u') {
+        setValue('')
         return
       }
 
@@ -64,4 +79,4 @@ export function InputPrompt({ onSubmit, disabled }: InputPromptProps): React.Rea
       </Text>
     </Box>
   )
-}
+})

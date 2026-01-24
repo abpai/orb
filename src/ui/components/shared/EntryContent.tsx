@@ -1,7 +1,9 @@
-import React from 'react'
+import React, { useMemo } from 'react'
+import { Box, Text } from 'ink'
 
 import type { ToolCall } from '../../../types'
 import { stripMarkdown } from '../../utils/markdown'
+import { truncateLines } from '../../utils/text'
 import { MessageBox } from './MessageBox'
 import { ToolTree } from './ToolTree'
 
@@ -10,6 +12,7 @@ export interface EntryContentProps {
   toolCalls: ToolCall[]
   answer: string
   error?: string | null
+  maxAnswerLines?: number
 }
 
 export const EntryContent = React.memo(function EntryContent({
@@ -17,9 +20,18 @@ export const EntryContent = React.memo(function EntryContent({
   toolCalls,
   answer,
   error,
+  maxAnswerLines,
 }: EntryContentProps) {
   const hasResponse = answer || error
-  const responseContent = answer ? stripMarkdown(answer) : `Error: ${error}`
+  const rawContent = answer ? stripMarkdown(answer) : `Error: ${error}`
+
+  const { displayContent, truncatedCount } = useMemo(() => {
+    if (!maxAnswerLines || !answer) {
+      return { displayContent: rawContent, truncatedCount: 0 }
+    }
+    const result = truncateLines(rawContent, maxAnswerLines)
+    return { displayContent: result.text, truncatedCount: result.truncatedCount }
+  }, [rawContent, maxAnswerLines, answer])
 
   return (
     <>
@@ -27,7 +39,13 @@ export const EntryContent = React.memo(function EntryContent({
 
       {toolCalls.length > 0 && <ToolTree calls={toolCalls} />}
 
-      {hasResponse && <MessageBox role="claude" content={responseContent} isError={!!error} />}
+      {truncatedCount > 0 && (
+        <Box marginBottom={0}>
+          <Text dimColor>{`\u22ee (${truncatedCount} lines above, ^O for full)`}</Text>
+        </Box>
+      )}
+
+      {hasResponse && <MessageBox role="claude" content={displayContent} isError={!!error} />}
     </>
   )
 })

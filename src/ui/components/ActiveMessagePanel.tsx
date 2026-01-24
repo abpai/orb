@@ -6,10 +6,12 @@ import { EntryContent } from './shared/EntryContent'
 
 interface ActiveMessagePanelProps {
   entry: HistoryEntry | null
+  maxAnswerLines?: number
 }
 
 export const ActiveMessagePanel = React.memo(function ActiveMessagePanel({
   entry,
+  maxAnswerLines,
 }: ActiveMessagePanelProps) {
   if (!entry) return null
 
@@ -20,6 +22,7 @@ export const ActiveMessagePanel = React.memo(function ActiveMessagePanel({
         toolCalls={entry.toolCalls}
         answer={entry.answer}
         error={entry.error}
+        maxAnswerLines={maxAnswerLines}
       />
     </Box>
   )

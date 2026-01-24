@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { memo } from 'react'
 import { Box, Text } from 'ink'
 import { Spinner } from '@inkjs/ui'
 import type { AppState } from '../../types'
@@ -8,28 +8,13 @@ interface ResonanceBarProps {
   hasHistory?: boolean
 }
 
-const WAVE_CHARS = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█']
-const WAVE_LENGTH = 15
-
-function generateWave(offset: number): string {
-  return Array.from({ length: WAVE_LENGTH }, (_, i) => {
-    const index = Math.floor(Math.abs(Math.sin((i + offset) * 0.4) * 7))
-    return WAVE_CHARS[index]
-  }).join('')
-}
-
-interface StatusIndicatorProps {
-  status: AppState
-  waveOffset: number
-}
-
-function StatusIndicator({ status, waveOffset }: StatusIndicatorProps): React.ReactNode {
+function StatusIndicator({ status }: { status: AppState }): React.ReactNode {
   if (status === 'speaking' || status === 'processing_speaking') {
     return (
       <>
         {status === 'processing_speaking' && <Spinner />}
-        <Text color="cyan">{generateWave(waveOffset)}</Text>
-        <Text color="cyan">speaking</Text>
+        <Text color="magenta">◉</Text>
+        <Text color="magenta">speaking</Text>
         <Text color="gray" dimColor>
           (esc to stop)
         </Text>
@@ -49,26 +34,16 @@ function StatusIndicator({ status, waveOffset }: StatusIndicatorProps): React.Re
   )
 }
 
-function isSpeakingState(status: AppState): boolean {
-  return status === 'speaking' || status === 'processing_speaking'
-}
-
-export function ResonanceBar({ status, hasHistory = false }: ResonanceBarProps): React.ReactNode {
-  const [waveOffset, setWaveOffset] = useState(0)
-  const speaking = isSpeakingState(status)
-
-  useEffect(() => {
-    if (!speaking) return
-    const interval = setInterval(() => setWaveOffset((o) => o + 1), 80)
-    return () => clearInterval(interval)
-  }, [speaking])
-
+export const ResonanceBar = memo(function ResonanceBar({
+  status,
+  hasHistory = false,
+}: ResonanceBarProps): React.ReactNode {
   const showTranscriptHint = status === 'idle' && hasHistory
 
   return (
     <Box justifyContent="space-between" marginTop={1}>
       <Box gap={1}>
-        <StatusIndicator status={status} waveOffset={waveOffset} />
+        <StatusIndicator status={status} />
       </Box>
       <Box gap={2}>
         {showTranscriptHint && (
@@ -82,4 +57,4 @@ export function ResonanceBar({ status, hasHistory = false }: ResonanceBarProps):
       </Box>
     </Box>
   )
-}
+})

@@ -1,4 +1,4 @@
-import { query } from '@anthropic-ai/claude-agent-sdk'
+import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AppConfig, ToolCall } from '../types'
 
 // Voice-aware system prompt for TTS-friendly responses
@@ -14,112 +14,12 @@ Guidelines for voice responses:
 
 Remember: Your response will be read aloud, so optimize for listening, not reading.`
 
-// Tools the model can see and use (context restriction)
-const ALLOWED_TOOLS = ['Read', 'Glob', 'Grep', 'Bash'] as const
-
-// Tools explicitly removed from model context (defense-in-depth)
-const DISALLOWED_TOOLS = ['Edit', 'Write', 'NotebookEdit', 'TodoWrite'] as const
-
-// Read-only shell commands (filesystem inspection, text processing, system info)
-const SAFE_READ_COMMANDS = [
-  // Filesystem inspection
-  'ls',
-  'cat',
-  'head',
-  'tail',
-  'less',
-  'more',
-  'file',
-  'stat',
-  'wc',
-  'find',
-  'tree',
-  'du',
-  'df',
-  'basename',
-  'dirname',
-  'realpath',
-  'readlink',
-  // Text processing (read-only)
-  'grep',
-  'sort',
-  'uniq',
-  'diff',
-  'cmp',
-  'strings',
-  'hexdump',
-  'xxd',
-  // Environment/system info
-  'pwd',
-  'echo',
-  'which',
-  'env',
-  'printenv',
-  'date',
-  'whoami',
-  'hostname',
-  'uname',
-  // Help
-  'man',
-  'help',
-  'type',
-]
-
-// Read-only git commands (checked as prefix match)
-const SAFE_GIT_COMMANDS = [
-  'git status',
-  'git log',
-  'git diff',
-  'git show',
-  'git branch',
-  'git remote',
-  'git tag',
-  'git rev-parse',
-  'git ls-files',
-  'git blame',
-]
-
-// Patterns that indicate destructive operations (hard deny)
-const DESTRUCTIVE_PATTERNS = [
-  /\brm\s/,
-  /\bsudo\b/,
-  // Shell redirection: match > or >> followed by path-like target (not inside quotes)
-  // Catches: > file, >> file, >./path, >/path, >~/path
-  // Avoids: grep '>' file, echo ">" (quoted > characters)
-  /(?<!['"'])\s*>{1,2}\s*[/~.\w]/,
-  /\bmkdir\b/,
-  /\bchmod\b/,
-  /\bchown\b/,
-  /\bmv\b/,
-  /\bcp\b/,
-  /\btouch\b/,
-  /\bln\b/,
-]
-
 export interface AgentCallbacks {
   onToolCall?: (call: ToolCall) => void
   onToolResult?: (index: number, result: string) => void
+  onToolError?: (index: number, error: string) => void
   onAssistantText?: (text: string) => void
   onSessionId?: (sessionId: string) => void
-}
-
-type TextBlock = { type: 'text'; text: string }
-
-function isTextBlock(value: unknown): value is TextBlock {
-  return typeof value === 'object' && value !== null && (value as TextBlock).type === 'text'
-}
-
-function extractToolResultText(content: unknown): string {
-  if (typeof content === 'string') {
-    return content
-  }
-  if (Array.isArray(content)) {
-    return content
-      .filter(isTextBlock)
-      .map((c) => c.text)
-      .join('')
-  }
-  return ''
 }
 
 export async function runAgent(
@@ -127,10 +27,12 @@ export async function runAgent(
   config: AppConfig,
   sessionId: string | undefined,
   callbacks: AgentCallbacks,
+  abortController?: AbortController,
 ): Promise<string> {
-  let toolIndex = 0
+  let activeSessionId = sessionId
+  let assistantText = ''
   let finalResult = ''
-  // Map tool_use_id to sequential index for result correlation
+  let toolIndex = 0
   const toolIdToIndex = new Map<string, number>()
 
   const response = query({
@@ -139,106 +41,138 @@ export async function runAgent(
       cwd: config.projectPath,
       model: config.model,
       maxTurns: 10,
-      resume: sessionId,
-      permissionMode: config.permissionMode,
+      resume: activeSessionId,
+      permissionMode: config.permissionMode === 'acceptEdits' ? 'bypassPermissions' : 'default',
+      abortController,
       // Inject voice-aware system prompt when TTS is enabled
       ...(config.ttsEnabled && { systemPrompt: VOICE_SYSTEM_PROMPT }),
-      // Context restriction: only these tools exist for the model
-      tools: [...ALLOWED_TOOLS],
-      // Auto-approve all allowed tools (no permission prompts)
-      allowedTools: [...ALLOWED_TOOLS],
-      // Belt-and-suspenders: explicitly block write tools
-      disallowedTools: [...DISALLOWED_TOOLS],
-      canUseTool: async (toolName, input) => {
-        // Extra safety: deny write operations even if they somehow get through
-        if (DISALLOWED_TOOLS.includes(toolName as (typeof DISALLOWED_TOOLS)[number])) {
-          return { behavior: 'deny', message: 'Read-only mode: write operations disabled' }
-        }
-
-        if (toolName === 'Bash') {
-          const cmd = ((input as Record<string, unknown>).command as string).trim()
-
-          // Hard deny destructive patterns
-          if (DESTRUCTIVE_PATTERNS.some((p) => p.test(cmd))) {
-            return { behavior: 'deny', message: 'Destructive command blocked' }
-          }
-
-          // Allow safe git commands (prefix match)
-          if (SAFE_GIT_COMMANDS.some((safe) => cmd.startsWith(safe))) {
-            return { behavior: 'allow' }
-          }
-
-          // Allow safe single commands
-          const firstWord = cmd.split(/\s+/)[0] ?? ''
-          if (SAFE_READ_COMMANDS.includes(firstWord)) {
-            return { behavior: 'allow' }
-          }
-
-          // Deny unknown commands
-          return {
-            behavior: 'deny',
-            message: `Command not in safe list: "${firstWord}"`,
-          }
-        }
-
-        return { behavior: 'allow' }
-      },
     },
   })
 
   for await (const message of response) {
-    if (message.type === 'system' && message.subtype === 'init') {
-      callbacks.onSessionId?.(message.session_id)
+    const typed = message as SDKMessage
+
+    if (typed.type === 'system' && typed.subtype === 'init') {
+      const newSessionId = (typed as { session_id?: string }).session_id
+      if (newSessionId) {
+        activeSessionId = newSessionId
+        callbacks.onSessionId?.(newSessionId)
+      }
+      continue
     }
 
-    if (message.type === 'assistant') {
-      const content = message.message.content
-
-      for (const block of content) {
-        if (block.type === 'tool_use') {
-          const currentIndex = toolIndex++
-          // Support both 'id' and 'tool_use_id' field names (SDK may use either)
-          const blockAny = block as Record<string, unknown>
-          const toolId = (blockAny.id ?? blockAny.tool_use_id) as string | undefined
-          // Store mapping from tool_use_id to index for result correlation
-          if (toolId) {
-            toolIdToIndex.set(toolId, currentIndex)
-          }
+    if (typed.type === 'assistant') {
+      const blocks = getContentBlocks(typed.message)
+      for (const block of blocks) {
+        if (isTextBlock(block)) {
+          const text = block.text
+          assistantText += text
+          callbacks.onAssistantText?.(text)
+          continue
+        }
+        if (isToolUseBlock(block)) {
+          const toolId = block.id ?? block.tool_use_id ?? `tool-${toolIndex}`
+          const index = toolIdToIndex.get(toolId) ?? toolIndex++
+          toolIdToIndex.set(toolId, index)
           const call: ToolCall = {
-            id: toolId ?? `tool-${currentIndex}`,
-            index: currentIndex,
+            id: toolId,
+            index,
             name: block.name,
-            input: block.input as Record<string, unknown>,
+            input: block.input ?? {},
             status: 'running',
           }
           callbacks.onToolCall?.(call)
-        } else if (block.type === 'text' && block.text) {
-          callbacks.onAssistantText?.(block.text)
         }
       }
+      continue
     }
 
-    if (message.type === 'user') {
-      const content = message.message.content
-      if (Array.isArray(content)) {
-        for (const block of content) {
-          if (block.type === 'tool_result') {
-            const resultText = extractToolResultText(block.content)
-
-            // Correlate result to tool call by ID (handles parallel tool calls correctly)
-            const idx = toolIdToIndex.get(block.tool_use_id)
-            if (idx !== undefined) {
-              callbacks.onToolResult?.(idx, resultText.slice(0, 200))
-            }
+    if (typed.type === 'user') {
+      const blocks = getContentBlocks(typed.message)
+      for (const block of blocks) {
+        if (!isToolResultBlock(block)) continue
+        const toolUseId = block.tool_use_id ?? block.id
+        const resultText = extractToolResultText(block.content)
+        const isError = !!block.is_error
+        const index = toolUseId ? toolIdToIndex.get(toolUseId) : undefined
+        if (index !== undefined) {
+          if (isError) {
+            callbacks.onToolError?.(index, resultText)
+          } else {
+            callbacks.onToolResult?.(index, resultText)
           }
         }
       }
     }
 
-    if (message.type === 'result' && message.subtype === 'success') {
-      finalResult = message.result
+    if (typed.type === 'result' && typed.subtype === 'success') {
+      finalResult = typed.result
     }
   }
 
-  return finalResult
+  return finalResult || assistantText
+}
+
+type TextBlock = { type: 'text'; text: string }
+type ToolUseBlock = {
+  type: 'tool_use'
+  id?: string
+  tool_use_id?: string
+  name: string
+  input?: Record<string, unknown>
+}
+type ToolResultBlock = {
+  type: 'tool_result'
+  tool_use_id?: string
+  id?: string
+  content?: unknown
+  is_error?: boolean
+}
+
+function getContentBlocks(message: unknown): unknown[] {
+  if (typeof message === 'string') {
+    return [{ type: 'text', text: message }]
+  }
+  if (!message || typeof message !== 'object') return []
+  const content = (message as { content?: unknown }).content
+  return Array.isArray(content) ? content : []
+}
+
+function isTextBlock(value: unknown): value is TextBlock {
+  return typeof value === 'object' && value !== null && (value as TextBlock).type === 'text'
+}
+
+function isToolUseBlock(value: unknown): value is ToolUseBlock {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as ToolUseBlock).type === 'tool_use' &&
+    typeof (value as ToolUseBlock).name === 'string'
+  )
+}
+
+function isToolResultBlock(value: unknown): value is ToolResultBlock {
+  return (
+    typeof value === 'object' && value !== null && (value as ToolResultBlock).type === 'tool_result'
+  )
+}
+
+function extractToolResultText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      .map((block) => {
+        if (!block || typeof block !== 'object') return ''
+        const typedBlock = block as { type?: string; text?: string }
+        if (typedBlock.type === 'text' && typeof typedBlock.text === 'string') {
+          return typedBlock.text
+        }
+        return ''
+      })
+      .join('')
+  }
+  if (content && typeof content === 'object' && 'text' in (content as Record<string, unknown>)) {
+    return String((content as { text?: unknown }).text ?? '')
+  }
+  return ''
 }

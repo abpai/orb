@@ -46,15 +46,24 @@ export const ToolTree = React.memo(function ToolTree({ calls }: ToolTreeProps) {
         const prefix = isLast ? '└─' : '├─'
         const inputStr = formatToolInput(call.name, call.input)
         const { icon, color: iconColor } = STATUS_CONFIG[call.status]
+        const errorText =
+          call.status === 'error' && call.result ? truncate(call.result, 120, 'end') : null
 
         return (
-          <Box key={call.id} justifyContent="space-between">
-            <Text>
-              <Text color="gray">{prefix} </Text>
-              <Text color="cyan">{call.name}</Text>
-              {inputStr && <Text color="gray"> {inputStr}</Text>}
-            </Text>
-            <Text color={iconColor}>{icon}</Text>
+          <Box key={call.id} flexDirection="column">
+            <Box justifyContent="space-between">
+              <Text>
+                <Text color="gray">{prefix} </Text>
+                <Text color="cyan">{call.name}</Text>
+                {inputStr && <Text color="gray"> {inputStr}</Text>}
+              </Text>
+              <Text color={iconColor}>{icon}</Text>
+            </Box>
+            {errorText && (
+              <Text color="red" dimColor>
+                {'  '}↳ {errorText}
+              </Text>
+            )}
           </Box>
         )
       })}

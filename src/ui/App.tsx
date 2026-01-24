@@ -1,5 +1,5 @@
-import React, { useCallback, useRef, useState } from 'react'
-import { Box, useInput } from 'ink'
+import React, { useCallback, useMemo, useRef, useState } from 'react'
+import { Box, Static, useInput } from 'ink'
 
 import { runAgent } from '../services/claude-agent'
 import {
@@ -9,16 +9,45 @@ import {
 import { speak, stopSpeaking } from '../services/tts'
 import { TTSError, type AppConfig, type AppState, type TTSErrorType, type ViewMode } from '../types'
 import { ActiveMessagePanel } from './components/ActiveMessagePanel'
+import type { AnimationMode } from './components/AsciiOrb'
+import { CompletedEntry } from './components/CompletedEntry'
 import { type HistoryEntry } from './components/ConversationPanel'
 import { InputPrompt } from './components/InputPrompt'
+import { OrbPanel } from './components/OrbPanel'
 import { ResonanceBar } from './components/ResonanceBar'
 import { TranscriptViewer } from './components/TranscriptViewer'
 import { TTSErrorBanner } from './components/TTSErrorBanner'
 import { WelcomeSplash } from './components/WelcomeSplash'
+import { useTerminalSize } from './hooks/useTerminalSize'
 
 interface AppProps {
   config: AppConfig
 }
+
+function mapStateToAnimationMode(state: AppState): AnimationMode {
+  switch (state) {
+    case 'speaking':
+    case 'processing_speaking':
+      return 'speaking'
+    case 'processing':
+      return 'processing'
+    default:
+      return 'idle'
+  }
+}
+
+function isAbortError(err: unknown): boolean {
+  if (!err) return false
+  const anyErr = err as { name?: string; message?: string }
+  if (anyErr.name === 'AbortError') return true
+  const msg = typeof anyErr.message === 'string' ? anyErr.message : String(err)
+  return msg.toLowerCase().includes('aborted') || msg.toLowerCase().includes('abort')
+}
+
+const ORB_PANEL_WIDTH = 32
+const MIN_CONVERSATION_WIDTH = 40
+const MIN_SPLIT_LAYOUT_WIDTH = ORB_PANEL_WIDTH + MIN_CONVERSATION_WIDTH + 3
+const MIN_ORB_DISPLAY_WIDTH = MIN_SPLIT_LAYOUT_WIDTH + 20 // ~95 chars - hide orb in narrow split layouts
 
 export function App({ config }: AppProps) {
   const [state, setState] = useState<AppState>('idle')
@@ -26,7 +55,24 @@ export function App({ config }: AppProps) {
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null)
   const [ttsError, setTtsError] = useState<{ type: TTSErrorType; message: string } | null>(null)
+
+  const { columns: terminalWidth, rows: terminalRows } = useTerminalSize()
+  const useStackedLayout = terminalWidth < MIN_SPLIT_LAYOUT_WIDTH
+  const showOrb = terminalWidth >= MIN_ORB_DISPLAY_WIDTH
+
+  // Calculate max lines for active response to prevent pushing UI off-screen
+  // Fixed overhead: padding (2), input (3), status bar (1), question box (3), margins (3) = ~12
+  const FIXED_UI_OVERHEAD = 12
+  const maxAnswerLines = useMemo(
+    () => Math.max(5, terminalRows - FIXED_UI_OVERHEAD),
+    [terminalRows],
+  )
+
   const sessionIdRef = useRef<string | undefined>(undefined)
+
+  const abortControllerRef = useRef<AbortController | null>(null)
+  const runIdRef = useRef(0)
+
   // Track accumulated streamed text (accessible outside React state closure)
   const streamedTextRef = useRef('')
   // Buffer streamed text to avoid re-rendering on every chunk
@@ -35,31 +81,25 @@ export function App({ config }: AppProps) {
   // Streaming speech controller ref for interrupt handling
   const speechControllerRef = useRef<StreamingSpeechController | null>(null)
 
-  // Handle interrupt via Esc or Ctrl+S
-  useInput(
-    (input, key) => {
-      if (key.escape || (key.ctrl && input === 's')) {
-        speechControllerRef.current?.stop()
-        stopSpeaking()
-        setState((prev) => (prev === 'processing_speaking' ? 'processing' : 'idle'))
-      }
-    },
-    { isActive: state === 'processing_speaking' || state === 'speaking' },
-  )
+  const updateEntry = useCallback((entryId: string, updates: Partial<HistoryEntry>) => {
+    setHistory((prev) =>
+      prev.map((entry) => (entry.id === entryId ? { ...entry, ...updates } : entry)),
+    )
+  }, [])
 
-  // Handle Ctrl+O to toggle transcript viewer (only when idle and in main view)
-  useInput(
-    (input, key) => {
-      if (key.ctrl && input === 'o') {
-        setViewMode('transcript')
-      }
-    },
-    { isActive: state === 'idle' && viewMode === 'main' },
-  )
-
-  const updateEntry = useCallback(
-    (entryId: string, updater: (entry: HistoryEntry) => HistoryEntry) => {
-      setHistory((prev) => prev.map((entry) => (entry.id === entryId ? updater(entry) : entry)))
+  const updateToolCallResult = useCallback(
+    (entryId: string, index: number, result: string, status: 'complete' | 'error') => {
+      setHistory((prev) =>
+        prev.map((entry) => {
+          if (entry.id !== entryId) return entry
+          return {
+            ...entry,
+            toolCalls: entry.toolCalls.map((c) =>
+              c.index === index ? { ...c, status, result } : c,
+            ),
+          }
+        }),
+      )
     },
     [],
   )
@@ -72,17 +112,75 @@ export function App({ config }: AppProps) {
   }, [])
 
   const flushPendingText = useCallback(
-    (entryId: string) => {
+    (entryId: string, expectedRunId: number) => {
+      if (expectedRunId !== runIdRef.current) return
       if (!pendingTextRef.current) return
-      const pending = pendingTextRef.current
+
+      const next = streamedTextRef.current
       pendingTextRef.current = ''
-      updateEntry(entryId, (entry) => ({ ...entry, answer: entry.answer + pending }))
+      clearFlushTimeout()
+      updateEntry(entryId, { answer: next })
     },
-    [updateEntry],
+    [clearFlushTimeout, updateEntry],
+  )
+
+  const cancelCurrentRun = useCallback(() => {
+    runIdRef.current += 1
+    abortControllerRef.current?.abort()
+    abortControllerRef.current = null
+
+    speechControllerRef.current?.stop()
+    speechControllerRef.current = null
+    stopSpeaking()
+
+    streamedTextRef.current = ''
+    pendingTextRef.current = ''
+    clearFlushTimeout()
+
+    setState('idle')
+  }, [clearFlushTimeout])
+
+  // Handle interrupt via Esc or Ctrl+S
+  useInput(
+    (input, key) => {
+      if (key.escape || (key.ctrl && input === 's')) {
+        cancelCurrentRun()
+      }
+    },
+    { isActive: viewMode === 'main' && state !== 'idle' },
+  )
+
+  // Handle Ctrl+O to toggle transcript viewer (only when idle and in main view)
+  useInput(
+    (input, key) => {
+      if (key.ctrl && input === 'o') {
+        setViewMode('transcript')
+      }
+    },
+    { isActive: state === 'idle' && viewMode === 'main' },
+  )
+
+  // Handle Ctrl+C to exit application
+  useInput(
+    (input, key) => {
+      if (key.ctrl && input === 'c') {
+        process.exit(0)
+      }
+    },
+    { isActive: true },
   )
 
   const handleSubmit = useCallback(
     async (query: string) => {
+      const trimmed = query.trim()
+      if (!trimmed) return
+
+      if (abortControllerRef.current || speechControllerRef.current || state !== 'idle') {
+        cancelCurrentRun()
+      }
+
+      const runId = (runIdRef.current += 1)
+
       setState('processing')
       setTtsError(null)
       streamedTextRef.current = ''
@@ -93,115 +191,199 @@ export function App({ config }: AppProps) {
 
       setHistory((prev) => [
         ...prev,
-        { id: entryId, question: query, toolCalls: [], answer: '', error: null },
+        { id: entryId, question: trimmed, toolCalls: [], answer: '', error: null },
       ])
 
-      let agentCompleted = false
+      const abortController = new AbortController()
+      abortControllerRef.current = abortController
 
       // Create streaming speech controller if streaming is enabled
       const useStreaming = config.ttsEnabled && config.ttsStreamingEnabled
       const controller = useStreaming
         ? createStreamingSpeechController(config, {
-            onSpeakingStart: () => setState(agentCompleted ? 'speaking' : 'processing_speaking'),
-            onError: (err) => setTtsError({ type: err.type, message: err.message }),
+            onSpeakingStart: () => {
+              if (runId !== runIdRef.current) return
+              setState((prev) => (prev === 'processing' ? 'processing_speaking' : 'speaking'))
+            },
+            onSpeakingEnd: () => {
+              if (runId !== runIdRef.current) return
+              setState((prev) => {
+                if (prev === 'processing_speaking') return 'processing'
+                if (prev === 'speaking') return 'idle'
+                return prev
+              })
+            },
+            onError: (err) => {
+              if (runId !== runIdRef.current) return
+              setTtsError({ type: err.type, message: err.message })
+            },
           })
         : null
 
       speechControllerRef.current = controller
 
+      const onAssistantText = (text: string) => {
+        if (runId !== runIdRef.current) return
+        streamedTextRef.current += text
+        pendingTextRef.current += text
+
+        controller?.feedText(text)
+
+        if (!flushTimeoutRef.current) {
+          flushTimeoutRef.current = setTimeout(() => {
+            flushPendingText(entryId, runId)
+          }, 150)
+        }
+      }
+
       try {
-        const result = await runAgent(query, config, sessionIdRef.current, {
-          onSessionId: (id) => {
-            sessionIdRef.current = id
+        const result = await runAgent(
+          trimmed,
+          config,
+          sessionIdRef.current,
+          {
+            onSessionId: (id) => {
+              if (runId !== runIdRef.current) return
+              sessionIdRef.current = id
+            },
+            onToolCall: (call) => {
+              if (runId !== runIdRef.current) return
+              setHistory((prev) =>
+                prev.map((entry) =>
+                  entry.id === entryId
+                    ? { ...entry, toolCalls: [...entry.toolCalls, call] }
+                    : entry,
+                ),
+              )
+            },
+            onToolResult: (index, resultText) => {
+              if (runId !== runIdRef.current) return
+              updateToolCallResult(entryId, index, resultText, 'complete')
+            },
+            onToolError: (index, errorText) => {
+              if (runId !== runIdRef.current) return
+              updateToolCallResult(entryId, index, errorText, 'error')
+            },
+            onAssistantText,
           },
-          onToolCall: (call) => {
-            updateEntry(entryId, (entry) => ({
-              ...entry,
-              toolCalls: [...entry.toolCalls, call],
-            }))
-          },
-          onToolResult: (index, result) => {
-            updateEntry(entryId, (entry) => ({
-              ...entry,
-              toolCalls: entry.toolCalls.map((c) =>
-                c.index === index ? { ...c, status: 'complete', result } : c,
-              ),
-            }))
-          },
-          onAssistantText: (text) => {
-            streamedTextRef.current += text
-            pendingTextRef.current += text
-            // Feed text to streaming controller
-            controller?.feedText(text)
+          abortController,
+        )
 
-            if (!flushTimeoutRef.current) {
-              flushTimeoutRef.current = setTimeout(() => {
-                flushTimeoutRef.current = null
-                flushPendingText(entryId)
-              }, 150)
-            }
-          },
-        })
+        if (runId !== runIdRef.current) return
 
-        agentCompleted = true
-        clearFlushTimeout()
-        flushPendingText(entryId)
+        if (pendingTextRef.current) {
+          flushPendingText(entryId, runId)
+        }
 
-        // Use result if available, otherwise use accumulated streamed text
-        const textToSpeak = result || streamedTextRef.current
-        if (result) {
-          pendingTextRef.current = ''
-          updateEntry(entryId, (entry) => ({ ...entry, answer: result }))
+        if (result && result !== streamedTextRef.current) {
+          updateEntry(entryId, { answer: result })
         }
 
         if (useStreaming && controller) {
-          // Finalize streaming and wait for completion
           controller.finalize()
-          // Transition to speaking state if controller is still active
           if (controller.isActive()) {
             setState('speaking')
+            await controller.waitForCompletion()
           }
-          await controller.waitForCompletion()
-        } else {
-          // Legacy: speak after agent completes
+        } else if (config.ttsEnabled) {
           setState('speaking')
-          try {
-            await speak(textToSpeak, config)
-          } catch (ttsErr) {
-            if (ttsErr instanceof TTSError) {
-              setTtsError({ type: ttsErr.type, message: ttsErr.message })
-            }
-          }
+          await speak(streamedTextRef.current || result, config)
         }
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : 'Unknown error'
-        clearFlushTimeout()
-        pendingTextRef.current = ''
-        updateEntry(entryId, (entry) => ({
-          ...entry,
-          answer: `Error: ${errorMsg}`,
-          error: errorMsg,
-        }))
-        // Stop streaming on error
-        controller?.stop()
-      } finally {
-        speechControllerRef.current = null
-        clearFlushTimeout()
-        pendingTextRef.current = ''
+
+        if (runId !== runIdRef.current) return
         setState('idle')
+      } catch (err) {
+        if (runId !== runIdRef.current) return
+
+        if (!isAbortError(err)) {
+          updateEntry(entryId, {
+            error: err instanceof Error ? err.message : String(err),
+          })
+        }
+
+        if (err instanceof TTSError) {
+          setTtsError({ type: err.type, message: err.message })
+        }
+        setState('idle')
+      } finally {
+        if (runId === runIdRef.current) {
+          abortControllerRef.current = null
+          speechControllerRef.current = null
+          clearFlushTimeout()
+        }
       }
     },
-    [clearFlushTimeout, config, flushPendingText, updateEntry],
+    [
+      cancelCurrentRun,
+      clearFlushTimeout,
+      config,
+      flushPendingText,
+      state,
+      updateEntry,
+      updateToolCallResult,
+    ],
   )
 
-  const activeEntry = activeEntryId ? (history.find((e) => e.id === activeEntryId) ?? null) : null
+  const activeEntry = useMemo(
+    () => (activeEntryId ? (history.find((e) => e.id === activeEntryId) ?? null) : null),
+    [activeEntryId, history],
+  )
+
+  const completedEntries = useMemo(
+    () => history.filter((e) => e.id !== activeEntryId),
+    [activeEntryId, history],
+  )
+
+  const animationMode = useMemo(() => mapStateToAnimationMode(state), [state])
+
+  function renderConversationLayout(): React.ReactNode {
+    // Welcome screen - centered orb
+    if (history.length === 0) {
+      return (
+        <>
+          <WelcomeSplash animationMode={animationMode} />
+          <InputPrompt onSubmit={handleSubmit} disabled={false} />
+          <ResonanceBar status={state} hasHistory={false} />
+        </>
+      )
+    }
+
+    // Stacked layout for narrow terminals
+    if (useStackedLayout) {
+      return (
+        <Box flexDirection="column">
+          <ActiveMessagePanel entry={activeEntry} maxAnswerLines={maxAnswerLines} />
+          <InputPrompt onSubmit={handleSubmit} disabled={false} />
+          <ResonanceBar status={state} hasHistory={true} />
+        </Box>
+      )
+    }
+
+    // Split panel - orb left (when wide enough), conversation right
+    return (
+      <Box flexDirection="row">
+        {showOrb && <OrbPanel animationMode={animationMode} />}
+        <Box
+          flexDirection="column"
+          flexGrow={1}
+          marginLeft={showOrb ? 1 : 0}
+          minWidth={MIN_CONVERSATION_WIDTH}
+        >
+          <ActiveMessagePanel entry={activeEntry} maxAnswerLines={maxAnswerLines} />
+          <InputPrompt onSubmit={handleSubmit} disabled={false} />
+          <ResonanceBar status={state} hasHistory={true} />
+        </Box>
+      </Box>
+    )
+  }
 
   const mainContent = (
     <>
       {ttsError && <TTSErrorBanner type={ttsError.type} message={ttsError.message} />}
-      {history.length === 0 ? <WelcomeSplash /> : <ActiveMessagePanel entry={activeEntry} />}
-      <InputPrompt onSubmit={handleSubmit} disabled={state !== 'idle'} />
-      <ResonanceBar status={state} hasHistory={history.length > 0} />
+      <Static items={completedEntries}>
+        {(entry) => <CompletedEntry key={entry.id} entry={entry} />}
+      </Static>
+      {renderConversationLayout()}
     </>
   )
 
