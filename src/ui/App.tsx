@@ -50,9 +50,8 @@ function mapStateToAnimationMode(state: AppState): AnimationMode {
 function isAbortError(err: unknown): boolean {
   if (!err) return false
   if (err instanceof Error && err.name === 'AbortError') return true
-  const message = err instanceof Error ? err.message : String(err)
-  const lowerMessage = message.toLowerCase()
-  return lowerMessage.includes('aborted') || lowerMessage.includes('abort')
+  const message = (err instanceof Error ? err.message : String(err)).toLowerCase()
+  return message.includes('abort')
 }
 
 const ORB_PANEL_WIDTH = 32

@@ -18,34 +18,85 @@ function isValidVoice(value: string): value is Voice {
   return VOICES.includes(value as Voice)
 }
 
-function parsePositiveNumber(value: string): number | undefined {
+type NumberValidator = (n: number) => boolean
+
+function parseNumber(value: string, validate: NumberValidator): number | undefined {
   const parsed = Number(value)
-  if (Number.isFinite(parsed) && parsed > 0) {
-    return parsed
-  }
-  return undefined
+  return validate(parsed) ? parsed : undefined
 }
 
-function parsePositiveInteger(value: string): number | undefined {
-  const parsed = Number(value)
-  if (Number.isInteger(parsed) && parsed > 0) {
-    return parsed
-  }
-  return undefined
-}
-
-function parseNonNegativeInteger(value: string): number | undefined {
-  const parsed = Number(value)
-  if (Number.isInteger(parsed) && parsed >= 0) {
-    return parsed
-  }
-  return undefined
-}
+const isPositiveNumber: NumberValidator = (n) => Number.isFinite(n) && n > 0
+const isPositiveInteger: NumberValidator = (n) => Number.isInteger(n) && n > 0
+const isNonNegativeInteger: NumberValidator = (n) => Number.isInteger(n) && n >= 0
 
 export function parseCliArgs(args: string[]): AppConfig {
   const config = { ...DEFAULT_CONFIG }
 
   for (const arg of args) {
+    const voice = getArgValue(arg, '--voice=')
+    if (voice !== undefined && isValidVoice(voice)) {
+      config.ttsVoice = voice
+      continue
+    }
+
+    const ttsMode = getArgValue(arg, '--tts-mode=')
+    if (ttsMode !== undefined) {
+      if (ttsMode === 'generate' || ttsMode === 'serve') {
+        config.ttsMode = ttsMode
+      } else if (ttsMode === 'server') {
+        config.ttsMode = 'serve'
+      }
+      continue
+    }
+
+    const serverUrl = getArgValue(arg, '--tts-server-url=')
+    if (serverUrl !== undefined) {
+      config.ttsServerUrl = serverUrl.trim()
+      if (config.ttsMode === 'generate') {
+        config.ttsMode = 'serve'
+      }
+      continue
+    }
+
+    const speed = getArgValue(arg, '--tts-speed=')
+    if (speed !== undefined) {
+      config.ttsSpeed = parseNumber(speed, isPositiveNumber) ?? config.ttsSpeed
+      continue
+    }
+
+    const model = getArgValue(arg, '--model=')
+    if (model !== undefined) {
+      config.model = MODEL_ALIASES[model] ?? config.model
+      continue
+    }
+
+    const bufferSentences = getArgValue(arg, '--tts-buffer-sentences=')
+    if (bufferSentences !== undefined) {
+      config.ttsBufferSentences =
+        parseNumber(bufferSentences, isPositiveInteger) ?? config.ttsBufferSentences
+      continue
+    }
+
+    const minChunkLength = getArgValue(arg, '--tts-min-chunk-length=')
+    if (minChunkLength !== undefined) {
+      config.ttsMinChunkLength =
+        parseNumber(minChunkLength, isNonNegativeInteger) ?? config.ttsMinChunkLength
+      continue
+    }
+
+    const maxWaitMs = getArgValue(arg, '--tts-max-wait-ms=')
+    if (maxWaitMs !== undefined) {
+      config.ttsMaxWaitMs = parseNumber(maxWaitMs, isNonNegativeInteger) ?? config.ttsMaxWaitMs
+      continue
+    }
+
+    const graceWindowMs = getArgValue(arg, '--tts-grace-window-ms=')
+    if (graceWindowMs !== undefined) {
+      config.ttsGraceWindowMs =
+        parseNumber(graceWindowMs, isNonNegativeInteger) ?? config.ttsGraceWindowMs
+      continue
+    }
+
     if (arg === '--new') {
       config.startFresh = true
     } else if (arg === '--no-tts') {
@@ -58,92 +109,10 @@ export function parseCliArgs(args: string[]): AppConfig {
       config.ttsClauseBoundaries = false
     } else if (!arg.startsWith('-')) {
       config.projectPath = arg
-    } else {
-      parseArgWithValue(arg, config)
     }
   }
 
   return config
-}
-
-function parseArgWithValue(arg: string, config: AppConfig): void {
-  const voice = getArgValue(arg, '--voice=')
-  if (voice !== undefined && isValidVoice(voice)) {
-    config.ttsVoice = voice
-    return
-  }
-
-  const ttsMode = getArgValue(arg, '--tts-mode=')
-  if (ttsMode !== undefined) {
-    if (ttsMode === 'generate' || ttsMode === 'serve') {
-      config.ttsMode = ttsMode
-    } else if (ttsMode === 'server') {
-      config.ttsMode = 'serve'
-    }
-    return
-  }
-
-  const serverUrl = getArgValue(arg, '--tts-server-url=')
-  if (serverUrl !== undefined) {
-    config.ttsServerUrl = serverUrl.trim()
-    if (config.ttsMode === 'generate') {
-      config.ttsMode = 'serve'
-    }
-    return
-  }
-
-  const speed = getArgValue(arg, '--tts-speed=')
-  if (speed !== undefined) {
-    const parsed = parsePositiveNumber(speed)
-    if (parsed !== undefined) {
-      config.ttsSpeed = parsed
-    }
-    return
-  }
-
-  const model = getArgValue(arg, '--model=')
-  if (model !== undefined) {
-    const fullModel = MODEL_ALIASES[model]
-    if (fullModel) {
-      config.model = fullModel
-    }
-    return
-  }
-
-  const bufferSentences = getArgValue(arg, '--tts-buffer-sentences=')
-  if (bufferSentences !== undefined) {
-    const parsed = parsePositiveInteger(bufferSentences)
-    if (parsed !== undefined) {
-      config.ttsBufferSentences = parsed
-    }
-    return
-  }
-
-  const minChunkLength = getArgValue(arg, '--tts-min-chunk-length=')
-  if (minChunkLength !== undefined) {
-    const parsed = parseNonNegativeInteger(minChunkLength)
-    if (parsed !== undefined) {
-      config.ttsMinChunkLength = parsed
-    }
-    return
-  }
-
-  const maxWaitMs = getArgValue(arg, '--tts-max-wait-ms=')
-  if (maxWaitMs !== undefined) {
-    const parsed = parseNonNegativeInteger(maxWaitMs)
-    if (parsed !== undefined) {
-      config.ttsMaxWaitMs = parsed
-    }
-    return
-  }
-
-  const graceWindowMs = getArgValue(arg, '--tts-grace-window-ms=')
-  if (graceWindowMs !== undefined) {
-    const parsed = parseNonNegativeInteger(graceWindowMs)
-    if (parsed !== undefined) {
-      config.ttsGraceWindowMs = parsed
-    }
-  }
 }
 
 export { DEFAULT_CONFIG }

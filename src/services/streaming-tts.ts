@@ -76,15 +76,14 @@ function extractChunkAtBoundary(
 ): { chunk: string | null; consumed: number } {
   if (boundary <= 0) return { chunk: null, consumed: 0 }
 
-  const slice = text.slice(0, boundary)
-  const trimmed = slice.trimEnd()
-  const length = trimmed.trim().length
+  const trimmed = text.slice(0, boundary).trimEnd()
+  const contentLength = trimmed.trim().length
 
-  if (!forceFlush && minLength > 0 && length < minLength) {
+  if (!forceFlush && minLength > 0 && contentLength < minLength) {
     return { chunk: null, consumed: 0 }
   }
 
-  return { chunk: length > 0 ? trimmed : null, consumed: boundary }
+  return { chunk: contentLength > 0 ? trimmed : null, consumed: boundary }
 }
 
 export function createStreamingSpeechController(
@@ -135,66 +134,63 @@ export function createStreamingSpeechController(
     return cleanedText.slice(processedOffset)
   }
 
+  function tryExtractAtBoundary(
+    cleanedText: string,
+    pending: string,
+    boundary: number,
+    minLength: number,
+    forceFlush: boolean,
+    now: number,
+  ): string {
+    const result = extractChunkAtBoundary(pending, boundary, minLength, forceFlush)
+    if (result.consumed > 0) {
+      if (result.chunk) enqueueChunk(result.chunk, now)
+      processedOffset += result.consumed
+      return getPendingText(cleanedText)
+    }
+    return pending
+  }
+
   function extractChunksFromCleaned(
     cleanedText: string,
     options: { forceFlush: boolean; finalized: boolean; now: number },
   ): string {
     let pending = getPendingText(cleanedText)
-    if (!pending.trim()) {
-      return pending
-    }
+    if (!pending.trim()) return pending
 
     const strong = extractStrongChunks(pending)
     if (strong.chunks.length > 0) {
-      for (const chunk of strong.chunks) {
-        enqueueChunk(chunk, options.now)
-      }
+      for (const chunk of strong.chunks) enqueueChunk(chunk, options.now)
       processedOffset += strong.consumed
       pending = getPendingText(cleanedText)
     }
 
     if (options.finalized) {
-      const remaining = pending.trim()
-      if (remaining) {
-        enqueueChunk(pending.trimEnd(), options.now)
-      }
+      if (pending.trim()) enqueueChunk(pending.trimEnd(), options.now)
       processedOffset = cleanedText.length
       return ''
     }
 
-    if (!pending.trim()) {
-      return pending
-    }
+    if (!pending.trim()) return pending
 
-    const minLength = config.ttsMinChunkLength
-    const allowClauses = config.ttsClauseBoundaries
-    const forceFlush = options.forceFlush
+    const { ttsMinChunkLength: minLength, ttsClauseBoundaries: allowClauses } = config
 
     if (allowClauses) {
       const softBoundary = findLastMatchIndex(pending, SOFT_BOUNDARY)
-      const soft = extractChunkAtBoundary(pending, softBoundary, minLength, forceFlush)
-      if (soft.consumed > 0) {
-        if (soft.chunk) {
-          enqueueChunk(soft.chunk, options.now)
-        }
-        processedOffset += soft.consumed
-        pending = getPendingText(cleanedText)
-      }
+      pending = tryExtractAtBoundary(
+        cleanedText,
+        pending,
+        softBoundary,
+        minLength,
+        options.forceFlush,
+        options.now,
+      )
     }
 
-    if (!forceFlush || !pending.trim()) {
-      return pending
-    }
+    if (!options.forceFlush || !pending.trim()) return pending
 
     const wsBoundary = findLastWhitespaceIndex(pending)
-    const whitespace = extractChunkAtBoundary(pending, wsBoundary, minLength, true)
-    if (whitespace.consumed > 0) {
-      if (whitespace.chunk) {
-        enqueueChunk(whitespace.chunk, options.now)
-      }
-      processedOffset += whitespace.consumed
-      pending = getPendingText(cleanedText)
-    }
+    pending = tryExtractAtBoundary(cleanedText, pending, wsBoundary, minLength, true, options.now)
 
     if (pending.trim()) {
       enqueueChunk(pending.trimEnd(), options.now)
@@ -343,14 +339,16 @@ export function createStreamingSpeechController(
     return isGenerating || isPlaying || sentenceQueue.length > 0 || audioQueue.length > 0
   }
 
-  function checkCompletion(): void {
-    if (!finalized || stopped || hasWorkRemaining() || completed) return
-
+  function markComplete(): void {
     completed = true
-    if (speakingStarted) {
-      callbacks.onSpeakingEnd?.()
-    }
+    if (speakingStarted) callbacks.onSpeakingEnd?.()
     completionResolve?.()
+  }
+
+  function checkCompletion(): void {
+    if (finalized && !stopped && !hasWorkRemaining() && !completed) {
+      markComplete()
+    }
   }
 
   function maybeStartGeneration(): void {
@@ -405,24 +403,17 @@ export function createStreamingSpeechController(
     },
 
     waitForCompletion(): Promise<void> {
-      if (completionPromise) {
-        return completionPromise
-      }
+      if (completionPromise) return completionPromise
 
       completionPromise = new Promise((resolve) => {
         completionResolve = resolve
 
-        if (stopped || completed || !config.ttsEnabled) {
-          resolve()
-          return
-        }
+        const alreadyDone = stopped || completed || !config.ttsEnabled
+        const justFinished = finalized && !hasWorkRemaining()
 
-        if (finalized && !hasWorkRemaining()) {
-          completed = true
-          if (speakingStarted) {
-            callbacks.onSpeakingEnd?.()
-          }
-          resolve()
+        if (alreadyDone || justFinished) {
+          if (justFinished) markComplete()
+          else resolve()
         }
       })
 
