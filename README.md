@@ -63,6 +63,7 @@ vibe-claude --model=sonnet --voice=marius --budget=1.00
 - Type your question and press **Enter** to submit
 - Paste MacWhisper transcription with **Cmd+V**
 - Press **Esc** or **Ctrl+S** to stop speech
+- Press **Shift+Tab** to cycle models
 - Press **Ctrl+C** to exit
 
 ## Requirements

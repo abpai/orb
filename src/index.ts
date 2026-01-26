@@ -33,6 +33,7 @@ Examples:
 Controls:
   - Type your question and press Enter
   - Paste MacWhisper transcription with Cmd+V
+  - Shift+Tab to cycle models
   - Ctrl+C to exit
 `)
 }
@@ -51,16 +52,17 @@ export function run(args: string[]): void {
   const projectName = basename(config.projectPath) || config.projectPath
 
   const MAX_CONTENT_WIDTH = 56
-  const formatLine = (label: string, value: string) => {
+
+  function formatLine(label: string, value: string): string {
     const prefix = `${label}: `
     const available = Math.max(0, MAX_CONTENT_WIDTH - prefix.length)
-    const trimmed =
-      value.length > available && available > 1
-        ? `…${value.slice(value.length - (available - 1))}`
-        : value.slice(0, available)
-    return `${prefix}${trimmed}`
+    if (value.length > available && available > 1) {
+      return `${prefix}…${value.slice(value.length - (available - 1))}`
+    }
+    return `${prefix}${value.slice(0, available)}`
   }
-  const padCenter = (value: string, width: number) => {
+
+  function padCenter(value: string, width: number): string {
     if (value.length >= width) return value
     const totalPad = width - value.length
     const left = Math.floor(totalPad / 2)

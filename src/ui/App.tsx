@@ -7,7 +7,15 @@ import {
   type StreamingSpeechController,
 } from '../services/streaming-tts'
 import { speak, stopSpeaking } from '../services/tts'
-import { TTSError, type AppConfig, type AppState, type TTSErrorType, type ViewMode } from '../types'
+import {
+  MODELS,
+  TTSError,
+  type AppConfig,
+  type AppState,
+  type Model,
+  type TTSErrorType,
+  type ViewMode,
+} from '../types'
 import { ActiveMessagePanel } from './components/ActiveMessagePanel'
 import type { AnimationMode } from './components/AsciiOrb'
 import { CompletedEntry } from './components/CompletedEntry'
@@ -38,10 +46,10 @@ function mapStateToAnimationMode(state: AppState): AnimationMode {
 
 function isAbortError(err: unknown): boolean {
   if (!err) return false
-  const anyErr = err as { name?: string; message?: string }
-  if (anyErr.name === 'AbortError') return true
-  const msg = typeof anyErr.message === 'string' ? anyErr.message : String(err)
-  return msg.toLowerCase().includes('aborted') || msg.toLowerCase().includes('abort')
+  if (err instanceof Error && err.name === 'AbortError') return true
+  const message = err instanceof Error ? err.message : String(err)
+  const lowerMessage = message.toLowerCase()
+  return lowerMessage.includes('aborted') || lowerMessage.includes('abort')
 }
 
 const ORB_PANEL_WIDTH = 32
@@ -55,6 +63,7 @@ export function App({ config }: AppProps) {
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null)
   const [ttsError, setTtsError] = useState<{ type: TTSErrorType; message: string } | null>(null)
+  const [activeModel, setActiveModel] = useState<Model>(config.model)
 
   const { columns: terminalWidth, rows: terminalRows } = useTerminalSize()
   const useStackedLayout = terminalWidth < MIN_SPLIT_LAYOUT_WIDTH
@@ -69,6 +78,7 @@ export function App({ config }: AppProps) {
   )
 
   const sessionIdRef = useRef<string | undefined>(undefined)
+  const activeConfig = useMemo(() => ({ ...config, model: activeModel }), [config, activeModel])
 
   const abortControllerRef = useRef<AbortController | null>(null)
   const runIdRef = useRef(0)
@@ -109,6 +119,15 @@ export function App({ config }: AppProps) {
       clearTimeout(flushTimeoutRef.current)
       flushTimeoutRef.current = null
     }
+  }, [])
+
+  const cycleModel = useCallback(() => {
+    sessionIdRef.current = undefined
+    setActiveModel((prev) => {
+      const currentIndex = MODELS.indexOf(prev)
+      const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % MODELS.length
+      return MODELS[nextIndex] ?? MODELS[0]
+    })
   }, [])
 
   const flushPendingText = useCallback(
@@ -160,6 +179,20 @@ export function App({ config }: AppProps) {
     { isActive: state === 'idle' && viewMode === 'main' },
   )
 
+  const canCycleModel = state === 'idle' && viewMode === 'main'
+
+  // Handle Shift+Tab to cycle models (only when idle and in main view)
+  useInput(
+    (input, key) => {
+      const isShiftTab =
+        (key.shift && key.tab) || input === '\u001b[Z' || (key.shift && input === '\t')
+      if (isShiftTab) {
+        cycleModel()
+      }
+    },
+    { isActive: canCycleModel },
+  )
+
   // Handle Ctrl+C to exit application
   useInput(
     (input, key) => {
@@ -198,9 +231,9 @@ export function App({ config }: AppProps) {
       abortControllerRef.current = abortController
 
       // Create streaming speech controller if streaming is enabled
-      const useStreaming = config.ttsEnabled && config.ttsStreamingEnabled
+      const useStreaming = activeConfig.ttsEnabled && activeConfig.ttsStreamingEnabled
       const controller = useStreaming
-        ? createStreamingSpeechController(config, {
+        ? createStreamingSpeechController(activeConfig, {
             onSpeakingStart: () => {
               if (runId !== runIdRef.current) return
               setState((prev) => (prev === 'processing' ? 'processing_speaking' : 'speaking'))
@@ -239,7 +272,7 @@ export function App({ config }: AppProps) {
       try {
         const result = await runAgent(
           trimmed,
-          config,
+          activeConfig,
           sessionIdRef.current,
           {
             onSessionId: (id) => {
@@ -285,9 +318,9 @@ export function App({ config }: AppProps) {
             setState('speaking')
             await controller.waitForCompletion()
           }
-        } else if (config.ttsEnabled) {
+        } else if (activeConfig.ttsEnabled) {
           setState('speaking')
-          await speak(streamedTextRef.current || result, config)
+          await speak(streamedTextRef.current || result, activeConfig)
         }
 
         if (runId !== runIdRef.current) return
@@ -316,7 +349,7 @@ export function App({ config }: AppProps) {
     [
       cancelCurrentRun,
       clearFlushTimeout,
-      config,
+      activeConfig,
       flushPendingText,
       state,
       updateEntry,
@@ -343,7 +376,12 @@ export function App({ config }: AppProps) {
         <>
           <WelcomeSplash animationMode={animationMode} />
           <InputPrompt onSubmit={handleSubmit} disabled={false} />
-          <ResonanceBar status={state} hasHistory={false} />
+          <ResonanceBar
+            status={state}
+            hasHistory={false}
+            model={activeModel}
+            canCycleModel={canCycleModel}
+          />
         </>
       )
     }
@@ -354,7 +392,12 @@ export function App({ config }: AppProps) {
         <Box flexDirection="column">
           <ActiveMessagePanel entry={activeEntry} maxAnswerLines={maxAnswerLines} />
           <InputPrompt onSubmit={handleSubmit} disabled={false} />
-          <ResonanceBar status={state} hasHistory={true} />
+          <ResonanceBar
+            status={state}
+            hasHistory={true}
+            model={activeModel}
+            canCycleModel={canCycleModel}
+          />
         </Box>
       )
     }
@@ -371,7 +414,12 @@ export function App({ config }: AppProps) {
         >
           <ActiveMessagePanel entry={activeEntry} maxAnswerLines={maxAnswerLines} />
           <InputPrompt onSubmit={handleSubmit} disabled={false} />
-          <ResonanceBar status={state} hasHistory={true} />
+          <ResonanceBar
+            status={state}
+            hasHistory={true}
+            model={activeModel}
+            canCycleModel={canCycleModel}
+          />
         </Box>
       </Box>
     )

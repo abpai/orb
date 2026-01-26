@@ -35,6 +35,10 @@ export const InputPrompt = memo(function InputPrompt({
         return
       }
 
+      if (key.tab || input === '\u001b[Z') {
+        return
+      }
+
       if (key.backspace || key.delete) {
         setValue((v) => v.slice(0, -1))
         return
