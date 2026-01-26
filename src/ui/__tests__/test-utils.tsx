@@ -45,6 +45,23 @@ export function setupTestMocks(options?: {
   mockAnimationFrame(options?.frame ?? 0)
 }
 
+/**
+ * Normalize Ink output for snapshots across terminal environments.
+ * Strips ANSI codes, carriage returns, trailing newlines, and trailing whitespace per line.
+ */
+export function normalizeFrame(frame: string | undefined): string {
+  if (!frame) return ''
+  const esc = String.fromCharCode(27)
+  const ansiPattern = new RegExp(`${esc}\\[[0-9;:?]*[A-Za-z]`, 'g')
+  return frame
+    .replace(/\r/g, '')
+    .replace(ansiPattern, '')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .join('\n')
+    .replace(/\n+$/g, '')
+}
+
 // ─────────────────────────────────────────────────
 // Test Fixtures
 // ─────────────────────────────────────────────────

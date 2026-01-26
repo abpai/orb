@@ -7,8 +7,7 @@ exports[`CompletedEntry basic rendering renders simple entry without tools 1`] =
 └──────────────────────────────────────────────────────────────┘
 ┌─ claude ────────────────────────────────────────────────────┐
 │ This is a voice-driven code explorer.
-└──────────────────────────────────────────────────────────────┘
-"
+└──────────────────────────────────────────────────────────────┘"
 `;
 
 exports[`CompletedEntry basic rendering renders entry with error 1`] = `
@@ -18,8 +17,7 @@ exports[`CompletedEntry basic rendering renders entry with error 1`] = `
 └──────────────────────────────────────────────────────────────┘
 ┌─ claude ────────────────────────────────────────────────────┐
 │ Error: An unexpected error occurred
-└──────────────────────────────────────────────────────────────┘
-"
+└──────────────────────────────────────────────────────────────┘"
 `;
 
 exports[`CompletedEntry tool calls renders entry with single tool call 1`] = `
@@ -32,8 +30,7 @@ exports[`CompletedEntry tool calls renders entry with single tool call 1`] = `
    │
 ┌─ claude ────────────────────────────────────────────────────┐
 │ Here is the main entry point.
-└──────────────────────────────────────────────────────────────┘
-"
+└──────────────────────────────────────────────────────────────┘"
 `;
 
 exports[`CompletedEntry tool calls renders entry with multiple tool calls 1`] = `
@@ -48,8 +45,7 @@ exports[`CompletedEntry tool calls renders entry with multiple tool calls 1`] = 
    │
 ┌─ claude ────────────────────────────────────────────────────┐
 │ I found and fixed the issue.
-└──────────────────────────────────────────────────────────────┘
-"
+└──────────────────────────────────────────────────────────────┘"
 `;
 
 exports[`CompletedEntry tool calls renders entry with running tool 1`] = `
@@ -62,8 +58,7 @@ exports[`CompletedEntry tool calls renders entry with running tool 1`] = `
    │
 ┌─ claude ────────────────────────────────────────────────────┐
 │ This is a voice-driven code explorer.
-└──────────────────────────────────────────────────────────────┘
-"
+└──────────────────────────────────────────────────────────────┘"
 `;
 
 exports[`CompletedEntry tool calls renders entry with errored tool 1`] = `
@@ -77,8 +72,7 @@ exports[`CompletedEntry tool calls renders entry with errored tool 1`] = `
    │
 ┌─ claude ────────────────────────────────────────────────────┐
 │ This is a voice-driven code explorer.
-└──────────────────────────────────────────────────────────────┘
-"
+└──────────────────────────────────────────────────────────────┘"
 `;
 
 exports[`CompletedEntry content displays multiline content 1`] = `
@@ -90,6 +84,5 @@ exports[`CompletedEntry content displays multiline content 1`] = `
 │ Line one.
 │ Line two.
 │ Line three.
-└──────────────────────────────────────────────────────────────┘
-"
+└──────────────────────────────────────────────────────────────┘"
 `;
