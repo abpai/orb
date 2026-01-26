@@ -21,7 +21,15 @@ const bunGlobals = {
 
 export default [
   {
-    ignores: ['node_modules/**', 'dist/**', 'coverage/**', '.npm-cache/**', 'legacy/**'],
+    ignores: [
+      'node_modules/**',
+      'dist/**',
+      'coverage/**',
+      '.npm-cache/**',
+      'legacy/**',
+      'reference/**',
+      '**/__MACOSX/**',
+    ],
   },
   js.configs.recommended,
   {
