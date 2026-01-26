@@ -53,6 +53,7 @@ src/
 │   └── index.ts          # TypeScript types, constants, defaults
 ├── services/
 │   ├── claude-agent.ts   # Claude SDK wrapper
+│   ├── session.ts        # Session persistence (load/save)
 │   ├── tts.ts            # Text-to-speech (batch mode)
 │   └── streaming-tts.ts  # Streaming TTS controller
 └── ui/
@@ -92,6 +93,10 @@ runAgent(prompt, config, sessionIdRef.current, callbacks) // Passed to resume
 ```
 
 The session ID enables multi-turn conversations where Claude remembers context.
+
+## Session Persistence
+
+On startup, the app loads the last saved session for the current project (unless `--new` is set). Sessions are stored under `~/.vibe-claude/sessions/` and include the SDK session ID, model, and history. The app saves after each completed exchange and whenever the model changes.
 
 ## Key Components
 

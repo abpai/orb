@@ -32,6 +32,15 @@ export interface HistoryEntry {
   error?: string | null
 }
 
+export interface SavedSession {
+  version: 1
+  projectPath: string
+  sessionId: string
+  model: Model
+  lastModified: string
+  history: HistoryEntry[]
+}
+
 export const MODELS = [
   'claude-haiku-4-5-20251001',
   'claude-sonnet-4-5-20250929',
@@ -54,6 +63,7 @@ export interface AppConfig {
   ttsEnabled: boolean
   ttsStreamingEnabled: boolean
   ttsBufferSentences: number
+  startFresh: boolean
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -66,4 +76,5 @@ export const DEFAULT_CONFIG: AppConfig = {
   ttsEnabled: true,
   ttsStreamingEnabled: true,
   ttsBufferSentences: 1,
+  startFresh: false,
 }

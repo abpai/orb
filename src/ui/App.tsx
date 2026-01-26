@@ -1,7 +1,8 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Static, useInput } from 'ink'
 
 import { runAgent } from '../services/claude-agent'
+import { saveSession } from '../services/session'
 import {
   createStreamingSpeechController,
   type StreamingSpeechController,
@@ -14,6 +15,7 @@ import {
   type AppState,
   type HistoryEntry,
   type Model,
+  type SavedSession,
   type TTSErrorType,
   type ViewMode,
 } from '../types'
@@ -30,6 +32,7 @@ import { useTerminalSize } from './hooks/useTerminalSize'
 
 interface AppProps {
   config: AppConfig
+  initialSession?: SavedSession | null
 }
 
 function mapStateToAnimationMode(state: AppState): AnimationMode {
@@ -39,7 +42,7 @@ function mapStateToAnimationMode(state: AppState): AnimationMode {
       return 'speaking'
     case 'processing':
       return 'processing'
-    default:
+    case 'idle':
       return 'idle'
   }
 }
@@ -57,13 +60,13 @@ const MIN_CONVERSATION_WIDTH = 40
 const MIN_SPLIT_LAYOUT_WIDTH = ORB_PANEL_WIDTH + MIN_CONVERSATION_WIDTH + 3
 const MIN_ORB_DISPLAY_WIDTH = MIN_SPLIT_LAYOUT_WIDTH + 20 // ~95 chars - hide orb in narrow split layouts
 
-export function App({ config }: AppProps) {
+export function App({ config, initialSession }: AppProps) {
   const [state, setState] = useState<AppState>('idle')
   const [viewMode, setViewMode] = useState<ViewMode>('main')
-  const [history, setHistory] = useState<HistoryEntry[]>([])
+  const [history, setHistory] = useState<HistoryEntry[]>(initialSession?.history ?? [])
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null)
   const [ttsError, setTtsError] = useState<{ type: TTSErrorType; message: string } | null>(null)
-  const [activeModel, setActiveModel] = useState<Model>(config.model)
+  const [activeModel, setActiveModel] = useState<Model>(initialSession?.model ?? config.model)
 
   const { columns: terminalWidth, rows: terminalRows } = useTerminalSize()
   const useStackedLayout = terminalWidth < MIN_SPLIT_LAYOUT_WIDTH
@@ -77,7 +80,7 @@ export function App({ config }: AppProps) {
     [terminalRows],
   )
 
-  const sessionIdRef = useRef<string | undefined>(undefined)
+  const sessionIdRef = useRef<string | undefined>(initialSession?.sessionId || undefined)
   const activeConfig = useMemo(() => ({ ...config, model: activeModel }), [config, activeModel])
 
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -90,6 +93,27 @@ export function App({ config }: AppProps) {
   const flushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Streaming speech controller ref for interrupt handling
   const speechControllerRef = useRef<StreamingSpeechController | null>(null)
+  const pendingSaveRef = useRef(false)
+
+  const persistSession = useCallback(
+    async (modelOverride?: Model, historyOverride?: HistoryEntry[]) => {
+      const payload: SavedSession = {
+        version: 1,
+        projectPath: config.projectPath,
+        sessionId: sessionIdRef.current ?? '',
+        model: modelOverride ?? activeModel,
+        lastModified: new Date().toISOString(),
+        history: historyOverride ?? history,
+      }
+
+      try {
+        await saveSession(payload)
+      } catch (err) {
+        console.warn('Failed to save session:', err)
+      }
+    },
+    [activeModel, config.projectPath, history],
+  )
 
   const updateEntry = useCallback((entryId: string, updates: Partial<HistoryEntry>) => {
     setHistory((prev) =>
@@ -122,13 +146,19 @@ export function App({ config }: AppProps) {
   }, [])
 
   const cycleModel = useCallback(() => {
-    sessionIdRef.current = undefined
-    setActiveModel((prev) => {
-      const currentIndex = MODELS.indexOf(prev)
-      const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % MODELS.length
-      return MODELS[nextIndex] ?? MODELS[0]
-    })
-  }, [])
+    const currentIndex = MODELS.indexOf(activeModel)
+    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % MODELS.length
+    const nextModel = MODELS[nextIndex] ?? MODELS[0]
+    setActiveModel(nextModel)
+    void persistSession(nextModel, history)
+  }, [activeModel, history, persistSession])
+
+  useEffect(() => {
+    if (!pendingSaveRef.current) return
+    if (state !== 'idle') return
+    pendingSaveRef.current = false
+    void persistSession()
+  }, [history, persistSession, state])
 
   const flushPendingText = useCallback(
     (entryId: string, expectedRunId: number) => {
@@ -325,10 +355,13 @@ export function App({ config }: AppProps) {
 
         if (runId !== runIdRef.current) return
         setState('idle')
+        pendingSaveRef.current = true
       } catch (err) {
         if (runId !== runIdRef.current) return
 
-        if (!isAbortError(err)) {
+        const wasAborted = isAbortError(err)
+
+        if (!wasAborted) {
           updateEntry(entryId, {
             error: err instanceof Error ? err.message : String(err),
           })
@@ -338,6 +371,9 @@ export function App({ config }: AppProps) {
           setTtsError({ type: err.type, message: err.message })
         }
         setState('idle')
+        if (!wasAborted) {
+          pendingSaveRef.current = true
+        }
       } finally {
         if (runId === runIdRef.current) {
           abortControllerRef.current = null

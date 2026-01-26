@@ -9,6 +9,7 @@ Voice-driven code explorer powered by the Claude Agent SDK. Ask questions about 
 - **Text-to-speech** - Hear responses spoken aloud via pocket-tts (server or generate mode)
 - **Streaming TTS** - Speech begins while Claude is still processing
 - **Model switching** - Cycle models during a conversation with Shift+Tab
+- **Session persistence** - Automatically resumes the last session per project
 - **Session continuity** - Follow-up questions maintain conversation context
 - **Terminal UI** - Ink-based interface with tool call visualization, orb animation, and transcript view
 
@@ -53,9 +54,12 @@ vibe-claude --model=sonnet --voice=marius
 | `--tts-speed=<rate>`             | TTS speed multiplier                | `1.5`                   |
 | `--tts-buffer-sentences=<count>` | Sentences to buffer before playback | `1`                     |
 | `--model=<model>`                | Model: `haiku`, `sonnet`, `opus`    | `haiku`                 |
+| `--new`                          | Start fresh (ignore saved session)  | -                       |
 | `--no-tts`                       | Disable text-to-speech              | -                       |
 | `--no-streaming-tts`             | Disable streaming (batch mode)      | -                       |
 | `--help`                         | Show help message                   | -                       |
+
+Sessions are stored under `~/.vibe-claude/sessions/` (one per project).
 
 ### Controls
 

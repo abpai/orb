@@ -38,68 +38,73 @@ export function parseCliArgs(args: string[]): AppConfig {
   const config = { ...DEFAULT_CONFIG }
 
   for (const arg of args) {
-    const voice = getArgValue(arg, '--voice=')
-    if (voice !== undefined && isValidVoice(voice)) {
-      config.ttsVoice = voice
-      continue
-    }
-
-    const ttsMode = getArgValue(arg, '--tts-mode=')
-    if (ttsMode !== undefined) {
-      if (ttsMode === 'generate' || ttsMode === 'serve') {
-        config.ttsMode = ttsMode
-      } else if (ttsMode === 'server') {
-        config.ttsMode = 'serve'
-      }
-      continue
-    }
-
-    const serverUrl = getArgValue(arg, '--tts-server-url=')
-    if (serverUrl !== undefined) {
-      config.ttsServerUrl = serverUrl.trim()
-      if (config.ttsMode === 'generate') {
-        config.ttsMode = 'serve'
-      }
-      continue
-    }
-
-    const speed = getArgValue(arg, '--tts-speed=')
-    if (speed !== undefined) {
-      const parsed = parsePositiveNumber(speed)
-      if (parsed !== undefined) {
-        config.ttsSpeed = parsed
-      }
-      continue
-    }
-
-    const model = getArgValue(arg, '--model=')
-    if (model !== undefined) {
-      const fullModel = MODEL_ALIASES[model]
-      if (fullModel) {
-        config.model = fullModel
-      }
-      continue
-    }
-
-    const bufferSentences = getArgValue(arg, '--tts-buffer-sentences=')
-    if (bufferSentences !== undefined) {
-      const parsed = parsePositiveInteger(bufferSentences)
-      if (parsed !== undefined) {
-        config.ttsBufferSentences = parsed
-      }
-      continue
-    }
-
-    if (arg === '--no-tts') {
+    if (arg === '--new') {
+      config.startFresh = true
+    } else if (arg === '--no-tts') {
       config.ttsEnabled = false
     } else if (arg === '--no-streaming-tts') {
       config.ttsStreamingEnabled = false
     } else if (!arg.startsWith('-')) {
       config.projectPath = arg
+    } else {
+      parseArgWithValue(arg, config)
     }
   }
 
   return config
+}
+
+function parseArgWithValue(arg: string, config: AppConfig): void {
+  const voice = getArgValue(arg, '--voice=')
+  if (voice !== undefined && isValidVoice(voice)) {
+    config.ttsVoice = voice
+    return
+  }
+
+  const ttsMode = getArgValue(arg, '--tts-mode=')
+  if (ttsMode !== undefined) {
+    if (ttsMode === 'generate' || ttsMode === 'serve') {
+      config.ttsMode = ttsMode
+    } else if (ttsMode === 'server') {
+      config.ttsMode = 'serve'
+    }
+    return
+  }
+
+  const serverUrl = getArgValue(arg, '--tts-server-url=')
+  if (serverUrl !== undefined) {
+    config.ttsServerUrl = serverUrl.trim()
+    if (config.ttsMode === 'generate') {
+      config.ttsMode = 'serve'
+    }
+    return
+  }
+
+  const speed = getArgValue(arg, '--tts-speed=')
+  if (speed !== undefined) {
+    const parsed = parsePositiveNumber(speed)
+    if (parsed !== undefined) {
+      config.ttsSpeed = parsed
+    }
+    return
+  }
+
+  const model = getArgValue(arg, '--model=')
+  if (model !== undefined) {
+    const fullModel = MODEL_ALIASES[model]
+    if (fullModel) {
+      config.model = fullModel
+    }
+    return
+  }
+
+  const bufferSentences = getArgValue(arg, '--tts-buffer-sentences=')
+  if (bufferSentences !== undefined) {
+    const parsed = parsePositiveInteger(bufferSentences)
+    if (parsed !== undefined) {
+      config.ttsBufferSentences = parsed
+    }
+  }
 }
 
 export { DEFAULT_CONFIG }

@@ -3,10 +3,30 @@ import { basename } from 'path'
 import { render } from 'ink'
 import { App } from './ui/App'
 import { parseCliArgs } from './config'
+import { loadSession } from './services/session'
 
 export { App } from './ui/App'
 export { parseCliArgs, DEFAULT_CONFIG } from './config'
 export type { AppConfig, Model, Voice } from './types'
+
+const MAX_CONTENT_WIDTH = 56
+
+function formatLine(label: string, value: string): string {
+  const prefix = `${label}: `
+  const available = Math.max(0, MAX_CONTENT_WIDTH - prefix.length)
+  if (value.length > available && available > 1) {
+    return `${prefix}\u2026${value.slice(value.length - (available - 1))}`
+  }
+  return `${prefix}${value.slice(0, available)}`
+}
+
+function padCenter(value: string, width: number): string {
+  if (value.length >= width) return value
+  const totalPad = width - value.length
+  const left = Math.floor(totalPad / 2)
+  const right = totalPad - left
+  return `${' '.repeat(left)}${value}${' '.repeat(right)}`
+}
 
 function showHelp(): void {
   console.info(`
@@ -21,6 +41,7 @@ Options:
   --tts-speed=<rate> TTS speed multiplier (default: 1.5)
   --tts-buffer-sentences=<count>  Sentences to buffer before playback (default: 1)
   --model=<model>    Model: haiku, sonnet, opus (default: haiku)
+  --new              Start fresh (ignore saved session)
   --no-tts           Disable text-to-speech
   --no-streaming-tts Disable streaming (batch mode)
   --help             Show this help message
@@ -38,42 +59,25 @@ Controls:
 `)
 }
 
-export function run(args: string[]): void {
+export async function run(args: string[]): Promise<void> {
   if (args.includes('--help') || args.includes('-h')) {
     showHelp()
     process.exit(0)
   }
 
   const config = parseCliArgs(args)
+  const initialSession = config.startFresh ? null : await loadSession(config.projectPath)
+  const modelLabel = initialSession?.model ?? config.model
   const ttsModeLabel = config.ttsMode === 'serve' ? 'server' : 'generate'
   const ttsLabel = config.ttsEnabled
     ? `${config.ttsVoice}, ${ttsModeLabel}, x${config.ttsSpeed}`
     : 'Disabled'
   const projectName = basename(config.projectPath) || config.projectPath
 
-  const MAX_CONTENT_WIDTH = 56
-
-  function formatLine(label: string, value: string): string {
-    const prefix = `${label}: `
-    const available = Math.max(0, MAX_CONTENT_WIDTH - prefix.length)
-    if (value.length > available && available > 1) {
-      return `${prefix}…${value.slice(value.length - (available - 1))}`
-    }
-    return `${prefix}${value.slice(0, available)}`
-  }
-
-  function padCenter(value: string, width: number): string {
-    if (value.length >= width) return value
-    const totalPad = width - value.length
-    const left = Math.floor(totalPad / 2)
-    const right = totalPad - left
-    return `${' '.repeat(left)}${value}${' '.repeat(right)}`
-  }
-
   const infoLines = [
     formatLine('Project', projectName),
     formatLine('Path', config.projectPath),
-    formatLine('Model', config.model),
+    formatLine('Model', modelLabel),
     formatLine('TTS', ttsLabel),
   ]
 
@@ -96,7 +100,7 @@ ${detailLines.join('\n')}
 ${bottomBorder}
 `)
 
-  render(React.createElement(App, { config }), {
+  render(React.createElement(App, { config, initialSession }), {
     patchConsole: true,
   })
 }

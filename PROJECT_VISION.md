@@ -103,6 +103,7 @@ src/
 - Streaming answer display
 - Optional streaming TTS
 - Model cycling during a conversation
+- Session persistence across restarts
 - Transcript viewer for full history
 - Interrupt handling (Esc / Ctrl+S)
 
