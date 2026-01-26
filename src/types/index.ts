@@ -63,6 +63,10 @@ export interface AppConfig {
   ttsEnabled: boolean
   ttsStreamingEnabled: boolean
   ttsBufferSentences: number
+  ttsClauseBoundaries: boolean
+  ttsMinChunkLength: number
+  ttsMaxWaitMs: number
+  ttsGraceWindowMs: number
   startFresh: boolean
 }
 
@@ -76,5 +80,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   ttsEnabled: true,
   ttsStreamingEnabled: true,
   ttsBufferSentences: 1,
+  ttsClauseBoundaries: false,
+  ttsMinChunkLength: 15,
+  ttsMaxWaitMs: 150,
+  ttsGraceWindowMs: 50,
   startFresh: false,
 }

@@ -34,6 +34,14 @@ function parsePositiveInteger(value: string): number | undefined {
   return undefined
 }
 
+function parseNonNegativeInteger(value: string): number | undefined {
+  const parsed = Number(value)
+  if (Number.isInteger(parsed) && parsed >= 0) {
+    return parsed
+  }
+  return undefined
+}
+
 export function parseCliArgs(args: string[]): AppConfig {
   const config = { ...DEFAULT_CONFIG }
 
@@ -44,6 +52,10 @@ export function parseCliArgs(args: string[]): AppConfig {
       config.ttsEnabled = false
     } else if (arg === '--no-streaming-tts') {
       config.ttsStreamingEnabled = false
+    } else if (arg === '--tts-clause-boundaries') {
+      config.ttsClauseBoundaries = true
+    } else if (arg === '--no-tts-clause-boundaries') {
+      config.ttsClauseBoundaries = false
     } else if (!arg.startsWith('-')) {
       config.projectPath = arg
     } else {
@@ -103,6 +115,33 @@ function parseArgWithValue(arg: string, config: AppConfig): void {
     const parsed = parsePositiveInteger(bufferSentences)
     if (parsed !== undefined) {
       config.ttsBufferSentences = parsed
+    }
+    return
+  }
+
+  const minChunkLength = getArgValue(arg, '--tts-min-chunk-length=')
+  if (minChunkLength !== undefined) {
+    const parsed = parseNonNegativeInteger(minChunkLength)
+    if (parsed !== undefined) {
+      config.ttsMinChunkLength = parsed
+    }
+    return
+  }
+
+  const maxWaitMs = getArgValue(arg, '--tts-max-wait-ms=')
+  if (maxWaitMs !== undefined) {
+    const parsed = parseNonNegativeInteger(maxWaitMs)
+    if (parsed !== undefined) {
+      config.ttsMaxWaitMs = parsed
+    }
+    return
+  }
+
+  const graceWindowMs = getArgValue(arg, '--tts-grace-window-ms=')
+  if (graceWindowMs !== undefined) {
+    const parsed = parseNonNegativeInteger(graceWindowMs)
+    if (parsed !== undefined) {
+      config.ttsGraceWindowMs = parsed
     }
   }
 }
