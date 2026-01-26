@@ -92,6 +92,7 @@ export function createStreamingSpeechController(
 ): StreamingSpeechController {
   let textBuffer = ''
   let processedOffset = 0
+  let lastCleanedText = ''
   let finalized = false
   let stopped = false
   let speakingStarted = false
@@ -127,10 +128,34 @@ export function createStreamingSpeechController(
     lastFlushAt = now
   }
 
-  function getPendingText(cleanedText: string): string {
+  function reconcileProcessedOffset(cleanedText: string): void {
+    if (!lastCleanedText) {
+      lastCleanedText = cleanedText
+      processedOffset = Math.min(processedOffset, cleanedText.length)
+      return
+    }
+
+    if (cleanedText !== lastCleanedText) {
+      const maxCheck = Math.min(processedOffset, cleanedText.length, lastCleanedText.length)
+      let index = 0
+
+      while (index < maxCheck && cleanedText[index] === lastCleanedText[index]) {
+        index += 1
+      }
+
+      if (processedOffset > index) {
+        processedOffset = index
+      }
+      lastCleanedText = cleanedText
+    }
+
     if (processedOffset > cleanedText.length) {
       processedOffset = cleanedText.length
     }
+  }
+
+  function getPendingText(cleanedText: string): string {
+    reconcileProcessedOffset(cleanedText)
     return cleanedText.slice(processedOffset)
   }
 
