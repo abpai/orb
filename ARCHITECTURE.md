@@ -8,11 +8,12 @@ vibe-claude is a voice-driven code explorer built with the Claude Agent SDK, Ink
 ┌─────────────────────────────────────────────────────────────────┐
 │                      Terminal UI (Ink)                          │
 ├─────────────────────────────────────────────────────────────────┤
-│  WelcomeSplash       ConversationPanel       InputPrompt        │
-│  (config display)    (Q&A + tool calls)      (user input)       │
+│  WelcomeSplash / OrbPanel / ActiveMessagePanel                  │
+│  CompletedEntry (history) + ToolTree (tool calls)               │
+│  InputPrompt (user input)                                       │
 │                                                                 │
-│  ResonanceBar        TTSErrorBanner                             │
-│  (status + wave)     (error notifications)                      │
+│  ResonanceBar (status + model)   TTSErrorBanner                 │
+│  TranscriptViewer (Ctrl+O)                                      │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -25,7 +26,7 @@ vibe-claude is a voice-driven code explorer built with the Claude Agent SDK, Ink
           ▼                   ▼                   ▼
     ┌──────────┐        ┌──────────┐        ┌──────────┐
     │   Glob   │        │   Read   │        │   Bash   │
-    │   Grep   │        │          │        │(filtered)│
+    │   Grep   │        │          │        │          │
     └──────────┘        └──────────┘        └──────────┘
                               │
                               ▼
@@ -51,17 +52,21 @@ src/
 ├── types/
 │   └── index.ts          # TypeScript types, constants, defaults
 ├── services/
-│   ├── claude-agent.ts   # Claude SDK wrapper with safety restrictions
+│   ├── claude-agent.ts   # Claude SDK wrapper
 │   ├── tts.ts            # Text-to-speech (batch mode)
 │   └── streaming-tts.ts  # Streaming TTS controller
 └── ui/
     ├── App.tsx           # Root component, state management
     ├── components/
-    │   ├── ConversationPanel.tsx  # Q&A history + tool calls
+    │   ├── ActiveMessagePanel.tsx # Active response panel
+    │   ├── CompletedEntry.tsx     # Completed Q&A entry
+    │   ├── ConversationPanel.tsx  # Legacy conversation layout
     │   ├── InputPrompt.tsx        # User input with cursor
-    │   ├── ResonanceBar.tsx       # Status with wave animation
+    │   ├── OrbPanel.tsx           # Animated orb panel
+    │   ├── ResonanceBar.tsx       # Status + model indicator
     │   ├── TTSErrorBanner.tsx     # Error notifications
-    │   └── WelcomeSplash.tsx      # Startup config display
+    │   ├── TranscriptViewer.tsx   # Full conversation view
+    │   └── WelcomeSplash.tsx      # Startup splash
     └── utils/
         └── markdown.ts   # Markdown → speech text conversion
 ```
@@ -74,7 +79,7 @@ src/
 2. **State: processing** → App disables input, shows "thinking" indicator
 3. **Claude Query** → `runAgent()` streams messages from Claude Agent SDK
 4. **Tool Execution** → Claude calls Glob/Read/Grep/Bash, results stream back
-5. **Assistant Text** → Text chunks stream to `ConversationPanel` and TTS
+5. **Assistant Text** → Text chunks stream to `ActiveMessagePanel` and TTS
 6. **State: processing_speaking** → Speech begins while Claude still processes
 7. **State: speaking** → Claude done, audio playback continues
 8. **State: idle** → Audio complete, ready for next question
@@ -92,36 +97,13 @@ The session ID enables multi-turn conversations where Claude remembers context.
 
 ### Claude Agent Integration (`src/services/claude-agent.ts`)
 
-**Tool Allowlist:**
+`runAgent()` wraps `@anthropic-ai/claude-agent-sdk` and streams:
 
-- `Glob` - Find files by pattern
-- `Read` - Read file contents
-- `Grep` - Search file contents with regex
-- `Bash` - Execute shell commands (heavily filtered)
+- **Assistant text** → appended to the active response
+- **Tool calls/results** → rendered in the tool tree
+- **Session ID** → cached for multi-turn continuity
 
-**Tool Blocklist:**
-
-- `Edit`, `Write`, `NotebookEdit`, `TodoWrite` - All write operations
-
-**Bash Command Filtering:**
-
-Three layers of protection:
-
-1. **Safe command allowlist** - 50+ read-only commands (ls, cat, grep, find, git status, etc.)
-2. **Destructive pattern blocklist** - rm, sudo, shell redirects, mkdir, chmod, mv, cp, touch, ln
-3. **Default deny** - Unknown commands are rejected
-
-```typescript
-// Example: allowed
-'ls -la' // ✓ First word in SAFE_READ_COMMANDS
-'git status' // ✓ Prefix matches SAFE_GIT_COMMANDS
-'grep -r "TODO"' // ✓ First word is 'grep'
-
-// Example: denied
-'rm -rf /' // ✗ Matches DESTRUCTIVE_PATTERNS
-'echo "hi" > file' // ✗ Shell redirect detected
-'npm install' // ✗ Not in safe list
-```
+The app passes `permissionMode` through to the SDK (default prompts). Tool execution and permissions are handled by the SDK, while this UI renders the progress and results.
 
 ### Terminal UI (`src/ui/`)
 
@@ -132,12 +114,13 @@ Built with **Ink** (React for terminals) and **@inkjs/ui** components.
 ```
 App
 ├── WelcomeSplash (shown once on startup)
-├── ConversationPanel
-│   └── HistoryEntry (for each Q&A pair)
+├── CompletedEntry (history via Static)
+│   └── EntryContent
 │       ├── Question box
-│       ├── Tool call tree (collapsible)
+│       ├── Tool call tree
 │       └── Answer box
-├── ResonanceBar (status + wave animation)
+├── ActiveMessagePanel (current question + streaming answer)
+├── ResonanceBar (status + model indicator)
 ├── TTSErrorBanner (conditional)
 └── InputPrompt (at bottom)
 ```
@@ -183,7 +166,6 @@ type AppState = 'idle' | 'processing' | 'processing_speaking' | 'speaking'
 interface AppConfig {
   projectPath: string // Working directory for agent
   permissionMode: 'default' // Permission handling mode
-  maxBudgetUsd?: number // Optional cost control
   model: Model // haiku | sonnet | opus
   ttsVoice: Voice // alba | marius | jean
   ttsMode: 'generate' | 'serve' // CLI vs server
@@ -203,7 +185,7 @@ vibe-claude [projectPath] [options]
 # Examples
 vibe-claude                           # cwd, defaults
 vibe-claude ~/projects/myapp          # specific path
-vibe-claude --model=sonnet --budget=1.00 --voice=marius
+vibe-claude --model=sonnet --voice=marius
 ```
 
 ## Error Handling
@@ -231,11 +213,11 @@ class TTSError extends Error {
 
 ## Extension Points
 
-### Adding New Tools
+### Adding or Changing Models
 
-1. Add to `ALLOWED_TOOLS` array in `claude-agent.ts`
-2. Tool will be available to Claude automatically
-3. For Bash variants, add to `SAFE_READ_COMMANDS` or `SAFE_GIT_COMMANDS`
+1. Update `MODELS` in `src/types/index.ts`
+2. Update `MODEL_ALIASES` in `src/config.ts` for CLI aliases
+3. Update UI labels in `ResonanceBar` if needed
 
 ### Custom TTS Providers
 

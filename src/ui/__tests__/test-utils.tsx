@@ -7,8 +7,7 @@
 
 import { mock } from 'bun:test'
 
-import type { ToolCall } from '../../types'
-import type { HistoryEntry } from '../components/ConversationPanel'
+import type { HistoryEntry, ToolCall } from '../../types'
 
 // Default terminal dimensions for consistent snapshots
 export const DEFAULT_TERMINAL_SIZE = { columns: 80, rows: 24 }

@@ -1,7 +1,7 @@
 import React from 'react'
 import { Box } from 'ink'
 
-import type { HistoryEntry } from './ConversationPanel'
+import type { HistoryEntry } from '../../types'
 import { EntryContent } from './shared/EntryContent'
 
 interface CompletedEntryProps {

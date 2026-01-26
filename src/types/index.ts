@@ -24,6 +24,14 @@ export interface ToolCall {
   result?: string
 }
 
+export interface HistoryEntry {
+  id: string
+  question: string
+  toolCalls: ToolCall[]
+  answer: string
+  error?: string | null
+}
+
 export const MODELS = [
   'claude-haiku-4-5-20251001',
   'claude-sonnet-4-5-20250929',

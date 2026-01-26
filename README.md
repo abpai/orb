@@ -1,16 +1,16 @@
 # vibe-claude
 
-Voice-driven code explorer powered by Claude Agent SDK. Ask questions about your codebase, hear detailed explanations read aloud.
+Voice-driven code explorer powered by the Claude Agent SDK. Ask questions about your codebase, see tool calls live, and optionally hear answers spoken aloud.
 
 ## Features
 
 - **Natural language queries** - Ask questions about your code in plain English
 - **Voice input** - Paste transcriptions from MacWhisper for hands-free interaction
-- **Text-to-speech** - Hear responses spoken aloud via pocket-tts
+- **Text-to-speech** - Hear responses spoken aloud via pocket-tts (server or generate mode)
 - **Streaming TTS** - Speech begins while Claude is still processing
-- **Read-only safety** - Claude can explore but not modify your code
+- **Model switching** - Cycle models during a conversation with Shift+Tab
 - **Session continuity** - Follow-up questions maintain conversation context
-- **Terminal UI** - Beautiful Ink-based interface with tool call visualization
+- **Terminal UI** - Ink-based interface with tool call visualization, orb animation, and transcript view
 
 ## Installation
 
@@ -40,14 +40,13 @@ vibe-claude
 vibe-claude /path/to/project
 
 # With options
-vibe-claude --model=sonnet --voice=marius --budget=1.00
+vibe-claude --model=sonnet --voice=marius
 ```
 
 ### Options
 
 | Option                           | Description                         | Default                 |
 | -------------------------------- | ----------------------------------- | ----------------------- |
-| `--budget=<amount>`              | Max budget in USD (e.g., `0.50`)    | none                    |
 | `--voice=<voice>`                | TTS voice: `alba`, `marius`, `jean` | `alba`                  |
 | `--tts-mode=<mode>`              | TTS mode: `generate`, `serve`       | `serve`                 |
 | `--tts-server-url=<url>`         | Pocket TTS server URL               | `http://localhost:8000` |
@@ -64,6 +63,7 @@ vibe-claude --model=sonnet --voice=marius --budget=1.00
 - Paste MacWhisper transcription with **Cmd+V**
 - Press **Esc** or **Ctrl+S** to stop speech
 - Press **Shift+Tab** to cycle models
+- Press **Ctrl+O** to open the transcript viewer
 - Press **Ctrl+C** to exit
 
 ## Requirements
@@ -115,7 +115,6 @@ vibe-claude --no-tts
 │ Project: my-app                                          │
 │ Path: /Users/dev/my-app                                  │
 │ Model: claude-haiku-4-5-20251001                         │
-│ Budget: $0.50                                            │
 │ TTS: alba, server, x1.5                                  │
 ╰──────────────────────────────────────────────────────────╯
 

@@ -1,6 +1,6 @@
 import React from 'react'
 import { Box, Text, useInput } from 'ink'
-import type { HistoryEntry } from './ConversationPanel'
+import type { HistoryEntry } from '../../types'
 import { MessageBox } from './shared/MessageBox'
 import { ToolTree } from './shared/ToolTree'
 import { stripMarkdown } from '../utils/markdown'

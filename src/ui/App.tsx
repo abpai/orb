@@ -12,6 +12,7 @@ import {
   TTSError,
   type AppConfig,
   type AppState,
+  type HistoryEntry,
   type Model,
   type TTSErrorType,
   type ViewMode,
@@ -19,7 +20,6 @@ import {
 import { ActiveMessagePanel } from './components/ActiveMessagePanel'
 import type { AnimationMode } from './components/AsciiOrb'
 import { CompletedEntry } from './components/CompletedEntry'
-import { type HistoryEntry } from './components/ConversationPanel'
 import { InputPrompt } from './components/InputPrompt'
 import { OrbPanel } from './components/OrbPanel'
 import { ResonanceBar } from './components/ResonanceBar'
