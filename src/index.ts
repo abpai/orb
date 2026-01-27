@@ -40,6 +40,10 @@ Options:
   --tts-server-url=<url>  Pocket TTS server URL (implies serve, default: http://localhost:8000)
   --tts-speed=<rate> TTS speed multiplier (default: 1.5)
   --tts-buffer-sentences=<count>  Sentences to buffer before playback (default: 1)
+  --tts-clause-boundaries  Enable comma/semicolon/colon split points
+  --tts-min-chunk-length=<count>  Minimum chars before soft flush (default: 15)
+  --tts-max-wait-ms=<ms>  Max latency before forcing a flush (default: 150)
+  --tts-grace-window-ms=<ms>  Extra wait when near a boundary (default: 50)
   --model=<model>    Model: haiku, sonnet, opus (default: haiku)
   --new              Start fresh (ignore saved session)
   --no-tts           Disable text-to-speech

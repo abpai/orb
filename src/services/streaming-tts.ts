@@ -3,7 +3,6 @@ import { join } from 'path'
 import { unlink } from 'fs/promises'
 import { TTSError, type AppConfig } from '../types'
 import {
-  splitIntoSentences,
   cleanTextForSpeech,
   generateAudio,
   playAudio,
@@ -31,16 +30,77 @@ interface QueuedAudio {
   sentence: string
 }
 
+const STRONG_BOUNDARY = /[.!?]+["')\]]*(?:\s|$)/g
+const SOFT_BOUNDARY = /[,;:](?:\s|$)/g
+
+function findLastMatchIndex(text: string, re: RegExp): number {
+  const flags = re.flags.includes('g') ? re.flags : `${re.flags}g`
+  const pattern = new RegExp(re.source, flags)
+  let lastIndex = -1
+
+  while (pattern.exec(text) !== null) {
+    lastIndex = pattern.lastIndex
+  }
+
+  return lastIndex
+}
+
+function findLastWhitespaceIndex(text: string): number {
+  const lastSpace = Math.max(text.lastIndexOf(' '), text.lastIndexOf('\t'), text.lastIndexOf('\n'))
+  return lastSpace >= 0 ? lastSpace + 1 : -1
+}
+
+function extractStrongChunks(text: string): { chunks: string[]; consumed: number } {
+  const chunks: string[] = []
+  const pattern = new RegExp(STRONG_BOUNDARY.source, STRONG_BOUNDARY.flags)
+  let lastIndex = 0
+
+  while (pattern.exec(text) !== null) {
+    const end = pattern.lastIndex
+    const slice = text.slice(lastIndex, end)
+    const trimmed = slice.trimEnd()
+    if (trimmed.trim()) {
+      chunks.push(trimmed)
+    }
+    lastIndex = end
+  }
+
+  return { chunks, consumed: lastIndex }
+}
+
+function extractChunkAtBoundary(
+  text: string,
+  boundary: number,
+  minLength: number,
+  forceFlush: boolean,
+): { chunk: string | null; consumed: number } {
+  if (boundary <= 0) return { chunk: null, consumed: 0 }
+
+  const trimmed = text.slice(0, boundary).trimEnd()
+  const contentLength = trimmed.trim().length
+
+  if (!forceFlush && minLength > 0 && contentLength < minLength) {
+    return { chunk: null, consumed: 0 }
+  }
+
+  return { chunk: contentLength > 0 ? trimmed : null, consumed: boundary }
+}
+
 export function createStreamingSpeechController(
   config: AppConfig,
   callbacks: StreamingSpeechCallbacks = {},
 ): StreamingSpeechController {
   let textBuffer = ''
-  let processedSentenceCount = 0
+  let processedOffset = 0
+  let lastCleanedText = ''
   let finalized = false
   let stopped = false
   let speakingStarted = false
   let completed = false
+  let lastFlushAt = Date.now()
+  let maxWaitTimeout: ReturnType<typeof setTimeout> | null = null
+  let graceTimeout: ReturnType<typeof setTimeout> | null = null
+  let pendingGrace = false
 
   const sentenceQueue: string[] = []
   const audioQueue: QueuedAudio[] = []
@@ -50,22 +110,170 @@ export function createStreamingSpeechController(
   let completionResolve: (() => void) | null = null
   let completionPromise: Promise<void> | null = null
 
-  function extractNewSentences(): void {
-    const cleanedText = cleanTextForSpeech(textBuffer)
-    const allSentences = splitIntoSentences(cleanedText)
+  function clearTimers(): void {
+    if (maxWaitTimeout) {
+      clearTimeout(maxWaitTimeout)
+      maxWaitTimeout = null
+    }
+    if (graceTimeout) {
+      clearTimeout(graceTimeout)
+      graceTimeout = null
+    }
+    pendingGrace = false
+  }
 
-    // If not finalized, don't extract the last sentence (might be incomplete)
-    const extractUpTo = finalized ? allSentences.length : Math.max(0, allSentences.length - 1)
-    const startIndex = Math.max(0, Math.min(processedSentenceCount, extractUpTo))
+  function enqueueChunk(chunk: string, now: number): void {
+    if (!chunk.trim()) return
+    sentenceQueue.push(chunk)
+    lastFlushAt = now
+  }
 
-    for (let i = startIndex; i < extractUpTo; i++) {
-      const sentence = allSentences[i]
-      if (sentence && sentence.trim()) {
-        sentenceQueue.push(sentence)
-      }
+  function reconcileProcessedOffset(cleanedText: string): void {
+    if (!lastCleanedText) {
+      lastCleanedText = cleanedText
+      processedOffset = Math.min(processedOffset, cleanedText.length)
+      return
     }
 
-    processedSentenceCount = extractUpTo
+    if (cleanedText !== lastCleanedText) {
+      const maxCheck = Math.min(processedOffset, cleanedText.length, lastCleanedText.length)
+      let index = 0
+
+      while (index < maxCheck && cleanedText[index] === lastCleanedText[index]) {
+        index += 1
+      }
+
+      if (processedOffset > index) {
+        processedOffset = index
+      }
+      lastCleanedText = cleanedText
+    }
+
+    if (processedOffset > cleanedText.length) {
+      processedOffset = cleanedText.length
+    }
+  }
+
+  function getPendingText(cleanedText: string): string {
+    reconcileProcessedOffset(cleanedText)
+    return cleanedText.slice(processedOffset)
+  }
+
+  function tryExtractAtBoundary(
+    cleanedText: string,
+    pending: string,
+    boundary: number,
+    minLength: number,
+    forceFlush: boolean,
+    now: number,
+  ): string {
+    const result = extractChunkAtBoundary(pending, boundary, minLength, forceFlush)
+    if (result.consumed > 0) {
+      if (result.chunk) enqueueChunk(result.chunk, now)
+      processedOffset += result.consumed
+      return getPendingText(cleanedText)
+    }
+    return pending
+  }
+
+  function extractChunksFromCleaned(
+    cleanedText: string,
+    options: { forceFlush: boolean; finalized: boolean; now: number },
+  ): string {
+    let pending = getPendingText(cleanedText)
+    if (!pending.trim()) return pending
+
+    const strong = extractStrongChunks(pending)
+    if (strong.chunks.length > 0) {
+      for (const chunk of strong.chunks) enqueueChunk(chunk, options.now)
+      processedOffset += strong.consumed
+      pending = getPendingText(cleanedText)
+    }
+
+    if (options.finalized) {
+      if (pending.trim()) enqueueChunk(pending.trimEnd(), options.now)
+      processedOffset = cleanedText.length
+      return ''
+    }
+
+    if (!pending.trim()) return pending
+
+    const { ttsMinChunkLength: minLength, ttsClauseBoundaries: allowClauses } = config
+
+    if (allowClauses) {
+      const softBoundary = findLastMatchIndex(pending, SOFT_BOUNDARY)
+      pending = tryExtractAtBoundary(
+        cleanedText,
+        pending,
+        softBoundary,
+        minLength,
+        options.forceFlush,
+        options.now,
+      )
+    }
+
+    if (!options.forceFlush || !pending.trim()) return pending
+
+    const wsBoundary = findLastWhitespaceIndex(pending)
+    pending = tryExtractAtBoundary(cleanedText, pending, wsBoundary, minLength, true, options.now)
+
+    if (pending.trim()) {
+      enqueueChunk(pending.trimEnd(), options.now)
+      processedOffset = cleanedText.length
+      return ''
+    }
+
+    return pending
+  }
+
+  function extractChunks(options: { forceFlush: boolean; finalized: boolean }): string {
+    const cleanedText = cleanTextForSpeech(textBuffer)
+    const now = Date.now()
+    return extractChunksFromCleaned(cleanedText, { ...options, now })
+  }
+
+  function shouldGrace(pending: string): boolean {
+    return /[\s.,!?;:]["')\]]?$/.test(pending)
+  }
+
+  function resetFlushTimers(pendingText: string): void {
+    clearTimers()
+    if (stopped || finalized) return
+    if (config.ttsMaxWaitMs <= 0) return
+    if (!pendingText.trim()) return
+
+    const elapsed = Date.now() - lastFlushAt
+    const delay = Math.max(config.ttsMaxWaitMs - elapsed, 0)
+    maxWaitTimeout = setTimeout(handleMaxWait, delay)
+  }
+
+  function handleMaxWait(): void {
+    if (stopped || finalized) return
+
+    const cleanedText = cleanTextForSpeech(textBuffer)
+    const pendingText = getPendingText(cleanedText)
+    if (!pendingText.trim()) {
+      return
+    }
+
+    if (config.ttsGraceWindowMs > 0 && shouldGrace(pendingText) && !pendingGrace) {
+      pendingGrace = true
+      graceTimeout = setTimeout(() => {
+        pendingGrace = false
+        const remaining = extractChunks({ forceFlush: true, finalized: false })
+        maybeStartGeneration()
+        resetFlushTimers(remaining)
+      }, config.ttsGraceWindowMs)
+      return
+    }
+
+    const remaining = extractChunksFromCleaned(cleanedText, {
+      forceFlush: true,
+      finalized: false,
+      now: Date.now(),
+    })
+    maybeStartGeneration()
+    resetFlushTimers(remaining)
   }
 
   async function processGenerationQueue(): Promise<void> {
@@ -156,24 +364,21 @@ export function createStreamingSpeechController(
     return isGenerating || isPlaying || sentenceQueue.length > 0 || audioQueue.length > 0
   }
 
-  function checkCompletion(): void {
-    if (!finalized || stopped || hasWorkRemaining() || completed) return
-
+  function markComplete(): void {
     completed = true
-    if (speakingStarted) {
-      callbacks.onSpeakingEnd?.()
-    }
+    if (speakingStarted) callbacks.onSpeakingEnd?.()
     completionResolve?.()
   }
 
-  function startProcessing(): void {
-    // Start if we have enough buffered sentences
-    const cleanedText = cleanTextForSpeech(textBuffer)
-    const allSentences = splitIntoSentences(cleanedText)
-    const completeSentences = finalized ? allSentences.length : Math.max(0, allSentences.length - 1)
+  function checkCompletion(): void {
+    if (finalized && !stopped && !hasWorkRemaining() && !completed) {
+      markComplete()
+    }
+  }
 
-    if (completeSentences >= config.ttsBufferSentences || finalized) {
-      extractNewSentences()
+  function maybeStartGeneration(): void {
+    if (stopped || isGenerating) return
+    if (sentenceQueue.length >= config.ttsBufferSentences || finalized) {
       processGenerationQueue()
     }
   }
@@ -182,20 +387,23 @@ export function createStreamingSpeechController(
     feedText(chunk: string): void {
       if (stopped || !config.ttsEnabled) return
       textBuffer += chunk
-      startProcessing()
+      const remaining = extractChunks({ forceFlush: false, finalized: false })
+      maybeStartGeneration()
+      resetFlushTimers(remaining)
     },
 
     finalize(): void {
       if (stopped || finalized) return
       finalized = true
+      clearTimers()
 
       if (!config.ttsEnabled) {
         completionResolve?.()
         return
       }
 
-      // Extract any remaining sentences
-      extractNewSentences()
+      // Extract any remaining chunks
+      extractChunks({ forceFlush: true, finalized: true })
       processGenerationQueue()
       checkCompletion()
     },
@@ -203,6 +411,7 @@ export function createStreamingSpeechController(
     stop(): void {
       stopped = true
       completed = true
+      clearTimers()
       sentenceQueue.length = 0
 
       // Clear audio queue and cleanup files
@@ -219,26 +428,17 @@ export function createStreamingSpeechController(
     },
 
     waitForCompletion(): Promise<void> {
-      if (completionPromise) {
-        return completionPromise
-      }
+      if (completionPromise) return completionPromise
 
       completionPromise = new Promise((resolve) => {
         completionResolve = resolve
 
         const alreadyDone = stopped || completed || !config.ttsEnabled
-        if (alreadyDone) {
-          resolve()
-          return
-        }
+        const justFinished = finalized && !hasWorkRemaining()
 
-        const justCompleted = finalized && !hasWorkRemaining()
-        if (justCompleted) {
-          completed = true
-          if (speakingStarted) {
-            callbacks.onSpeakingEnd?.()
-          }
-          resolve()
+        if (alreadyDone || justFinished) {
+          if (justFinished) markComplete()
+          else resolve()
         }
       })
 
