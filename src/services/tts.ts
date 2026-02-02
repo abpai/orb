@@ -1,13 +1,12 @@
-import { spawn } from 'child_process'
-import { Buffer } from 'buffer'
-import { URL } from 'url'
-import { tmpdir } from 'os'
-import { join } from 'path'
-import { unlink, writeFile } from 'fs/promises'
+import { Buffer } from 'node:buffer'
+import { URL } from 'node:url'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { unlink } from 'node:fs/promises'
 import { TTSError, type AppConfig, type TTSErrorType } from '../types'
 import { cleanTextForSpeech } from '../ui/utils/markdown'
 
-// Re-export for backward compatibility with existing consumers
+// Re-export for streaming-tts and other consumers
 export { cleanTextForSpeech }
 
 const DEFAULT_SERVER_URL = 'http://localhost:8000'
@@ -27,7 +26,7 @@ export function categorizeTTSError(err: unknown, context: 'generate' | 'playback
   return new TTSError(error.message, type, error)
 }
 
-let currentPlayProcess: ReturnType<typeof spawn> | null = null
+let currentPlayProcess: Bun.Subprocess | null = null
 let playbackStoppedManually = false
 
 export function wasPlaybackStopped(): boolean {
@@ -95,7 +94,7 @@ async function readErrorMessage(response: { text: () => Promise<string> }): Prom
 }
 
 function isValidSpeed(speed: number | undefined): speed is number {
-  return speed !== undefined && Number.isFinite(speed) && speed > 0
+  return typeof speed === 'number' && Number.isFinite(speed) && speed > 0
 }
 
 async function requestServerSpeech(
@@ -137,25 +136,16 @@ async function runGenerateCommand(
   speed: number,
   outputPath: string,
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const args = ['generate', '--text', text, '--voice', voice, '-o', outputPath]
-    if (isValidSpeed(speed)) {
-      args.push('--speed', String(speed))
-    }
-    const proc = spawn('pocket-tts', args)
+  const cmd = ['pocket-tts', 'generate', '--text', text, '--voice', voice, '-o', outputPath]
+  if (isValidSpeed(speed)) {
+    cmd.push('--speed', String(speed))
+  }
 
-    proc.on('close', (code) => {
-      if (code === 0) {
-        resolve()
-      } else {
-        reject(new TTSError(`pocket-tts exited with code ${code}`, 'generation_failed'))
-      }
-    })
-
-    proc.on('error', (err) => {
-      reject(categorizeTTSError(err, 'generate'))
-    })
-  })
+  const proc = Bun.spawn(cmd, { stdout: 'ignore', stderr: 'ignore' })
+  const exitCode = await proc.exited
+  if (exitCode !== 0) {
+    throw new TTSError(`pocket-tts exited with code ${exitCode}`, 'generation_failed')
+  }
 }
 
 export async function generateAudio(
@@ -167,7 +157,7 @@ export async function generateAudio(
     if (config.ttsMode === 'serve') {
       const serverUrl = normalizeServerUrl(config.ttsServerUrl ?? DEFAULT_SERVER_URL)
       const audio = await requestServerSpeech(serverUrl, text, config.ttsVoice, config.ttsSpeed)
-      await writeFile(outputPath, audio)
+      await Bun.write(outputPath, audio)
       return
     }
 
@@ -178,29 +168,32 @@ export async function generateAudio(
 }
 
 export async function playAudio(path: string, speed?: number): Promise<void> {
-  return new Promise((resolve, reject) => {
+  resetPlaybackStoppedFlag()
+  const args = isValidSpeed(speed) ? [path, '-r', String(speed)] : [path]
+
+  try {
+    currentPlayProcess = Bun.spawn(['afplay', ...args], { stdout: 'ignore', stderr: 'ignore' })
+  } catch (err) {
+    currentPlayProcess = null
+    throw categorizeTTSError(err, 'playback')
+  }
+
+  const proc = currentPlayProcess
+  if (!proc) {
+    throw new TTSError('Audio playback failed to start', 'audio_playback')
+  }
+
+  const exitCode = await proc.exited
+  currentPlayProcess = null
+
+  const wasManualStop = playbackStoppedManually
+  if (wasManualStop) {
     resetPlaybackStoppedFlag()
-    const args = isValidSpeed(speed) ? [path, '-r', String(speed)] : [path]
-    currentPlayProcess = spawn('afplay', args)
+  }
 
-    currentPlayProcess.on('close', (code) => {
-      currentPlayProcess = null
-      const success = code === 0 || playbackStoppedManually
-      if (playbackStoppedManually) {
-        resetPlaybackStoppedFlag()
-      }
-      if (success) {
-        resolve()
-      } else {
-        reject(new TTSError(`afplay exited with code ${code}`, 'audio_playback'))
-      }
-    })
-
-    currentPlayProcess.on('error', (err) => {
-      currentPlayProcess = null
-      reject(categorizeTTSError(err, 'playback'))
-    })
-  })
+  if (exitCode !== 0 && !wasManualStop) {
+    throw new TTSError(`afplay exited with code ${exitCode}`, 'audio_playback')
+  }
 }
 
 export function stopSpeaking(): void {
@@ -247,18 +240,5 @@ export async function speak(text: string, config: AppConfig): Promise<void> {
 
   if (spokenCount === 0 && firstError) {
     throw firstError
-  }
-}
-
-export async function speakQuick(text: string, config: AppConfig): Promise<void> {
-  if (!config.ttsEnabled) return
-
-  const audioPath = join(tmpdir(), `tts-quick-${Date.now()}.wav`)
-
-  try {
-    await generateAudio(text, config, audioPath)
-    await playAudio(audioPath, config.ttsSpeed)
-  } finally {
-    await unlink(audioPath).catch(() => {})
   }
 }

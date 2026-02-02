@@ -1,6 +1,6 @@
-import { tmpdir } from 'os'
-import { join } from 'path'
-import { unlink } from 'fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { unlink } from 'node:fs/promises'
 import { TTSError, type AppConfig } from '../types'
 import {
   cleanTextForSpeech,
@@ -77,13 +77,14 @@ function extractChunkAtBoundary(
   if (boundary <= 0) return { chunk: null, consumed: 0 }
 
   const trimmed = text.slice(0, boundary).trimEnd()
-  const contentLength = trimmed.trim().length
+  const hasContent = trimmed.trim().length > 0
+  const meetsMinLength = forceFlush || minLength <= 0 || trimmed.trim().length >= minLength
 
-  if (!forceFlush && minLength > 0 && contentLength < minLength) {
+  if (!hasContent || !meetsMinLength) {
     return { chunk: null, consumed: 0 }
   }
 
-  return { chunk: contentLength > 0 ? trimmed : null, consumed: boundary }
+  return { chunk: trimmed, consumed: boundary }
 }
 
 export function createStreamingSpeechController(
@@ -214,13 +215,16 @@ export function createStreamingSpeechController(
 
     if (!options.forceFlush || !pending.trim()) return pending
 
+    const maxChunkLength = 200
     const wsBoundary = findLastWhitespaceIndex(pending)
-    pending = tryExtractAtBoundary(cleanedText, pending, wsBoundary, minLength, true, options.now)
-
-    if (pending.trim()) {
-      enqueueChunk(pending.trimEnd(), options.now)
-      processedOffset = cleanedText.length
-      return ''
+    if (wsBoundary > 0) {
+      pending = tryExtractAtBoundary(cleanedText, pending, wsBoundary, minLength, true, options.now)
+    } else if (pending.length > 0) {
+      // No whitespace boundary found - emit at max length or flush all if shorter
+      const emitLength = Math.min(pending.length, maxChunkLength)
+      enqueueChunk(pending.slice(0, emitLength), options.now)
+      processedOffset += emitLength
+      pending = pending.slice(emitLength)
     }
 
     return pending
@@ -267,11 +271,15 @@ export function createStreamingSpeechController(
       return
     }
 
+    const lastFlush = lastFlushAt
     const remaining = extractChunksFromCleaned(cleanedText, {
       forceFlush: true,
       finalized: false,
       now: Date.now(),
     })
+    if (remaining.trim() && lastFlushAt === lastFlush) {
+      lastFlushAt = Date.now()
+    }
     maybeStartGeneration()
     resetFlushTimers(remaining)
   }
