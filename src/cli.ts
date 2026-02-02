@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { run } from './index.js'
 
 run(process.argv.slice(2)).catch((err) => {
