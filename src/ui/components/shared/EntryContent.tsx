@@ -13,6 +13,7 @@ export interface EntryContentProps {
   answer: string
   error?: string | null
   maxAnswerLines?: number
+  assistantLabel?: string
 }
 
 export const EntryContent = React.memo(function EntryContent({
@@ -21,6 +22,7 @@ export const EntryContent = React.memo(function EntryContent({
   answer,
   error,
   maxAnswerLines,
+  assistantLabel = 'claude',
 }: EntryContentProps) {
   const hasResponse = answer || error
   const rawContent = answer ? stripMarkdown(answer) : `Error: ${error}`
@@ -45,7 +47,14 @@ export const EntryContent = React.memo(function EntryContent({
         </Box>
       )}
 
-      {hasResponse && <MessageBox role="claude" content={displayContent} isError={!!error} />}
+      {hasResponse && (
+        <MessageBox
+          role="assistant"
+          label={assistantLabel}
+          content={displayContent}
+          isError={!!error}
+        />
+      )}
     </>
   )
 })

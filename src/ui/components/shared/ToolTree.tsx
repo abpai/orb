@@ -8,6 +8,9 @@ export const TOOL_INPUT_KEYS: Record<string, string> = {
   Read: 'file_path',
   Bash: 'command',
   LS: 'path',
+  bash: 'command',
+  readFile: 'path',
+  writeFile: 'path',
 }
 
 export function truncate(text: string, maxLen: number, mode: 'start' | 'end' = 'end'): string {
@@ -20,7 +23,12 @@ export function truncate(text: string, maxLen: number, mode: 'start' | 'end' = '
 
 export function formatToolInput(name: string, input: Record<string, unknown>): string {
   const key = TOOL_INPUT_KEYS[name] ?? Object.keys(input)[0]
-  if (!key || input[key] === undefined) return ''
+  if (!key || input[key] === undefined) {
+    if ('value' in input && input.value !== undefined) {
+      return truncate(String(input.value), 40, 'end')
+    }
+    return ''
+  }
 
   const value = String(input[key])
   const truncateMode = name === 'Read' ? 'start' : 'end'

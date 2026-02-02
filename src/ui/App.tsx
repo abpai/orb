@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Static, useInput } from 'ink'
 
-import { runAgent } from '../services/claude-agent'
+import { runAgent } from '../services/agent'
 import { saveSession } from '../services/session'
 import {
   createStreamingSpeechController,
@@ -9,12 +9,14 @@ import {
 } from '../services/streaming-tts'
 import { speak, stopSpeaking } from '../services/tts'
 import {
-  MODELS,
+  ANTHROPIC_MODELS,
   TTSError,
   type AppConfig,
   type AppState,
+  type AgentSession,
+  type AnthropicModel,
   type HistoryEntry,
-  type Model,
+  type LlmModelId,
   type SavedSession,
   type TTSErrorType,
   type ViewMode,
@@ -60,12 +62,18 @@ const MIN_SPLIT_LAYOUT_WIDTH = ORB_PANEL_WIDTH + MIN_CONVERSATION_WIDTH + 3
 const MIN_ORB_DISPLAY_WIDTH = MIN_SPLIT_LAYOUT_WIDTH + 20 // ~95 chars - hide orb in narrow split layouts
 
 export function App({ config, initialSession }: AppProps) {
+  const sessionMatchesProvider = initialSession?.llmProvider === config.llmProvider
+  const initialHistory = initialSession?.history ?? []
+  const initialModel =
+    (sessionMatchesProvider ? initialSession?.llmModel : undefined) ?? config.llmModel
+  const initialAgentSession = sessionMatchesProvider ? initialSession?.agentSession : undefined
+
   const [state, setState] = useState<AppState>('idle')
   const [viewMode, setViewMode] = useState<ViewMode>('main')
-  const [history, setHistory] = useState<HistoryEntry[]>(initialSession?.history ?? [])
+  const [history, setHistory] = useState<HistoryEntry[]>(initialHistory)
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null)
   const [ttsError, setTtsError] = useState<{ type: TTSErrorType; message: string } | null>(null)
-  const [activeModel, setActiveModel] = useState<Model>(initialSession?.model ?? config.model)
+  const [activeModel, setActiveModel] = useState<LlmModelId>(initialModel)
 
   const { columns: terminalWidth, rows: terminalRows } = useTerminalSize()
   const useStackedLayout = terminalWidth < MIN_SPLIT_LAYOUT_WIDTH
@@ -79,8 +87,8 @@ export function App({ config, initialSession }: AppProps) {
     [terminalRows],
   )
 
-  const sessionIdRef = useRef<string | undefined>(initialSession?.sessionId || undefined)
-  const activeConfig = useMemo(() => ({ ...config, model: activeModel }), [config, activeModel])
+  const agentSessionRef = useRef<AgentSession | undefined>(initialAgentSession)
+  const activeConfig = useMemo(() => ({ ...config, llmModel: activeModel }), [config, activeModel])
 
   const abortControllerRef = useRef<AbortController | null>(null)
   const runIdRef = useRef(0)
@@ -95,12 +103,13 @@ export function App({ config, initialSession }: AppProps) {
   const pendingSaveRef = useRef(false)
 
   const persistSession = useCallback(
-    async (modelOverride?: Model, historyOverride?: HistoryEntry[]) => {
+    async (modelOverride?: LlmModelId, historyOverride?: HistoryEntry[]) => {
       const payload: SavedSession = {
-        version: 1,
+        version: 2,
         projectPath: config.projectPath,
-        sessionId: sessionIdRef.current ?? '',
-        model: modelOverride ?? activeModel,
+        llmProvider: config.llmProvider,
+        llmModel: modelOverride ?? activeModel,
+        agentSession: agentSessionRef.current,
         lastModified: new Date().toISOString(),
         history: historyOverride ?? history,
       }
@@ -111,7 +120,7 @@ export function App({ config, initialSession }: AppProps) {
         console.warn('Failed to save session:', err)
       }
     },
-    [activeModel, config.projectPath, history],
+    [activeModel, config.llmProvider, config.projectPath, history],
   )
 
   const updateEntry = useCallback((entryId: string, updates: Partial<HistoryEntry>) => {
@@ -145,12 +154,13 @@ export function App({ config, initialSession }: AppProps) {
   }, [])
 
   const cycleModel = useCallback(() => {
-    const currentIndex = MODELS.indexOf(activeModel)
-    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % MODELS.length
-    const nextModel = MODELS[nextIndex] ?? MODELS[0]
+    if (activeConfig.llmProvider !== 'anthropic') return
+    const currentIndex = ANTHROPIC_MODELS.indexOf(activeModel as AnthropicModel)
+    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % ANTHROPIC_MODELS.length
+    const nextModel = ANTHROPIC_MODELS[nextIndex] ?? ANTHROPIC_MODELS[0]
     setActiveModel(nextModel)
     void persistSession(nextModel, history)
-  }, [activeModel, history, persistSession])
+  }, [activeConfig.llmProvider, activeModel, history, persistSession])
 
   useEffect(() => {
     if (!pendingSaveRef.current) return
@@ -165,8 +175,10 @@ export function App({ config, initialSession }: AppProps) {
       if (!pendingTextRef.current) return
 
       const next = streamedTextRef.current
+      const pending = pendingTextRef.current
       pendingTextRef.current = ''
       clearFlushTimeout()
+      speechControllerRef.current?.feedText(pending)
       updateEntry(entryId, { answer: next })
     },
     [clearFlushTimeout, updateEntry],
@@ -208,7 +220,8 @@ export function App({ config, initialSession }: AppProps) {
     { isActive: state === 'idle' && viewMode === 'main' },
   )
 
-  const canCycleModel = state === 'idle' && viewMode === 'main'
+  const canCycleModel =
+    state === 'idle' && viewMode === 'main' && activeConfig.llmProvider === 'anthropic'
 
   // Handle Shift+Tab to cycle models (only when idle and in main view)
   useInput(
@@ -289,8 +302,6 @@ export function App({ config, initialSession }: AppProps) {
         streamedTextRef.current += text
         pendingTextRef.current += text
 
-        controller?.feedText(text)
-
         if (!flushTimeoutRef.current) {
           flushTimeoutRef.current = setTimeout(() => {
             flushPendingText(entryId, runId)
@@ -299,14 +310,15 @@ export function App({ config, initialSession }: AppProps) {
       }
 
       try {
-        const result = await runAgent(
+        const { text: result, session } = await runAgent(
           trimmed,
           activeConfig,
-          sessionIdRef.current,
+          agentSessionRef.current,
           {
             onSessionId: (id) => {
               if (runId !== runIdRef.current) return
-              sessionIdRef.current = id
+              if (activeConfig.llmProvider !== 'anthropic') return
+              agentSessionRef.current = { provider: 'anthropic', sessionId: id }
             },
             onToolCall: (call) => {
               if (runId !== runIdRef.current) return
@@ -332,6 +344,10 @@ export function App({ config, initialSession }: AppProps) {
         )
 
         if (runId !== runIdRef.current) return
+
+        if (session) {
+          agentSessionRef.current = session
+        }
 
         if (pendingTextRef.current) {
           flushPendingText(entryId, runId)
@@ -403,6 +419,7 @@ export function App({ config, initialSession }: AppProps) {
   )
 
   const animationMode = useMemo(() => mapStateToAnimationMode(state), [state])
+  const assistantLabel = activeConfig.llmProvider === 'anthropic' ? 'claude' : 'openai'
 
   function renderConversationLayout(): React.ReactNode {
     // Welcome screen - centered orb
@@ -415,6 +432,7 @@ export function App({ config, initialSession }: AppProps) {
             status={state}
             hasHistory={false}
             model={activeModel}
+            provider={activeConfig.llmProvider}
             canCycleModel={canCycleModel}
           />
         </>
@@ -425,12 +443,17 @@ export function App({ config, initialSession }: AppProps) {
     if (useStackedLayout) {
       return (
         <Box flexDirection="column">
-          <ActiveMessagePanel entry={activeEntry} maxAnswerLines={maxAnswerLines} />
+          <ActiveMessagePanel
+            entry={activeEntry}
+            maxAnswerLines={maxAnswerLines}
+            assistantLabel={assistantLabel}
+          />
           <InputPrompt onSubmit={handleSubmit} disabled={false} />
           <ResonanceBar
             status={state}
             hasHistory={true}
             model={activeModel}
+            provider={activeConfig.llmProvider}
             canCycleModel={canCycleModel}
           />
         </Box>
@@ -447,12 +470,17 @@ export function App({ config, initialSession }: AppProps) {
           marginLeft={showOrb ? 1 : 0}
           minWidth={MIN_CONVERSATION_WIDTH}
         >
-          <ActiveMessagePanel entry={activeEntry} maxAnswerLines={maxAnswerLines} />
+          <ActiveMessagePanel
+            entry={activeEntry}
+            maxAnswerLines={maxAnswerLines}
+            assistantLabel={assistantLabel}
+          />
           <InputPrompt onSubmit={handleSubmit} disabled={false} />
           <ResonanceBar
             status={state}
             hasHistory={true}
             model={activeModel}
+            provider={activeConfig.llmProvider}
             canCycleModel={canCycleModel}
           />
         </Box>
@@ -464,14 +492,18 @@ export function App({ config, initialSession }: AppProps) {
     <>
       {ttsError && <TTSErrorBanner type={ttsError.type} message={ttsError.message} />}
       <Static items={completedEntries}>
-        {(entry) => <CompletedEntry key={entry.id} entry={entry} />}
+        {(entry) => <CompletedEntry key={entry.id} entry={entry} assistantLabel={assistantLabel} />}
       </Static>
       {renderConversationLayout()}
     </>
   )
 
   const transcriptContent = (
-    <TranscriptViewer entries={history} onClose={() => setViewMode('main')} />
+    <TranscriptViewer
+      entries={history}
+      onClose={() => setViewMode('main')}
+      assistantLabel={assistantLabel}
+    />
   )
 
   return (

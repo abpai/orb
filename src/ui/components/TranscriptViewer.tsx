@@ -8,14 +8,20 @@ import { stripMarkdown } from '../utils/markdown'
 interface TranscriptViewerProps {
   entries: HistoryEntry[]
   onClose: () => void
+  assistantLabel?: string
 }
 
 interface EntryDisplayProps {
   entry: HistoryEntry
   index: number
+  assistantLabel?: string
 }
 
-const EntryDisplay = React.memo(function EntryDisplay({ entry, index }: EntryDisplayProps) {
+const EntryDisplay = React.memo(function EntryDisplay({
+  entry,
+  index,
+  assistantLabel = 'claude',
+}: EntryDisplayProps) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box>
@@ -30,7 +36,8 @@ const EntryDisplay = React.memo(function EntryDisplay({ entry, index }: EntryDis
 
         {(entry.answer || entry.error) && (
           <MessageBox
-            role="claude"
+            role="assistant"
+            label={assistantLabel}
             content={entry.answer ? stripMarkdown(entry.answer) : `Error: ${entry.error}`}
             isError={!!entry.error}
           />
@@ -40,7 +47,7 @@ const EntryDisplay = React.memo(function EntryDisplay({ entry, index }: EntryDis
   )
 })
 
-export function TranscriptViewer({ entries, onClose }: TranscriptViewerProps) {
+export function TranscriptViewer({ entries, onClose, assistantLabel }: TranscriptViewerProps) {
   useInput((input, key) => {
     if (key.escape || (key.ctrl && input === 'o')) {
       onClose()
@@ -73,7 +80,7 @@ export function TranscriptViewer({ entries, onClose }: TranscriptViewerProps) {
       </Text>
       <Box flexDirection="column" marginTop={1}>
         {entries.map((entry, i) => (
-          <EntryDisplay key={entry.id} entry={entry} index={i} />
+          <EntryDisplay key={entry.id} entry={entry} index={i} assistantLabel={assistantLabel} />
         ))}
       </Box>
     </Box>
