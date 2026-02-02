@@ -1,10 +1,10 @@
 {
-  "name": "@andypai/vibe-claude",
+  "name": "@andypai/orb",
   "version": "0.1.0",
-  "description": "Voice-driven code explorer using Claude Agent SDK",
+  "description": "Voice-driven code explorer for your terminal",
   "type": "module",
   "bin": {
-    "vibe-claude": "./dist/cli.js"
+    "orb": "./dist/cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -18,22 +18,25 @@
     "dist"
   ],
   "engines": {
-    "node": ">=20",
     "bun": ">=1.1.0"
   },
   "packageManager": "bun@1.3.3",
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/andypai/vibe-claude.git"
+    "url": "https://github.com/andypai/orb.git"
   },
   "keywords": [
-    "claude",
     "ai",
     "voice",
     "tts",
     "code-explorer",
     "cli",
-    "terminal"
+    "terminal",
+    "openai",
+    "anthropic"
   ],
   "author": "Andy Pai",
   "license": "MIT",
@@ -49,9 +52,13 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.21",
     "@anthropic-ai/claude-agent-sdk": "0.2.14",
     "@inkjs/ui": "2.0.0",
+    "ai": "^6.0.57",
+    "bash-tool": "^1.3.9",
     "ink": "6.6.0",
+    "just-bash": "^2.7.0",
     "react": "19.2.3"
   },
   "devDependencies": {
