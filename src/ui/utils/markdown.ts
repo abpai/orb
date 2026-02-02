@@ -61,6 +61,7 @@ function replaceDelimited(
     result += input.slice(cursor, start) + replacement
 
     if (end === -1) {
+      result += input.slice(searchFrom)
       break
     }
 
