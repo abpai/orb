@@ -2,7 +2,7 @@ export type AppState = 'idle' | 'processing' | 'processing_speaking' | 'speaking
 
 export type ViewMode = 'main' | 'transcript'
 
-export type TTSErrorType = 'command_not_found' | 'audio_playback' | 'generation_failed' | 'unknown'
+export type TTSErrorType = 'command_not_found' | 'audio_playback' | 'generation_failed'
 
 export class TTSError extends Error {
   constructor(
@@ -32,16 +32,9 @@ export interface HistoryEntry {
   error?: string | null
 }
 
-export interface SavedSession {
-  version: 1
-  projectPath: string
-  sessionId: string
-  model: Model
-  lastModified: string
-  history: HistoryEntry[]
-}
+export type LlmProvider = 'anthropic' | 'openai'
 
-export const MODELS = [
+export const ANTHROPIC_MODELS = [
   'claude-haiku-4-5-20251001',
   'claude-sonnet-4-5-20250929',
   'claude-opus-4-20250514',
@@ -49,13 +42,38 @@ export const MODELS = [
 
 export const VOICES = ['alba', 'marius', 'jean'] as const
 
-export type Model = (typeof MODELS)[number]
+export type AnthropicModel = (typeof ANTHROPIC_MODELS)[number]
+export type LlmModelId = string
 export type Voice = (typeof VOICES)[number]
+
+export interface OpenAiMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export type AgentSession =
+  | { provider: 'anthropic'; sessionId: string }
+  | { provider: 'openai'; messages: OpenAiMessage[] }
+
+export interface SavedSession {
+  version: 2
+  projectPath: string
+  llmProvider: LlmProvider
+  llmModel: LlmModelId
+  agentSession?: AgentSession
+  lastModified: string
+  history: HistoryEntry[]
+}
 
 export interface AppConfig {
   projectPath: string
   permissionMode: 'default' | 'acceptEdits'
-  model: Model
+  llmProvider: LlmProvider
+  llmModel: LlmModelId
+  openaiApiKey?: string
+  openaiLogin: boolean
+  openaiDeviceLogin: boolean
+  openaiApi: 'responses' | 'chat'
   ttsVoice: Voice
   ttsMode: 'generate' | 'serve'
   ttsServerUrl?: string
@@ -73,7 +91,11 @@ export interface AppConfig {
 export const DEFAULT_CONFIG: AppConfig = {
   projectPath: process.cwd(),
   permissionMode: 'default',
-  model: 'claude-haiku-4-5-20251001',
+  llmProvider: 'anthropic',
+  llmModel: 'claude-haiku-4-5-20251001',
+  openaiLogin: false,
+  openaiDeviceLogin: false,
+  openaiApi: 'responses',
   ttsVoice: 'alba',
   ttsMode: 'serve',
   ttsSpeed: 1.5,
