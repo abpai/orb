@@ -1,35 +1,15 @@
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk'
-import type { AppConfig, ToolCall } from '../types'
+import type { AgentSession, AppConfig, ToolCall } from '../../types'
+import { VOICE_SYSTEM_PROMPT, type AgentCallbacks, type AgentRunResult } from './types'
 
-// Voice-aware system prompt for TTS-friendly responses
-const VOICE_SYSTEM_PROMPT = `You are a helpful coding assistant responding via voice.
-
-Guidelines for voice responses:
-- Keep responses concise: 2-4 sentences for simple questions, up to a paragraph for complex topics
-- Use conversational, natural language that sounds good when spoken aloud
-- Avoid code blocks, markdown formatting, bullet lists, and technical symbols
-- When discussing code, describe it verbally rather than showing syntax
-- End with a follow-up question or offer to elaborate if the topic warrants it
-- If a question requires showing code, briefly explain what you would write and ask if they'd like details
-
-Remember: Your response will be read aloud, so optimize for listening, not reading.`
-
-export interface AgentCallbacks {
-  onToolCall?: (call: ToolCall) => void
-  onToolResult?: (index: number, result: string) => void
-  onToolError?: (index: number, error: string) => void
-  onAssistantText?: (text: string) => void
-  onSessionId?: (sessionId: string) => void
-}
-
-export async function runAgent(
+export async function runAnthropicAgent(
   prompt: string,
   config: AppConfig,
-  sessionId: string | undefined,
+  session: AgentSession | undefined,
   callbacks: AgentCallbacks,
   abortController?: AbortController,
-): Promise<string> {
-  let activeSessionId = sessionId
+): Promise<AgentRunResult> {
+  let activeSessionId = session?.provider === 'anthropic' ? session.sessionId : undefined
   let assistantText = ''
   let finalResult = ''
   let toolIndex = 0
@@ -39,7 +19,7 @@ export async function runAgent(
     prompt,
     options: {
       cwd: config.projectPath,
-      model: config.model,
+      model: config.llmModel,
       maxTurns: 10,
       resume: activeSessionId,
       permissionMode: config.permissionMode === 'acceptEdits' ? 'bypassPermissions' : 'default',
@@ -91,17 +71,14 @@ export async function runAgent(
       const blocks = getContentBlocks(typed.message)
       for (const block of blocks) {
         if (!isToolResultBlock(block)) continue
+
         const toolUseId = block.tool_use_id ?? block.id
-        const resultText = extractToolResultText(block.content)
-        const isError = !!block.is_error
         const index = toolUseId ? toolIdToIndex.get(toolUseId) : undefined
-        if (index !== undefined) {
-          if (isError) {
-            callbacks.onToolError?.(index, resultText)
-          } else {
-            callbacks.onToolResult?.(index, resultText)
-          }
-        }
+        if (index === undefined) continue
+
+        const resultText = extractToolResultText(block.content)
+        const callback = block.is_error ? callbacks.onToolError : callbacks.onToolResult
+        callback?.(index, resultText)
       }
     }
 
@@ -110,7 +87,10 @@ export async function runAgent(
     }
   }
 
-  return finalResult || assistantText
+  return {
+    text: finalResult || assistantText,
+    session: activeSessionId ? { provider: 'anthropic', sessionId: activeSessionId } : undefined,
+  }
 }
 
 type TextBlock = { type: 'text'; text: string }
@@ -138,23 +118,20 @@ function getContentBlocks(message: unknown): unknown[] {
   return Array.isArray(content) ? content : []
 }
 
+function hasType(value: unknown, type: string): value is { type: string } {
+  return value !== null && typeof value === 'object' && (value as { type?: unknown }).type === type
+}
+
 function isTextBlock(value: unknown): value is TextBlock {
-  return typeof value === 'object' && value !== null && (value as TextBlock).type === 'text'
+  return hasType(value, 'text')
 }
 
 function isToolUseBlock(value: unknown): value is ToolUseBlock {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    (value as ToolUseBlock).type === 'tool_use' &&
-    typeof (value as ToolUseBlock).name === 'string'
-  )
+  return hasType(value, 'tool_use') && typeof (value as ToolUseBlock).name === 'string'
 }
 
 function isToolResultBlock(value: unknown): value is ToolResultBlock {
-  return (
-    typeof value === 'object' && value !== null && (value as ToolResultBlock).type === 'tool_result'
-  )
+  return hasType(value, 'tool_result')
 }
 
 function extractToolResultText(content: unknown): string {
