@@ -3,10 +3,10 @@ import path from 'node:path'
 import os from 'node:os'
 import crypto from 'node:crypto'
 
-import type { SavedSession } from '../types'
+import type { AgentSession, AnthropicModel, LlmProvider, SavedSession } from '../types'
 
-const SESSION_VERSION = 1
-const SESSION_DIR = path.join('.vibe-claude', 'sessions')
+const SESSION_VERSION = 2
+const SESSION_DIR = path.join('.orb', 'sessions')
 const MAX_SESSION_AGE_DAYS = 30
 
 function isFileNotFoundError(err: unknown): boolean {
@@ -33,17 +33,67 @@ export function getSessionPath(projectPath: string): string {
   return path.join(getSessionDir(), `${base}-${hash}.json`)
 }
 
-function isSavedSession(value: unknown): value is SavedSession {
+interface SavedSessionV1 {
+  version: 1
+  projectPath: string
+  sessionId: string
+  model: AnthropicModel
+  lastModified: string
+  history: SavedSession['history']
+}
+
+function isSavedSessionV1(value: unknown): value is SavedSessionV1 {
   if (!value || typeof value !== 'object') return false
-  const session = value as SavedSession
+  const session = value as SavedSessionV1
   return (
-    session.version === SESSION_VERSION &&
+    session.version === 1 &&
     typeof session.projectPath === 'string' &&
     typeof session.sessionId === 'string' &&
     typeof session.model === 'string' &&
     typeof session.lastModified === 'string' &&
     Array.isArray(session.history)
   )
+}
+
+function isSavedSessionV2(value: unknown): value is SavedSession {
+  if (!value || typeof value !== 'object') return false
+  const session = value as SavedSession
+  return (
+    session.version === SESSION_VERSION &&
+    typeof session.projectPath === 'string' &&
+    typeof session.llmProvider === 'string' &&
+    typeof session.llmModel === 'string' &&
+    typeof session.lastModified === 'string' &&
+    Array.isArray(session.history)
+  )
+}
+
+function normalizeSessionProvider(provider: string): LlmProvider | undefined {
+  if (provider === 'anthropic' || provider === 'openai') return provider
+  return undefined
+}
+
+function isValidOpenAiMessage(msg: unknown): boolean {
+  if (!msg || typeof msg !== 'object') return false
+  const typed = msg as { role?: string; content?: string }
+  const hasValidRole = typed.role === 'user' || typed.role === 'assistant'
+  const hasValidContent = typeof typed.content === 'string' && typed.content.length > 0
+  return hasValidRole && hasValidContent
+}
+
+function normalizeAgentSession(session?: AgentSession): AgentSession | undefined {
+  if (!session) return undefined
+
+  switch (session.provider) {
+    case 'anthropic':
+      return session.sessionId?.length > 0 ? session : undefined
+    case 'openai':
+      return Array.isArray(session.messages) && session.messages.every(isValidOpenAiMessage)
+        ? session
+        : undefined
+    default:
+      return undefined
+  }
 }
 
 export async function cleanupOldSessions(maxAgeDays = MAX_SESSION_AGE_DAYS): Promise<void> {
@@ -80,24 +130,46 @@ export async function cleanupOldSessions(maxAgeDays = MAX_SESSION_AGE_DAYS): Pro
 export async function loadSession(projectPath: string): Promise<SavedSession | null> {
   const resolved = path.resolve(projectPath)
   const sessionPath = getSessionPath(resolved)
+  const sessionFile = Bun.file(sessionPath)
 
   void cleanupOldSessions().catch((err) => {
     console.warn('Failed to clean up old sessions:', err)
   })
 
   try {
-    const raw = await fs.readFile(sessionPath, 'utf8')
-    const parsed = JSON.parse(raw) as unknown
-    if (!isSavedSession(parsed)) {
-      console.warn('Invalid session format, starting fresh.')
-      return null
+    if (!(await sessionFile.exists())) return null
+    const parsed = (await sessionFile.json()) as unknown
+    if (isSavedSessionV2(parsed)) {
+      if (path.resolve(parsed.projectPath) !== resolved) {
+        return null
+      }
+      return {
+        ...parsed,
+        llmProvider: normalizeSessionProvider(parsed.llmProvider) ?? 'anthropic',
+        agentSession: normalizeAgentSession(parsed.agentSession),
+      }
     }
 
-    if (path.resolve(parsed.projectPath) !== resolved) {
-      return null
+    if (isSavedSessionV1(parsed)) {
+      if (path.resolve(parsed.projectPath) !== resolved) {
+        return null
+      }
+      const migrated: SavedSession = {
+        version: SESSION_VERSION,
+        projectPath: parsed.projectPath,
+        llmProvider: 'anthropic',
+        llmModel: parsed.model,
+        agentSession: parsed.sessionId
+          ? { provider: 'anthropic', sessionId: parsed.sessionId }
+          : undefined,
+        lastModified: parsed.lastModified,
+        history: parsed.history,
+      }
+      return migrated
     }
 
-    return parsed
+    console.warn('Invalid session format, starting fresh.')
+    return null
   } catch (err) {
     if (isFileNotFoundError(err)) return null
     console.warn('Failed to load session, starting fresh:', err)
@@ -116,10 +188,12 @@ export async function saveSession(session: SavedSession): Promise<void> {
     ...session,
     version: SESSION_VERSION,
     projectPath: resolved,
+    llmProvider: normalizeSessionProvider(session.llmProvider) ?? 'anthropic',
+    agentSession: normalizeAgentSession(session.agentSession),
     lastModified: new Date().toISOString(),
   }
 
   const tempPath = `${sessionPath}.${process.pid}.${Date.now()}.tmp`
-  await fs.writeFile(tempPath, JSON.stringify(payload, null, 2), 'utf8')
+  await Bun.write(tempPath, JSON.stringify(payload, null, 2))
   await fs.rename(tempPath, sessionPath)
 }
