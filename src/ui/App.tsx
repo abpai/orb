@@ -1,22 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Box, Static, useInput } from 'ink'
+import React, { useMemo, useState } from 'react'
+import { Box, Static } from 'ink'
 
-import { createPipelineTask, type PipelineTask } from '../pipeline/task'
-import { createTerminalTextTransport } from '../pipeline/transports/terminal-text'
-import type { Transport } from '../pipeline/transports/types'
-import { saveSession } from '../services/session'
-import {
-  ANTHROPIC_MODELS,
-  type AppConfig,
-  type AppState,
-  type AgentSession,
-  type AnthropicModel,
-  type HistoryEntry,
-  type LlmModelId,
-  type SavedSession,
-  type TTSErrorType,
-  type ViewMode,
-} from '../types'
+import { type AppConfig, type AppState, type SavedSession, type ViewMode } from '../types'
 import { ActiveMessagePanel } from './components/ActiveMessagePanel'
 import type { AnimationMode } from './components/AsciiOrb'
 import { CompletedEntry } from './components/CompletedEntry'
@@ -26,6 +11,9 @@ import { ResonanceBar } from './components/ResonanceBar'
 import { TranscriptViewer } from './components/TranscriptViewer'
 import { TTSErrorBanner } from './components/TTSErrorBanner'
 import { WelcomeSplash } from './components/WelcomeSplash'
+import { useConversation } from './hooks/useConversation'
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
+import { usePipeline } from './hooks/usePipeline'
 import { useTerminalSize } from './hooks/useTerminalSize'
 
 interface AppProps {
@@ -55,20 +43,25 @@ export function isInputDisabled(state: AppState): boolean {
 }
 
 export function App({ config, initialSession }: AppProps) {
-  const sessionMatchesProvider = initialSession?.llmProvider === config.llmProvider
-  const initialHistory = initialSession?.history ?? []
-  const initialModel =
-    (sessionMatchesProvider ? initialSession?.llmModel : undefined) ?? config.llmModel
-  const initialAgentSession = sessionMatchesProvider ? initialSession?.agentSession : undefined
-
-  // ── State ──
-
-  const [state, setState] = useState<AppState>('idle')
   const [viewMode, setViewMode] = useState<ViewMode>('main')
-  const [history, setHistory] = useState<HistoryEntry[]>(initialHistory)
-  const [activeEntryId, setActiveEntryId] = useState<string | null>(null)
-  const [ttsError, setTtsError] = useState<{ type: TTSErrorType; message: string } | null>(null)
-  const [activeModel, setActiveModel] = useState<LlmModelId>(initialModel)
+  const [state, setState] = useState<AppState>('idle')
+
+  const conversation = useConversation({
+    config,
+    initialSession,
+    taskState: state,
+  })
+
+  const { cancel, submit } = usePipeline({
+    config,
+    activeModel: conversation.activeModel,
+    initialModel: conversation.initialModel,
+    initialSession: conversation.initialAgentSession,
+    onFrame: conversation.handleFrame,
+    onRunComplete: conversation.handleRunComplete,
+    onStateChange: setState,
+    startEntry: conversation.startEntry,
+  })
 
   // ── Layout ──
 
@@ -82,242 +75,37 @@ export function App({ config, initialSession }: AppProps) {
     [terminalRows],
   )
 
-  // ── Pipeline infrastructure ──
-
-  const agentSessionRef = useRef<AgentSession | undefined>(initialAgentSession)
-  const activeEntryIdRef = useRef<string | null>(null)
-  const pendingSaveRef = useRef(false)
-
-  const activeConfig = useMemo(() => ({ ...config, llmModel: activeModel }), [config, activeModel])
-
-  // Create task and transport once (stable references)
-  const { task, transport } = useMemo(() => {
-    const t = createTerminalTextTransport()
-    const tk = createPipelineTask({
-      appConfig: { ...config, llmModel: initialModel },
-      session: initialAgentSession,
-      transport: t,
-    })
-    return { task: tk, transport: t }
-  }, []) as { task: PipelineTask; transport: Transport }
-
-  // Sync config changes to the task
-  useEffect(() => {
-    task.updateConfig(activeConfig)
-  }, [task, activeConfig])
-
-  // Subscribe to task state changes
-  useEffect(() => {
-    return task.onStateChange(setState)
-  }, [task])
-
-  // Subscribe to transport outbound frames for history updates
-  useEffect(() => {
-    return transport.onOutbound((frame) => {
-      const entryId = activeEntryIdRef.current
-      if (!entryId) return
-
-      switch (frame.kind) {
-        case 'agent-text-delta':
-          setHistory((prev) =>
-            prev.map((e) => (e.id === entryId ? { ...e, answer: frame.accumulatedText } : e)),
-          )
-          break
-
-        case 'agent-text-complete':
-          setHistory((prev) =>
-            prev.map((e) => (e.id === entryId ? { ...e, answer: frame.text } : e)),
-          )
-          break
-
-        case 'tool-call-start':
-          setHistory((prev) =>
-            prev.map((e) =>
-              e.id === entryId ? { ...e, toolCalls: [...e.toolCalls, frame.toolCall] } : e,
-            ),
-          )
-          break
-
-        case 'tool-call-result':
-          setHistory((prev) =>
-            prev.map((e) => {
-              if (e.id !== entryId) return e
-              return {
-                ...e,
-                toolCalls: e.toolCalls.map((c) =>
-                  c.index === frame.toolIndex
-                    ? { ...c, status: frame.status, result: frame.result }
-                    : c,
-                ),
-              }
-            }),
-          )
-          break
-
-        case 'agent-error':
-          setHistory((prev) =>
-            prev.map((e) => (e.id === entryId ? { ...e, error: frame.error.message } : e)),
-          )
-          break
-
-        case 'tts-error':
-          setTtsError({ type: frame.errorType, message: frame.message })
-          break
-      }
-    })
-  }, [transport])
-
-  // ── Session persistence ──
-
-  const persistSession = useCallback(
-    async (modelOverride?: LlmModelId, historyOverride?: HistoryEntry[]) => {
-      const payload: SavedSession = {
-        version: 2,
-        projectPath: config.projectPath,
-        llmProvider: config.llmProvider,
-        llmModel: modelOverride ?? activeModel,
-        agentSession: agentSessionRef.current,
-        lastModified: new Date().toISOString(),
-        history: historyOverride ?? history,
-      }
-
-      try {
-        await saveSession(payload)
-      } catch (err) {
-        console.warn('Failed to save session:', err)
-      }
-    },
-    [activeModel, config.llmProvider, config.projectPath, history],
-  )
-
-  useEffect(() => {
-    if (!pendingSaveRef.current) return
-    if (state !== 'idle') return
-    pendingSaveRef.current = false
-    void persistSession()
-  }, [history, persistSession, state])
-
-  // ── Actions ──
-
-  const handleCancel = useCallback(() => {
-    task.cancel()
-  }, [task])
-
-  const handleSubmit = useCallback(
-    async (query: string) => {
-      const trimmed = query.trim()
-      if (!trimmed) return
-
-      const entryId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-      activeEntryIdRef.current = entryId
-      setActiveEntryId(entryId)
-      setTtsError(null)
-
-      setHistory((prev) => [
-        ...prev,
-        { id: entryId, question: trimmed, toolCalls: [], answer: '', error: null },
-      ])
-
-      const result = await task.run(trimmed, entryId)
-
-      if (!result.cancelled) {
-        // Update session ref for persistence
-        if (result.session) {
-          agentSessionRef.current = result.session
-        }
-        pendingSaveRef.current = true
-      }
-    },
-    [task],
-  )
-
-  const cycleModel = useCallback(() => {
-    if (activeConfig.llmProvider !== 'anthropic') return
-    const currentIndex = ANTHROPIC_MODELS.indexOf(activeModel as AnthropicModel)
-    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % ANTHROPIC_MODELS.length
-    const nextModel = ANTHROPIC_MODELS[nextIndex] ?? ANTHROPIC_MODELS[0]
-    setActiveModel(nextModel)
-    // Sync to task immediately so the next run uses the new model
-    task.updateConfig({ ...config, llmModel: nextModel })
-    void persistSession(nextModel, history)
-  }, [activeConfig.llmProvider, activeModel, config, history, persistSession, task])
-
-  // ── Keyboard handlers ──
-
-  // Interrupt via Esc or Ctrl+S
-  useInput(
-    (input, key) => {
-      if (key.escape || (key.ctrl && input === 's')) {
-        handleCancel()
-      }
-    },
-    { isActive: viewMode === 'main' && state !== 'idle' },
-  )
-
-  // Ctrl+O to toggle transcript viewer
-  useInput(
-    (input, key) => {
-      if (key.ctrl && input === 'o') {
-        setViewMode('transcript')
-      }
-    },
-    { isActive: state === 'idle' && viewMode === 'main' },
-  )
-
   const canCycleModel =
-    state === 'idle' && viewMode === 'main' && activeConfig.llmProvider === 'anthropic'
+    state === 'idle' && viewMode === 'main' && config.llmProvider === 'anthropic'
 
-  // Shift+Tab to cycle models
-  useInput(
-    (input, key) => {
-      const isShiftTab =
-        (key.shift && key.tab) || input === '\u001b[Z' || (key.shift && input === '\t')
-      if (isShiftTab) {
-        cycleModel()
-      }
-    },
-    { isActive: canCycleModel },
-  )
-
-  // Ctrl+C to exit
-  useInput(
-    (input, key) => {
-      if (key.ctrl && input === 'c') {
-        process.exit(0)
-      }
-    },
-    { isActive: true },
-  )
+  useKeyboardShortcuts({
+    canCycleModel,
+    onCancel: cancel,
+    onCycleModel: conversation.cycleModel,
+    onOpenTranscript: () => setViewMode('transcript'),
+    state,
+    viewMode,
+  })
 
   // ── Derived state ──
 
-  const activeEntry = useMemo(
-    () => (activeEntryId ? (history.find((e) => e.id === activeEntryId) ?? null) : null),
-    [activeEntryId, history],
-  )
-
-  const completedEntries = useMemo(
-    () => history.filter((e) => e.id !== activeEntryId),
-    [activeEntryId, history],
-  )
-
   const animationMode = useMemo(() => mapStateToAnimationMode(state), [state])
-  const assistantLabel = activeConfig.llmProvider === 'anthropic' ? 'claude' : 'openai'
+  const assistantLabel = config.llmProvider === 'anthropic' ? 'claude' : 'openai'
   const inputDisabled = isInputDisabled(state)
 
   // ── Rendering ──
 
   function renderConversationLayout(): React.ReactNode {
-    if (history.length === 0) {
+    if (conversation.history.length === 0) {
       return (
         <>
           <WelcomeSplash animationMode={animationMode} />
-          <InputPrompt onSubmit={handleSubmit} disabled={inputDisabled} />
+          <InputPrompt onSubmit={submit} disabled={inputDisabled} />
           <ResonanceBar
             status={state}
             hasHistory={false}
-            model={activeModel}
-            provider={activeConfig.llmProvider}
+            model={conversation.activeModel}
+            provider={config.llmProvider}
             canCycleModel={canCycleModel}
           />
         </>
@@ -328,16 +116,16 @@ export function App({ config, initialSession }: AppProps) {
       return (
         <Box flexDirection="column">
           <ActiveMessagePanel
-            entry={activeEntry}
+            entry={conversation.activeEntry}
             maxAnswerLines={maxAnswerLines}
             assistantLabel={assistantLabel}
           />
-          <InputPrompt onSubmit={handleSubmit} disabled={inputDisabled} />
+          <InputPrompt onSubmit={submit} disabled={inputDisabled} />
           <ResonanceBar
             status={state}
             hasHistory={true}
-            model={activeModel}
-            provider={activeConfig.llmProvider}
+            model={conversation.activeModel}
+            provider={config.llmProvider}
             canCycleModel={canCycleModel}
           />
         </Box>
@@ -354,16 +142,16 @@ export function App({ config, initialSession }: AppProps) {
           minWidth={MIN_CONVERSATION_WIDTH}
         >
           <ActiveMessagePanel
-            entry={activeEntry}
+            entry={conversation.activeEntry}
             maxAnswerLines={maxAnswerLines}
             assistantLabel={assistantLabel}
           />
-          <InputPrompt onSubmit={handleSubmit} disabled={inputDisabled} />
+          <InputPrompt onSubmit={submit} disabled={inputDisabled} />
           <ResonanceBar
             status={state}
             hasHistory={true}
-            model={activeModel}
-            provider={activeConfig.llmProvider}
+            model={conversation.activeModel}
+            provider={config.llmProvider}
             canCycleModel={canCycleModel}
           />
         </Box>
@@ -373,8 +161,10 @@ export function App({ config, initialSession }: AppProps) {
 
   const mainContent = (
     <>
-      {ttsError && <TTSErrorBanner type={ttsError.type} message={ttsError.message} />}
-      <Static items={completedEntries}>
+      {conversation.ttsError && (
+        <TTSErrorBanner type={conversation.ttsError.type} message={conversation.ttsError.message} />
+      )}
+      <Static items={conversation.completedEntries}>
         {(entry) => <CompletedEntry key={entry.id} entry={entry} assistantLabel={assistantLabel} />}
       </Static>
       {renderConversationLayout()}
@@ -383,7 +173,7 @@ export function App({ config, initialSession }: AppProps) {
 
   const transcriptContent = (
     <TranscriptViewer
-      entries={history}
+      entries={conversation.history}
       onClose={() => setViewMode('main')}
       assistantLabel={assistantLabel}
     />

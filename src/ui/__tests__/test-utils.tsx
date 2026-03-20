@@ -1,48 +1,10 @@
 /**
  * Test utilities for Ink component testing with ink-testing-library.
  *
- * Provides mocks for hooks that depend on terminal state or animation timing,
- * plus fixtures for commonly used types.
+ * Provides fixtures plus snapshot normalization helpers.
  */
-
-import { mock } from 'bun:test'
 
 import type { HistoryEntry, ToolCall } from '../../types'
-
-// Default terminal dimensions for consistent snapshots
-export const DEFAULT_TERMINAL_SIZE = { columns: 80, rows: 24 }
-
-/**
- * Mock useTerminalSize to return consistent dimensions.
- * Call this before importing components that use the hook.
- */
-export function mockTerminalSize(size = DEFAULT_TERMINAL_SIZE) {
-  mock.module('../hooks/useTerminalSize', () => ({
-    useTerminalSize: () => size,
-  }))
-}
-
-/**
- * Mock useAnimationFrame to return a static frame count.
- * This ensures animated components produce deterministic snapshots.
- */
-export function mockAnimationFrame(frame = 0) {
-  mock.module('../hooks/useAnimationFrame', () => ({
-    useAnimationFrame: () => frame,
-  }))
-}
-
-/**
- * Setup all standard mocks for UI testing.
- * Call this in beforeEach() or at the top of test files.
- */
-export function setupTestMocks(options?: {
-  terminalSize?: { columns: number; rows: number }
-  frame?: number
-}) {
-  mockTerminalSize(options?.terminalSize ?? DEFAULT_TERMINAL_SIZE)
-  mockAnimationFrame(options?.frame ?? 0)
-}
 
 /**
  * Normalize Ink output for snapshots across terminal environments.

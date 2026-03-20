@@ -1,5 +1,4 @@
 import { describe, expect, it, mock } from 'bun:test'
-import React from 'react'
 import { render } from 'ink-testing-library'
 
 import { normalizeFrame } from '../../__tests__/test-utils'

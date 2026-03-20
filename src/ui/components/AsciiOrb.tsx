@@ -1,4 +1,4 @@
-import React, { memo, useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import { Box, Text } from 'ink'
 
 import { useAnimationFrame } from '../hooks/useAnimationFrame'
