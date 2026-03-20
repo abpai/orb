@@ -46,14 +46,12 @@ export type AnthropicModel = (typeof ANTHROPIC_MODELS)[number]
 export type LlmModelId = string
 export type Voice = (typeof VOICES)[number]
 
-export interface OpenAiMessage {
-  role: 'user' | 'assistant'
-  content: string
+export interface OpenAiSession {
+  provider: 'openai'
+  previousResponseId: string
 }
 
-export type AgentSession =
-  | { provider: 'anthropic'; sessionId: string }
-  | { provider: 'openai'; messages: OpenAiMessage[] }
+export type AgentSession = { provider: 'anthropic'; sessionId: string } | OpenAiSession
 
 export interface SavedSession {
   version: 2
@@ -67,13 +65,9 @@ export interface SavedSession {
 
 export interface AppConfig {
   projectPath: string
-  permissionMode: 'default' | 'acceptEdits'
   llmProvider: LlmProvider
   llmModel: LlmModelId
   openaiApiKey?: string
-  openaiLogin: boolean
-  openaiDeviceLogin: boolean
-  openaiApi: 'responses' | 'chat'
   ttsVoice: Voice
   ttsMode: 'generate' | 'serve'
   ttsServerUrl?: string
@@ -90,12 +84,8 @@ export interface AppConfig {
 
 export const DEFAULT_CONFIG: AppConfig = {
   projectPath: process.cwd(),
-  permissionMode: 'default',
   llmProvider: 'anthropic',
   llmModel: 'claude-haiku-4-5-20251001',
-  openaiLogin: false,
-  openaiDeviceLogin: false,
-  openaiApi: 'responses',
   ttsVoice: 'alba',
   ttsMode: 'serve',
   ttsSpeed: 1.5,

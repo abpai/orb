@@ -3,7 +3,13 @@ import path from 'node:path'
 import os from 'node:os'
 import crypto from 'node:crypto'
 
-import type { AgentSession, AnthropicModel, LlmProvider, SavedSession } from '../types'
+import type {
+  AgentSession,
+  AnthropicModel,
+  LlmProvider,
+  OpenAiSession,
+  SavedSession,
+} from '../types'
 
 const SESSION_VERSION = 2
 const SESSION_DIR = path.join('.orb', 'sessions')
@@ -73,12 +79,14 @@ function normalizeSessionProvider(provider: string): LlmProvider | undefined {
   return undefined
 }
 
-function isValidOpenAiMessage(msg: unknown): boolean {
-  if (!msg || typeof msg !== 'object') return false
-  const typed = msg as { role?: string; content?: string }
-  const hasValidRole = typed.role === 'user' || typed.role === 'assistant'
-  const hasValidContent = typeof typed.content === 'string' && typed.content.length > 0
-  return hasValidRole && hasValidContent
+function isValidOpenAiSession(value: unknown): value is OpenAiSession {
+  if (!value || typeof value !== 'object') return false
+  const session = value as Partial<OpenAiSession>
+  return (
+    session.provider === 'openai' &&
+    typeof session.previousResponseId === 'string' &&
+    session.previousResponseId.trim().length > 0
+  )
 }
 
 function normalizeAgentSession(session?: AgentSession): AgentSession | undefined {
@@ -88,15 +96,13 @@ function normalizeAgentSession(session?: AgentSession): AgentSession | undefined
     case 'anthropic':
       return session.sessionId?.length > 0 ? session : undefined
     case 'openai':
-      return Array.isArray(session.messages) && session.messages.every(isValidOpenAiMessage)
-        ? session
-        : undefined
+      return isValidOpenAiSession(session) ? session : undefined
     default:
       return undefined
   }
 }
 
-export async function cleanupOldSessions(maxAgeDays = MAX_SESSION_AGE_DAYS): Promise<void> {
+async function cleanupOldSessions(maxAgeDays = MAX_SESSION_AGE_DAYS): Promise<void> {
   const sessionDir = getSessionDir()
   const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000
 
@@ -137,7 +143,6 @@ export async function loadSession(projectPath: string): Promise<SavedSession | n
   })
 
   try {
-    if (!(await sessionFile.exists())) return null
     const parsed = (await sessionFile.json()) as unknown
     if (isSavedSessionV2(parsed)) {
       if (path.resolve(parsed.projectPath) !== resolved) {

@@ -1,9 +1,9 @@
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { DEFAULT_MODEL_BY_PROVIDER } from '../config'
 import type { AppConfig, LlmProvider } from '../types'
-import { getOpenAiApiKey, readOpenAiOAuthToken } from './openai-auth'
+import { getOpenAiApiKey } from './openai-auth'
 
-type SmartProviderSource = 'claude-oauth' | 'openai-oauth' | 'openai-api-key' | 'anthropic-api-key'
+type SmartProviderSource = 'claude-oauth' | 'openai-api-key' | 'anthropic-api-key'
 
 type ClaudeAuthState = {
   hasOAuth: boolean
@@ -38,7 +38,6 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
 async function detectClaudeAuth(config: AppConfig): Promise<ClaudeAuthState> {
   const abortController = new AbortController()
   const prompt = EMPTY_PROMPT
-  const permissionMode = config.permissionMode === 'acceptEdits' ? 'bypassPermissions' : 'default'
   const queryInstance = query({
     prompt,
     options: {
@@ -46,7 +45,7 @@ async function detectClaudeAuth(config: AppConfig): Promise<ClaudeAuthState> {
       model: DEFAULT_MODEL_BY_PROVIDER.anthropic,
       maxTurns: 1,
       persistSession: false,
-      permissionMode,
+      permissionMode: 'default',
       abortController,
       stderr: () => {},
     },
@@ -73,13 +72,9 @@ export async function resolveSmartProvider(
   config: AppConfig,
 ): Promise<{ provider: LlmProvider; source: SmartProviderSource } | null> {
   const claudeAuth = await detectClaudeAuth(config)
+
   if (claudeAuth.hasOAuth) {
     return { provider: 'anthropic', source: 'claude-oauth' }
-  }
-
-  const openAiOAuth = await readOpenAiOAuthToken()
-  if (openAiOAuth) {
-    return { provider: 'openai', source: 'openai-oauth' }
   }
 
   const openAiApiKey = getOpenAiApiKey(config)

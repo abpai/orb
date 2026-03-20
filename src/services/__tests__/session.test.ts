@@ -30,10 +30,7 @@ describe('session persistence', () => {
       llmModel: 'gpt-4o',
       agentSession: {
         provider: 'openai',
-        messages: [
-          { role: 'user', content: 'hello' },
-          { role: 'assistant', content: 'hi' },
-        ],
+        previousResponseId: 'resp_123',
       },
       lastModified: new Date().toISOString(),
       history: [{ id: 'entry-1', question: 'hello', toolCalls: [], answer: 'hi', error: null }],
@@ -80,5 +77,36 @@ describe('session persistence', () => {
       provider: 'anthropic',
       sessionId: 'claude-session-123',
     })
+  })
+
+  it('drops invalid OpenAI sessions with blank response ids', async () => {
+    tempProjectRoot = await mkdtemp(path.join(tmpdir(), 'orb-project-'))
+    cleanupPaths.add(tempProjectRoot)
+    const projectPath = path.join(tempProjectRoot, 'openai-project')
+    await mkdir(projectPath, { recursive: true })
+
+    const sessionPath = getSessionPath(projectPath)
+    cleanupPaths.add(sessionPath)
+    await mkdir(path.dirname(sessionPath), { recursive: true })
+    await Bun.write(
+      sessionPath,
+      JSON.stringify({
+        version: 2,
+        projectPath,
+        llmProvider: 'openai',
+        llmModel: 'gpt-4o',
+        agentSession: {
+          provider: 'openai',
+          previousResponseId: '',
+        },
+        lastModified: '2026-03-01T00:00:00.000Z',
+        history: [],
+      }),
+    )
+
+    const loaded = await loadSession(projectPath)
+
+    expect(loaded).not.toBeNull()
+    expect(loaded?.agentSession).toBeUndefined()
   })
 })

@@ -3,6 +3,8 @@ import { basename } from 'node:path'
 import { render } from 'ink'
 import { App } from './ui/App'
 import { DEFAULT_MODEL_BY_PROVIDER, parseCliArgs } from './config'
+import type { ExplicitFlags } from './config'
+import type { AppConfig } from './types'
 import { resolveSmartProvider } from './services/provider-defaults'
 import { loadSession } from './services/session'
 
@@ -36,110 +38,43 @@ function padCenter(value: string, width: number): string {
   return `${' '.repeat(left)}${value}${' '.repeat(right)}`
 }
 
-function showHelp(): void {
-  console.info(`
-orb - Voice-Driven Code Explorer
-
-Usage: orb [projectPath] [options]
-
-Options:
-  --provider=<provider>  LLM provider: anthropic|claude, openai|gpt (alias: --llm-provider)
-  --voice=<voice>    TTS voice: alba, marius, jean (default: alba)
-  --tts-mode=<mode>  TTS mode: generate, serve (default: serve)
-  --tts-server-url=<url>  Pocket TTS server URL (implies serve, default: http://localhost:8000)
-  --tts-speed=<rate> TTS speed multiplier (default: 1.5)
-  --tts-buffer-sentences=<count>  Sentences to buffer before playback (default: 1, OpenAI: 3)
-  --tts-clause-boundaries  Enable comma/semicolon/colon split points (OpenAI default: on)
-  --tts-min-chunk-length=<count>  Minimum chars before soft flush (default: 15, OpenAI: 60)
-  --tts-max-wait-ms=<ms>  Max latency before forcing a flush (default: 150, OpenAI: 600)
-  --tts-grace-window-ms=<ms>  Extra wait when near a boundary (default: 50, OpenAI: 200)
-  --model=<model>    Model ID or alias (haiku, sonnet, opus) or provider:model (openai:gpt-4o)
-  --openai-login     Run OpenAI browser login (uses codex CLI)
-  --openai-device-login  Run OpenAI device login (uses codex CLI)
-  --openai-api=<api> OpenAI API mode: responses | chat (default: responses)
-  --new              Start fresh (ignore saved session)
-  --no-tts           Disable text-to-speech
-  --no-streaming-tts Disable streaming (batch mode)
-  --help             Show this help message
-
-Auto provider selection (when --provider and --model are omitted):
-  1) Claude Agent SDK (OAuth / Max)
-  2) OpenAI OAuth (codex)
-  3) OPENAI_API_KEY
-  4) ANTHROPIC_API_KEY
-
-Examples:
-  orb                           # Current directory with defaults
-  orb /path/to/project          # Specific project
-  orb --voice=marius
-  orb --provider=openai --model=gpt-4o
-  orb --model=openai:gpt-4o
-
-Controls:
-  - Type your question and press Enter
-  - Paste MacWhisper transcription with Cmd+V
-  - Shift+Tab to cycle models
-  - Ctrl+C to exit
-`)
-}
-
-function hasArgPrefix(args: string[], prefix: string): boolean {
-  return args.some((arg) => arg.startsWith(prefix))
-}
-
-function hasArgFlag(args: string[], flag: string): boolean {
-  return args.includes(flag)
-}
-
-function applyOpenAiStreamingDefaults(config: ReturnType<typeof parseCliArgs>, args: string[]) {
+function applyOpenAiStreamingDefaults(config: AppConfig, explicit: ExplicitFlags) {
   if (config.llmProvider !== 'openai') return
   if (!config.ttsEnabled || !config.ttsStreamingEnabled) return
 
-  if (!hasArgPrefix(args, '--tts-buffer-sentences=')) {
+  if (!explicit.ttsBufferSentences) {
     config.ttsBufferSentences = OPENAI_STREAMING_DEFAULTS.ttsBufferSentences
   }
-  if (!hasArgPrefix(args, '--tts-min-chunk-length=')) {
+  if (!explicit.ttsMinChunkLength) {
     config.ttsMinChunkLength = OPENAI_STREAMING_DEFAULTS.ttsMinChunkLength
   }
-  if (!hasArgPrefix(args, '--tts-max-wait-ms=')) {
+  if (!explicit.ttsMaxWaitMs) {
     config.ttsMaxWaitMs = OPENAI_STREAMING_DEFAULTS.ttsMaxWaitMs
   }
-  if (!hasArgPrefix(args, '--tts-grace-window-ms=')) {
+  if (!explicit.ttsGraceWindowMs) {
     config.ttsGraceWindowMs = OPENAI_STREAMING_DEFAULTS.ttsGraceWindowMs
   }
-  if (
-    !hasArgFlag(args, '--tts-clause-boundaries') &&
-    !hasArgFlag(args, '--no-tts-clause-boundaries')
-  ) {
+  if (!explicit.ttsClauseBoundaries) {
     config.ttsClauseBoundaries = OPENAI_STREAMING_DEFAULTS.ttsClauseBoundaries
   }
 }
 
 export async function run(args: string[]): Promise<void> {
-  if (args.includes('--help') || args.includes('-h')) {
-    showHelp()
-    process.exit(0)
-  }
-
-  const config = parseCliArgs(args)
-  const providerExplicit = args.some(
-    (arg) => arg.startsWith('--provider=') || arg.startsWith('--llm-provider='),
-  )
-  const modelExplicit = args.some((arg) => arg.startsWith('--model='))
-  if (!providerExplicit && !modelExplicit) {
+  const { config, explicit } = parseCliArgs(args)
+  if (!explicit.provider && !explicit.model) {
     const smartProvider = await resolveSmartProvider(config)
     if (!smartProvider) {
       console.error(
-        'No available LLM credentials found. Set up Claude (Max/OAuth), OpenAI OAuth, OPENAI_API_KEY, or ANTHROPIC_API_KEY before starting.',
+        'No available LLM credentials found. Set up Claude (Max/OAuth), OPENAI_API_KEY, or ANTHROPIC_API_KEY before starting.',
       )
       process.exit(1)
     }
     config.llmProvider = smartProvider.provider
-    if (!modelExplicit) {
+    if (!explicit.model) {
       config.llmModel = DEFAULT_MODEL_BY_PROVIDER[smartProvider.provider]
     }
   }
-  applyOpenAiStreamingDefaults(config, args)
+  applyOpenAiStreamingDefaults(config, explicit)
   const initialSession = config.startFresh ? null : await loadSession(config.projectPath)
   const sessionMatchesProvider = initialSession?.llmProvider === config.llmProvider
   const modelLabel =

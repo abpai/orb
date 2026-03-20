@@ -8,20 +8,8 @@ import {
   isToolUseBlock,
   isToolResultBlock,
   extractToolResultText,
+  VOICE_SYSTEM_PROMPT,
 } from './utils'
-
-// Voice-aware system prompt for TTS-friendly responses
-const VOICE_SYSTEM_PROMPT = `You are a helpful coding assistant responding via voice.
-
-Guidelines for voice responses:
-- Keep responses concise: 2-4 sentences for simple questions, up to a paragraph for complex topics
-- Use conversational, natural language that sounds good when spoken aloud
-- Avoid code blocks, markdown formatting, bullet lists, and technical symbols
-- When discussing code, describe it verbally rather than showing syntax
-- End with a follow-up question or offer to elaborate if the topic warrants it
-- If a question requires showing code, briefly explain what you would write and ask if they'd like details
-
-Remember: Your response will be read aloud, so optimize for listening, not reading.`
 
 export function createAnthropicAdapter(config: AgentAdapterConfig): AgentAdapter {
   return {
@@ -39,8 +27,7 @@ export function createAnthropicAdapter(config: AgentAdapterConfig): AgentAdapter
           model: appConfig.llmModel,
           maxTurns: 10,
           resume: activeSessionId,
-          permissionMode:
-            appConfig.permissionMode === 'acceptEdits' ? 'bypassPermissions' : 'default',
+          permissionMode: 'default',
           abortController,
           ...(appConfig.ttsEnabled && { systemPrompt: VOICE_SYSTEM_PROMPT }),
         },
