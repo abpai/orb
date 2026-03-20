@@ -4,6 +4,7 @@ import { Box, Text, useInput } from 'ink'
 interface InputPromptProps {
   onSubmit: (value: string) => void
   disabled: boolean
+  inline?: boolean
 }
 
 function Cursor({ visible }: { visible: boolean }): React.ReactNode {
@@ -14,6 +15,7 @@ function Cursor({ visible }: { visible: boolean }): React.ReactNode {
 export const InputPrompt = memo(function InputPrompt({
   onSubmit,
   disabled,
+  inline = false,
 }: InputPromptProps): React.ReactNode {
   const [value, setValue] = useState('')
   const [cursorVisible, setCursorVisible] = useState(true)
@@ -65,22 +67,22 @@ export const InputPrompt = memo(function InputPrompt({
 
   const promptColor = disabled ? 'gray' : 'cyan'
 
-  if (disabled) {
-    return (
-      <Box marginTop={1}>
-        <Text color={promptColor}>❯ </Text>
-        <Text color="gray">{value || '...'}</Text>
-      </Box>
-    )
-  }
-
-  return (
-    <Box marginTop={1}>
+  const content = disabled ? (
+    <>
+      <Text color={promptColor}>❯ </Text>
+      <Text color="gray">{value || '...'}</Text>
+    </>
+  ) : (
+    <>
       <Text color={promptColor}>❯ </Text>
       <Text>
         {value}
         <Cursor visible={cursorVisible} />
       </Text>
-    </Box>
+    </>
   )
+
+  if (inline) return content
+
+  return <Box marginTop={1}>{content}</Box>
 })

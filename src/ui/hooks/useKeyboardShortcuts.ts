@@ -1,23 +1,21 @@
 import { useInput } from 'ink'
 
-import type { AppState, ViewMode } from '../../types'
+import type { AppState } from '../../types'
 
 interface UseKeyboardShortcutsConfig {
   canCycleModel: boolean
   onCancel(): void
   onCycleModel(): void
-  onOpenTranscript(): void
+  onToggleDetailMode(): void
   state: AppState
-  viewMode: ViewMode
 }
 
 export function useKeyboardShortcuts({
   canCycleModel,
   onCancel,
   onCycleModel,
-  onOpenTranscript,
+  onToggleDetailMode,
   state,
-  viewMode,
 }: UseKeyboardShortcutsConfig) {
   useInput(
     (input, key) => {
@@ -25,16 +23,16 @@ export function useKeyboardShortcuts({
         onCancel()
       }
     },
-    { isActive: viewMode === 'main' && state !== 'idle' },
+    { isActive: state !== 'idle' },
   )
 
   useInput(
     (input, key) => {
       if (key.ctrl && input === 'o') {
-        onOpenTranscript()
+        onToggleDetailMode()
       }
     },
-    { isActive: state === 'idle' && viewMode === 'main' },
+    { isActive: true },
   )
 
   useInput(

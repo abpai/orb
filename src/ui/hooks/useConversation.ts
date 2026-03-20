@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { OutboundFrame } from '../../pipeline/transports/types'
 import type { RunResult } from '../../pipeline/task'
@@ -28,24 +28,30 @@ export function useConversation({ config, initialSession, taskState }: UseConver
     (sessionMatchesProvider ? initialSession?.llmModel : undefined) ?? config.llmModel
   const initialAgentSession = sessionMatchesProvider ? initialSession?.agentSession : undefined
 
-  const [history, setHistory] = useState<HistoryEntry[]>(initialHistory)
-  const [activeEntryId, setActiveEntryId] = useState<string | null>(null)
+  const [completedTurns, setCompletedTurns] = useState<HistoryEntry[]>(initialHistory)
+  const [liveTurn, setLiveTurn] = useState<HistoryEntry | null>(null)
   const [ttsError, setTtsError] = useState<{ type: TTSErrorType; message: string } | null>(null)
   const [activeModel, setActiveModel] = useState<LlmModelId>(initialModel)
 
-  const agentSessionRef = useRef<AgentSession | undefined>(initialAgentSession)
+  const liveTurnRef = useRef<HistoryEntry | null>(null)
   const activeEntryIdRef = useRef<string | null>(null)
+  const agentSessionRef = useRef<AgentSession | undefined>(initialAgentSession)
   const pendingSaveRef = useRef(false)
 
-  const updateHistoryEntry = useCallback(
-    (entryId: string, update: (entry: HistoryEntry) => HistoryEntry) => {
-      setHistory((prev) => prev.map((entry) => (entry.id === entryId ? update(entry) : entry)))
-    },
-    [],
+  /** Update both ref (synchronous, for archive guards) and state (async, for render). */
+  const updateLiveTurn = useCallback((turn: HistoryEntry | null) => {
+    liveTurnRef.current = turn
+    setLiveTurn(turn)
+  }, [])
+
+  const getHistorySnapshot = useCallback(
+    () => [...completedTurns, ...(liveTurnRef.current ? [liveTurnRef.current] : [])],
+    [completedTurns],
   )
 
   const persistSession = useCallback(
     async (modelOverride?: LlmModelId, historyOverride?: HistoryEntry[]) => {
+      const history = historyOverride ?? getHistorySnapshot()
       const payload: SavedSession = {
         version: 2,
         projectPath: config.projectPath,
@@ -53,7 +59,7 @@ export function useConversation({ config, initialSession, taskState }: UseConver
         llmModel: modelOverride ?? activeModel,
         agentSession: agentSessionRef.current,
         lastModified: new Date().toISOString(),
-        history: historyOverride ?? history,
+        history,
       }
 
       try {
@@ -62,7 +68,7 @@ export function useConversation({ config, initialSession, taskState }: UseConver
         console.warn('Failed to save session:', err)
       }
     },
-    [activeModel, config.llmProvider, config.projectPath, history],
+    [activeModel, config.llmProvider, config.projectPath, getHistorySnapshot],
   )
 
   useEffect(() => {
@@ -70,59 +76,66 @@ export function useConversation({ config, initialSession, taskState }: UseConver
     if (taskState !== 'idle') return
     pendingSaveRef.current = false
     void persistSession()
-  }, [history, persistSession, taskState])
+  }, [completedTurns, persistSession, taskState])
 
   const startEntry = useCallback((query: string) => {
     const trimmed = query.trim()
     if (!trimmed) return null
 
-    const entryId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    activeEntryIdRef.current = entryId
-    setActiveEntryId(entryId)
-    setTtsError(null)
+    // Archive any existing live turn (safety net for edge cases)
+    const existingLiveTurn = liveTurnRef.current
+    if (existingLiveTurn !== null) {
+      liveTurnRef.current = null
+      setCompletedTurns((prev) => [...prev, existingLiveTurn])
+    }
 
-    setHistory((prev) => [
-      ...prev,
-      { id: entryId, question: trimmed, toolCalls: [], answer: '', error: null },
-    ])
+    const entryId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const newTurn: HistoryEntry = {
+      id: entryId,
+      question: trimmed,
+      toolCalls: [],
+      answer: '',
+      error: null,
+    }
+
+    activeEntryIdRef.current = entryId
+    updateLiveTurn(newTurn)
+    setTtsError(null)
 
     return { entryId, query: trimmed }
   }, [])
 
   const handleFrame = useCallback(
     (frame: OutboundFrame) => {
-      const entryId = activeEntryIdRef.current
-      if (!entryId) return
+      if (!liveTurnRef.current) return
+      const cur = liveTurnRef.current
 
       switch (frame.kind) {
         case 'agent-text-delta':
-          updateHistoryEntry(entryId, (entry) => ({ ...entry, answer: frame.accumulatedText }))
+          updateLiveTurn({ ...cur, answer: frame.accumulatedText })
           break
 
         case 'agent-text-complete':
-          updateHistoryEntry(entryId, (entry) => ({ ...entry, answer: frame.text }))
+          updateLiveTurn({ ...cur, answer: frame.text })
           break
 
         case 'tool-call-start':
-          updateHistoryEntry(entryId, (entry) => ({
-            ...entry,
-            toolCalls: [...entry.toolCalls, frame.toolCall],
-          }))
+          updateLiveTurn({ ...cur, toolCalls: [...cur.toolCalls, frame.toolCall] })
           break
 
         case 'tool-call-result':
-          updateHistoryEntry(entryId, (entry) => ({
-            ...entry,
-            toolCalls: entry.toolCalls.map((toolCall) =>
-              toolCall.index === frame.toolIndex
-                ? { ...toolCall, status: frame.status, result: frame.result }
-                : toolCall,
+          updateLiveTurn({
+            ...cur,
+            toolCalls: cur.toolCalls.map((tc) =>
+              tc.index === frame.toolIndex
+                ? { ...tc, status: frame.status, result: frame.result }
+                : tc,
             ),
-          }))
+          })
           break
 
         case 'agent-error':
-          updateHistoryEntry(entryId, (entry) => ({ ...entry, error: frame.error.message }))
+          updateLiveTurn({ ...cur, error: frame.error.message })
           break
 
         case 'tts-error':
@@ -130,18 +143,31 @@ export function useConversation({ config, initialSession, taskState }: UseConver
           break
       }
     },
-    [updateHistoryEntry],
+    [updateLiveTurn],
   )
 
-  const handleRunComplete = useCallback((result: RunResult) => {
-    if (result.cancelled) return
+  const handleRunComplete = useCallback(
+    (result: RunResult) => {
+      // Guard: only archive the turn this run belongs to.
+      // If startEntry already replaced it with a new turn, skip.
+      if (liveTurnRef.current === null) return
+      if (activeEntryIdRef.current !== result.entryId) return
 
-    if (result.session) {
-      agentSessionRef.current = result.session
-    }
+      if (result.session) {
+        agentSessionRef.current = result.session
+      }
 
-    pendingSaveRef.current = true
-  }, [])
+      const turnToArchive = liveTurnRef.current
+      activeEntryIdRef.current = null
+      setCompletedTurns((prev) => [...prev, turnToArchive])
+      updateLiveTurn(null)
+
+      if (!result.cancelled) {
+        pendingSaveRef.current = true
+      }
+    },
+    [updateLiveTurn],
+  )
 
   const cycleModel = useCallback(() => {
     if (config.llmProvider !== 'anthropic') return
@@ -150,26 +176,16 @@ export function useConversation({ config, initialSession, taskState }: UseConver
     const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % ANTHROPIC_MODELS.length
     const nextModel = ANTHROPIC_MODELS[nextIndex] ?? ANTHROPIC_MODELS[0]
     setActiveModel(nextModel)
-    void persistSession(nextModel, history)
-  }, [activeModel, config.llmProvider, history, persistSession])
 
-  const activeEntry = useMemo(
-    () => (activeEntryId ? (history.find((entry) => entry.id === activeEntryId) ?? null) : null),
-    [activeEntryId, history],
-  )
-
-  const completedEntries = useMemo(
-    () => history.filter((entry) => entry.id !== activeEntryId),
-    [activeEntryId, history],
-  )
+    void persistSession(nextModel, getHistorySnapshot())
+  }, [activeModel, config.llmProvider, getHistorySnapshot, persistSession])
 
   return {
-    activeEntry,
+    liveTurn,
     activeModel,
-    completedEntries,
+    completedTurns,
     handleFrame,
     handleRunComplete,
-    history,
     initialAgentSession,
     initialModel,
     startEntry,
