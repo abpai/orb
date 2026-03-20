@@ -5,3 +5,5 @@ coverage/
 .npm/
 .env*
 .vscode/
+.agents/
+scratch/

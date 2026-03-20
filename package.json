@@ -4,18 +4,17 @@
   "description": "Voice-driven code explorer for your terminal",
   "type": "module",
   "bin": {
-    "orb": "./dist/cli.js"
-  },
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
+    "orb": "./src/cli.ts"
   },
   "files": [
-    "dist"
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "!src/**/*.test.ts",
+    "!src/**/*.test.tsx",
+    "!src/**/*.spec.ts",
+    "!src/**/*.spec.tsx",
+    "!src/**/__tests__/**",
+    "!src/**/__snapshots__/**"
   ],
   "engines": {
     "bun": ">=1.1.0"
@@ -41,14 +40,10 @@
   "author": "Andy Pai",
   "license": "MIT",
   "scripts": {
-    "build": "tsup",
     "dev": "bun --watch src/cli.ts",
     "start": "bun src/cli.ts",
-    "lint": "bunx eslint .",
     "format": "bunx prettier --write .",
-    "typecheck": "bunx tsc --noEmit",
-    "check": "bun run lint && bun run typecheck",
-    "prepublishOnly": "bun run build && bun run check",
+    "check": "bunx prettier --check . && bun run test",
     "test": "bun test"
   },
   "dependencies": {
@@ -57,22 +52,16 @@
     "@inkjs/ui": "2.0.0",
     "ai": "^6.0.57",
     "bash-tool": "^1.3.9",
+    "commander": "^14.0.3",
     "ink": "6.6.0",
     "just-bash": "^2.7.0",
     "react": "19.2.3"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.1",
     "@types/bun": "^1.1.22",
     "@types/react": "19.2.9",
-    "@typescript-eslint/eslint-plugin": "^8.18.0",
-    "@typescript-eslint/parser": "^8.18.0",
-    "eslint": "^9.39.1",
-    "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-prettier": "^5.5.4",
     "ink-testing-library": "4.0.0",
     "prettier": "^3.7.4",
-    "tsup": "8.5.1",
     "typescript": "^5.7.2"
   }
 }

@@ -2,7 +2,8 @@
 
 ## Project Structure & Module Organization
 
-- `src/index.ts` is the entry point for the Bun app.
+- `src/cli.ts` is the Bun CLI entry point.
+- `src/index.ts` wires CLI config into the Ink app runtime.
 - `src/ui/` contains the Ink/React UI. Components live in `src/ui/components/` and shared UI pieces in `src/ui/components/shared/`.
 - `src/services/` holds integration logic (Claude agent and TTS helpers).
 - `src/types/` contains shared TypeScript types.
@@ -13,11 +14,9 @@
 - `bun install` installs dependencies (commits `bun.lock`).
 - `bun run dev` runs the app in watch mode for local development.
 - `bun run start` runs the app once without watch mode.
-- `bun run lint` checks code with ESLint.
 - `bun run format` formats code with Prettier.
-- `bun run typecheck` runs `tsc --noEmit`.
 - `bun run test` executes Bun’s test runner.
-- `bun run check` runs lint + typecheck.
+- `bun run check` runs Prettier checks + test.
 
 ## Coding Style & Naming Conventions
 
