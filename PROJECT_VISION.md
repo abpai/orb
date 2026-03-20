@@ -1,6 +1,6 @@
 # Voice-Driven Code Explorer
 
-orb is a terminal-first assistant for exploring codebases. You can type questions or paste MacWhisper transcriptions, see tool calls live, and optionally hear answers spoken aloud via pocket-tts. The app keeps session context so follow-ups feel natural, and it supports Anthropic (Claude Agent SDK) and OpenAI (AI SDK + bash-tool) with quick model switching for Claude.
+orb is a terminal-first assistant for exploring codebases. You can type questions or paste MacWhisper transcriptions, see tool calls live, and optionally hear answers spoken aloud via `tts-gateway` in server mode or `pocket-tts` in generate mode. The app keeps session context so follow-ups feel natural, and it supports Anthropic (Claude Agent SDK) and OpenAI (AI SDK + bash-tool) with quick model switching for Claude.
 
 ## Architecture
 
@@ -27,7 +27,7 @@ orb is a terminal-first assistant for exploring codebases. You can type question
                (local tools)                (sandbox overlay)
                               │
                               ▼
-                    pocket-tts (streaming)
+                    tts-gateway / pocket-tts
                               │
                               ▼
                         afplay (macOS)
@@ -65,20 +65,19 @@ orb is a terminal-first assistant for exploring codebases. You can type question
 
 - **Anthropic** (`anthropic.ts`): wraps `@anthropic-ai/claude-agent-sdk`, streams messages, tool calls, and session IDs
 - **OpenAI** (`openai.ts`): uses the AI SDK `ToolLoopAgent` with `bash-tool` (`bash`/`readFile`/`writeFile`) in a sandbox overlay
-- **Auth**: `openai-auth.ts` resolves API key vs ChatGPT OAuth and enforces Codex model limits
+- **Auth**: `openai-auth.ts` resolves OpenAI API-key access for Orb's direct OpenAI integration
 
 ### TTS Services (`src/services/tts.ts`, `src/services/streaming-tts.ts`)
 
-- **Server mode** (recommended): low latency via pocket-tts server
+- **Server mode** (recommended): low latency via `tts-gateway`
 - **Generate mode**: CLI generation without a server
 - Streaming controller buffers and chunks text (sentence + optional clause boundaries) before playback
 
 ## Configuration & Models
 
 - Anthropic models are defined in `src/types/index.ts` with CLI aliases in `src/config.ts`
-- Defaults: Haiku for Anthropic, `gpt-5.2-codex` for OpenAI
+- Defaults: Haiku for Anthropic, `gpt-5.4` for OpenAI
 - During a session, press **Shift+Tab** to cycle Anthropic models
-- ChatGPT OAuth limits OpenAI models to `gpt-5.2` and `gpt-5.2-codex`
 
 ## File Structure
 

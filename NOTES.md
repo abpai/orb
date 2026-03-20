@@ -1,6 +1,6 @@
 # Implementation Notes & Lessons Learned
 
-Notes from building the Voice-Driven Code Explorer with Claude Agent SDK, Ink, and pocket-tts.
+Notes from building the Voice-Driven Code Explorer with Claude Agent SDK, Ink, `tts-gateway`, and `pocket-tts`.
 
 ## Claude Agent SDK
 

@@ -1,285 +1,270 @@
 # Architecture
 
-orb is a voice-driven code explorer built with Ink (React for terminals), pocket-tts, and pluggable LLM providers: Anthropic via the Claude Agent SDK and OpenAI via the AI SDK + bash-tool.
+orb is a Bun + Ink terminal app for code exploration with Anthropic and OpenAI backends, optional text-to-speech, and project-scoped session persistence.
 
-## System Overview
+The current production architecture is centered on a frame-based pipeline under `src/pipeline/**`. Older `services/agent/*` paths no longer exist and should not be treated as the main runtime model.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Terminal UI (Ink)                          │
-├─────────────────────────────────────────────────────────────────┤
-│  WelcomeSplash / OrbPanel / ActiveMessagePanel                  │
-│  CompletedEntry (history) + ToolTree (tool calls)               │
-│  InputPrompt (user input)                                       │
-│                                                                 │
-│  ResonanceBar (status + model)   TTSErrorBanner                 │
-│  TranscriptViewer (Ctrl+O)                                      │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-                    ┌─────────────────────┐
-                    │     runAgent()      │
-                    │ provider router     │
-                    └─────────┬───────────┘
-             ┌────────────────┴────────────────┐
-             ▼                                 ▼
- ┌──────────────────────────┐        ┌───────────────────────────┐
- │ Anthropic (Claude SDK)   │        │ OpenAI (AI SDK + bash-tool)│
- │ streaming query          │        │ ToolLoopAgent             │
- └────────────┬─────────────┘        └─────────────┬─────────────┘
-      ┌───────┼───────┐                     ┌───────┼────────┐
-      ▼       ▼       ▼                     ▼       ▼        ▼
-   Glob     Read     Bash                 bash   readFile  writeFile
-    Grep                                 (sandbox overlay)
-             \____________________  _____________________/
-                              ▼
-                    ┌─────────────────────┐
-                    │  Streaming TTS      │
-                    │  (pocket-tts)       │
-                    └─────────────────────┘
-                              │
-                              ▼
-                    ┌─────────────────────┐
-                    │  Audio Playback     │
-                    │  (afplay)           │
-                    └─────────────────────┘
+## Runtime Overview
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ CLI bootstrap                                              │
+│ src/cli.ts -> run(args) in src/index.ts                    │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Startup                                                    │
+│ parseCliArgs()                                             │
+│ resolveSmartProvider() when provider/model omitted         │
+│ loadSession() unless --new                                 │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Ink app                                                    │
+│ render(<App config initialSession />)                      │
+│                                                            │
+│ App owns UI state, history, active model, transcript view, │
+│ and a single PipelineTask + terminal transport instance.   │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│ PipelineTask                                               │
+│ user-text frame -> createPipeline([agent, tts])            │
+│ state machine: idle -> processing -> speaking -> idle      │
+└─────────────────────────────────────────────────────────────┘
+                 │                               │
+                 ▼                               ▼
+┌──────────────────────────────┐   ┌──────────────────────────┐
+│ Agent processor              │   │ TTS processor            │
+│ createAgentProcessor()       │   │ createTTSProcessor()     │
+│                              │   │                          │
+│ anthropic -> Claude SDK      │   │ streaming ->             │
+│ openai -> AI SDK ToolLoop    │   │ createStreamingSpeech... │
+│ + bash/readFile/writeFile    │   │ batch -> speak()         │
+└──────────────────────────────┘   └──────────────────────────┘
+                 │                               │
+                 └──────────────┬────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Outbound frames                                             │
+│ agent-text-delta / tool-call-* / tts-* / agent-error        │
+│ sent through terminal transport back into App state/history │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## Directory Structure
 
-```
+```text
 src/
-├── index.ts              # Library entry, exports run()
-├── cli.ts                # CLI entry with #!/usr/bin/env bun
-├── config.ts             # CLI parsing + defaults
+├── cli.ts                    # Bun CLI entrypoint
+├── index.ts                  # run(), package exports, Ink render
+├── config.ts                 # Commander parsing + config defaults
 ├── types/
-│   └── index.ts          # Types, models, defaults
+│   └── index.ts              # Shared types, models, TTSError, defaults
+├── pipeline/
+│   ├── frames.ts             # Frame model flowing through the pipeline
+│   ├── processor.ts          # Processor type + singleFrame helper
+│   ├── pipeline.ts           # Left-to-right processor composition
+│   ├── task.ts               # PipelineTask state machine
+│   ├── observer.ts           # Observer interface
+│   ├── observers/
+│   │   └── metrics.ts        # Metrics observer (not wired by App today)
+│   ├── adapters/
+│   │   ├── anthropic.ts      # Claude Agent SDK adapter
+│   │   ├── openai.ts         # OpenAI AI SDK + bash-tool adapter
+│   │   ├── types.ts          # AgentAdapter contract
+│   │   └── utils.ts          # Tool/result parsing + shared prompt text
+│   ├── processors/
+│   │   ├── agent.ts          # Provider dispatch into adapters
+│   │   └── tts.ts            # Streaming/batch TTS frame handling
+│   └── transports/
+│       ├── terminal-text.ts  # In-memory transport used by App
+│       └── types.ts          # Transport contracts
 ├── services/
-│   ├── agent/
-│   │   ├── anthropic.ts  # Claude Agent SDK runner
-│   │   ├── openai.ts     # OpenAI AI SDK runner
-│   │   └── index.ts      # Provider router
-│   ├── auth-utils.ts     # Codex token helpers
-│   ├── openai-auth.ts    # OpenAI OAuth/API key resolver
-│   ├── provider-defaults.ts # Smart provider detection
-│   ├── session.ts        # Session persistence (load/save/cleanup)
-│   ├── tts.ts            # Text-to-speech (batch mode)
-│   └── streaming-tts.ts  # Streaming TTS controller
+│   ├── auth-utils.ts         # Codex auth.json parsing helpers
+│   ├── openai-auth.ts        # OpenAI API-key resolution
+│   ├── provider-defaults.ts  # Smart provider detection
+│   ├── session.ts            # Session load/save/migration/cleanup
+│   ├── streaming-tts.ts      # Incremental speech controller
+│   └── tts.ts                # Audio generation + playback helpers
 └── ui/
-    ├── App.tsx           # Root component, state machine
-    ├── components/
-    │   ├── ActiveMessagePanel.tsx
-    │   ├── AsciiOrb.tsx
-    │   ├── CompletedEntry.tsx
-    │   ├── InputPrompt.tsx
-    │   ├── OrbPanel.tsx
-    │   ├── ResonanceBar.tsx
-    │   ├── TTSErrorBanner.tsx
-    │   ├── TranscriptViewer.tsx
-    │   ├── WelcomeSplash.tsx
-    │   └── shared/
-    │       ├── EntryContent.tsx
-    │       └── ToolTree.tsx
-    ├── hooks/
-    │   └── useTerminalSize.ts
-    └── utils/
-        ├── markdown.ts
-        └── text.ts
+    ├── App.tsx               # Root Ink component and UI state machine
+    ├── components/           # Panels, prompts, transcript, banners
+    ├── hooks/                # useTerminalSize, useAnimationFrame
+    └── utils/                # markdown/text formatting helpers
 ```
 
-## Data Flow
+## Startup and Provider Selection
 
-### Request Lifecycle
+`run(args)` in `src/index.ts` performs startup in this order:
 
-1. **User Input** → `InputPrompt` captures text, triggers `handleSubmit`
-2. **State: processing** → App disables input, shows "thinking" indicator
-3. **Agent Routing** → `runAgent()` selects Anthropic or OpenAI runner
-4. **Tool Execution** → Anthropic uses Glob/Read/Grep/Bash (local tools); OpenAI uses `bash`/`readFile`/`writeFile` via `bash-tool` in a sandbox overlay
-5. **Assistant Text** → Text chunks stream to `ActiveMessagePanel` and TTS
-6. **State: processing_speaking** → Speech begins while the model still streams
-7. **State: speaking** → LLM done, audio playback continues
-8. **State: idle** → Audio complete, ready for next question
+1. Parse CLI arguments into `AppConfig`.
+2. If the user did not set provider or model explicitly, probe credentials with `resolveSmartProvider()`.
+3. Apply OpenAI-specific streaming TTS defaults when appropriate.
+4. Load the previous project session unless `--new` was passed.
+5. Print a small startup summary card.
+6. Render `<App />` with the resolved config and initial session.
 
-### Session Continuity
+Smart provider selection prefers:
 
-```typescript
-const { text, session } = await runAgent(prompt, config, agentSessionRef.current, callbacks)
-if (session) agentSessionRef.current = session
-```
+1. Claude OAuth / Max via the Claude Agent SDK
+2. `OPENAI_API_KEY`
+3. `ANTHROPIC_API_KEY` / `CLAUDE_API_KEY`
 
-For Anthropic, the session is the Claude Agent SDK session ID; for OpenAI, it is the message history used to reconstruct the conversation.
+## App and UI State
+
+`App` is the composition root. Runtime concerns are split across hooks:
+
+- `useConversation()` owns history, session persistence, model cycling, and TTS error state
+- `usePipeline()` owns task creation, transport subscription, run/cancel actions, and task state
+- `useKeyboardShortcuts()` owns global input bindings
+- `App` itself owns `viewMode`, layout decisions, and rendering composition
+
+The main UI is composed from:
+
+- `WelcomeSplash` for the empty state
+- `CompletedEntry` rendered through `Static` for prior turns
+- `ActiveMessagePanel` for the in-flight turn
+- `InputPrompt` for text entry
+- `ResonanceBar` for status, model, and shortcuts
+- `TTSErrorBanner` for degraded-audio warnings
+- `TranscriptViewer` for the alternate transcript screen
+
+## Frame Pipeline
+
+The production request path is frame-based:
+
+1. `handleSubmit()` creates a history entry and calls `task.run(query, entryId)`.
+2. `PipelineTask` creates a single `user-text` frame.
+3. `createPipeline()` composes processors left-to-right:
+   - `createAgentProcessor()`
+   - `createTTSProcessor()`
+4. Outbound frames are sent through `transport.sendOutbound()`.
+5. `App` subscribes to `transport.onOutbound()` and updates history, tool state, and TTS errors from those frames.
+
+Important frame kinds:
+
+- `user-text`
+- `agent-text-delta`
+- `agent-text-complete`
+- `agent-session`
+- `tool-call-start`
+- `tool-call-result`
+- `tts-speaking-start`
+- `tts-speaking-end`
+- `tts-error`
+- `agent-error`
+
+`PipelineTask` also tracks coarse runtime state and cancellation with `AbortController`.
+
+## Provider Adapters
+
+### Anthropic
+
+`createAnthropicAdapter()` wraps `@anthropic-ai/claude-agent-sdk`:
+
+- streams assistant messages from `query()`
+- resumes prior Claude sessions when available
+- emits tool calls/results and session IDs as frames
+- passes `permissionMode` through to the SDK
+
+### OpenAI
+
+`createOpenAiAdapter()` wraps the AI SDK:
+
+- resolves auth through `resolveOpenAiProvider()`
+- requires `OPENAI_API_KEY` for direct API access
+- uses `bash-tool` to expose `bash`, `readFile`, and `writeFile`
+- emits tool calls/results and persists the last OpenAI response ID for continuation
+
+## TTS Architecture
+
+TTS is handled by the TTS processor plus service helpers.
+
+### Streaming mode
+
+When `ttsStreamingEnabled` is true:
+
+- text deltas are fed into `createStreamingSpeechController()`
+- the controller chunks cleaned text by sentence, clause, whitespace, and timeout heuristics
+- chunks are generated into temporary audio files and played incrementally
+- the processor emits `tts-speaking-start`, `tts-speaking-end`, and `tts-error`
+- `PipelineTask` awaits a dedicated TTS completion handle after the model finishes
+
+### Batch mode
+
+When streaming is disabled:
+
+- `agent-text-complete` registers a single TTS completion handle
+- `PipelineTask` awaits `speak(text, config)`
+- `speak()` cleans markdown, splits into sentences, generates audio, and plays each sentence in order
+
+### Audio backends
+
+- Generation mode `serve` posts to a `tts-gateway`-compatible server
+- Generation mode `generate` shells out to `pocket-tts generate`
+- Playback uses macOS `afplay`
 
 ## Session Persistence
 
-On startup, the app loads the last saved session for the current project (unless `--new` is set). Sessions are stored under `~/.orb/sessions/` as `<project>-<hash>.json` and include provider, model, agent session data, history, and `lastModified`. Old sessions are pruned after 30 days. The app saves after each completed exchange and whenever the model changes.
+Sessions are stored under `~/.orb/sessions/` and keyed by a sanitized project name plus a hash of the absolute project path.
 
-## Key Components
+Saved session payloads include:
 
-### Agent Integration (`src/services/agent/`)
+- provider
+- model
+- agent session data
+- conversation history
+- `lastModified`
 
-`runAgent()` routes to provider-specific runners:
+`loadSession()` supports migration from the older v1 Anthropic-only format to the current v2 multi-provider format. Old session files are pruned after 30 days.
 
-- **Anthropic** (`anthropic.ts`) uses `@anthropic-ai/claude-agent-sdk` streaming and emits assistant text, tool calls, and session IDs
-- **OpenAI** (`openai.ts`) uses the AI SDK `ToolLoopAgent` with `bash-tool`, emitting tool calls/results from `bash`/`readFile`/`writeFile` (sandbox overlay)
-- **Auth & defaults**: `openai-auth.ts` resolves API key vs ChatGPT OAuth and enforces Codex model limits; `provider-defaults.ts` implements smart provider selection
+## Auth and OpenAI Integration
 
-The app passes `permissionMode` to the Claude SDK and renders tool progress consistently across providers.
-
-### Terminal UI (`src/ui/`)
-
-Built with **Ink** (React for terminals) and **@inkjs/ui** components.
-
-**Component Hierarchy:**
-
-```
-App
-├── WelcomeSplash (shown once on startup)
-├── CompletedEntry (history via Static)
-│   └── EntryContent
-│       ├── Question box
-│       ├── Tool call tree
-│       └── Answer box
-├── ActiveMessagePanel (current question + streaming answer)
-├── OrbPanel (wide layouts)
-├── ResonanceBar (status + model + shortcuts)
-├── TTSErrorBanner (conditional)
-├── TranscriptViewer (Ctrl+O, replaces main view)
-└── InputPrompt (at bottom)
-```
-
-**State Machine:**
-
-```typescript
-type AppState = 'idle' | 'processing' | 'processing_speaking' | 'speaking'
-```
-
-| State                 | Input    | Indicator    | Audio   |
-| --------------------- | -------- | ------------ | ------- |
-| `idle`                | enabled  | "◉ ready"    | none    |
-| `processing`          | disabled | "⠙ thinking" | none    |
-| `processing_speaking` | disabled | "▅▆▇" wave   | playing |
-| `speaking`            | disabled | "▅▆▇" wave   | playing |
-
-### TTS Services (`src/services/tts.ts`, `streaming-tts.ts`)
-
-**Batch Mode (`tts.ts`):**
-
-- Generates all audio after the model finishes
-- Simpler, but higher perceived latency
-
-**Streaming Mode (`streaming-tts.ts`):**
-
-- Generates audio incrementally as text arrives
-- Dual queues: `sentenceQueue` (pending) → `audioQueue` (ready)
-- Configurable buffer and chunking (`ttsBufferSentences`, clause boundaries, min chunk length, max wait)
-
-**Text Processing:**
-
-1. Strip markdown (code blocks → "code block", inline code → "code")
-2. Split on strong sentence boundaries, optionally on clause boundaries or timeouts
-3. Generate via pocket-tts CLI or server
-4. Play via macOS `afplay`
-
-## Configuration
-
-### AppConfig Interface
-
-```typescript
-interface AppConfig {
-  projectPath: string
-  permissionMode: 'default' | 'acceptEdits'
-  llmProvider: 'anthropic' | 'openai'
-  llmModel: string
-  openaiApiKey?: string
-  openaiLogin: boolean
-  openaiDeviceLogin: boolean
-  openaiApi: 'responses' | 'chat'
-  ttsVoice: Voice
-  ttsMode: 'generate' | 'serve'
-  ttsServerUrl?: string
-  ttsSpeed: number
-  ttsEnabled: boolean
-  ttsStreamingEnabled: boolean
-  ttsBufferSentences: number
-  ttsClauseBoundaries: boolean
-  ttsMinChunkLength: number
-  ttsMaxWaitMs: number
-  ttsGraceWindowMs: number
-  startFresh: boolean
-}
-```
-
-### CLI Argument Parsing
-
-```bash
-orb [projectPath] [options]
-
-# Examples
-orb                           # cwd, defaults
-orb ~/projects/myapp          # specific path
-orb --model=sonnet --voice=marius
-orb --provider=openai --model=gpt-5.2-codex
-```
+OpenAI auth resolution supports direct API key use via `OPENAI_API_KEY` or `config.openaiApiKey`.
+Orb talks to the official OpenAI Responses API only; the removed ChatGPT/Codex backend integration is no longer part of the runtime architecture.
 
 ## Error Handling
 
-### TTSError Class
+`TTSError` is the main structured runtime error type for audio failures:
 
-```typescript
-class TTSError extends Error {
-  type: 'command_not_found' | 'audio_playback' | 'generation_failed' | 'unknown'
-  originalError?: Error
-}
-```
+- `command_not_found`
+- `audio_playback`
+- `generation_failed`
 
-**Error Categories:**
+TTS failures are surfaced as UI banners and outbound `tts-error` frames; they do not terminate the session by default.
 
-- `command_not_found` - pocket-tts or afplay not installed
-- `audio_playback` - afplay failed (file issue, interruption)
-- `generation_failed` - pocket-tts generation error
-- `unknown` - Unexpected errors
+Agent failures become `agent-error` frames and are rendered into the current history entry.
 
-**Graceful Degradation:**
+## Current Production Caveats
 
-- TTS errors display banner but don't crash the app
-- User can continue asking questions without audio
+These are part of the implementation today and worth knowing when working on the codebase:
+
+- `App` uses the transport as an outbound event bus only; it calls `task.run()` and `task.cancel()` directly instead of using transport inbound events.
+- Observer support exists in `PipelineTask` and `createPipeline()`, but `App` does not pass observers in production, so metrics observers are currently test-only.
+- `App` creates `task` and `transport` once on mount and then pushes later config changes through `task.updateConfig()`.
 
 ## Extension Points
 
-### Adding or Changing Models
+### Add or change models
 
-1. Update `ANTHROPIC_MODELS` in `src/types/index.ts`
-2. Update `ANTHROPIC_MODEL_ALIASES` and `DEFAULT_MODEL_BY_PROVIDER` in `src/config.ts`
-3. Update `CODEX_ALLOWED_MODELS` in `src/services/openai-auth.ts` if ChatGPT OAuth should allow it
-4. Update UI labels in `ResonanceBar` if needed
+1. Update `ANTHROPIC_MODELS` in `src/types/index.ts`.
+2. Update aliases and defaults in `src/config.ts`.
+3. Update UI model labels in `ResonanceBar` when needed.
 
-### Custom TTS Providers
+### Add a new provider
 
-The TTS layer is abstracted behind `speak()` and `StreamingSpeechController`. To add a new provider:
+1. Implement the `AgentAdapter` contract in `src/pipeline/adapters/`.
+2. Route to it from `createAgentProcessor()`.
+3. Extend `AppConfig` / CLI parsing if the provider needs new configuration.
+4. Define how session continuity should be serialized in `AgentSession`.
 
-1. Implement the same interface in a new service file
-2. Add a config option for provider selection
-3. Wire up in `App.tsx`
+### Add new pipeline behavior
 
-### New UI Components
-
-Ink uses React patterns. Add components to `src/ui/components/` and compose in `App.tsx`.
-
-## Dependencies
-
-| Package                          | Purpose                             |
-| -------------------------------- | ----------------------------------- |
-| `@anthropic-ai/claude-agent-sdk` | Claude Agent SDK + tool use         |
-| `ai`                             | AI SDK (ToolLoopAgent)              |
-| `@ai-sdk/openai`                 | OpenAI provider for AI SDK          |
-| `bash-tool`                      | Sandboxed bash/read/write tools     |
-| `ink`                            | React renderer for terminals        |
-| `@inkjs/ui`                      | Terminal UI components              |
-| `react`                          | Component framework                 |
-
-## Build & Distribution
-
-- **Build**: tsup bundles TypeScript → ESM JavaScript
-- **CLI**: `dist/cli.js` has shebang, registered in `package.json` bin
-- **Library**: `dist/index.js` exports `run()`, types, and components
-- **Package**: Only `dist/` ships (source not included)
+1. Create a new processor in `src/pipeline/processors/`.
+2. Insert it in `createPipelineTask()` in the desired order.
+3. Add any new frame kinds to `frames.ts`.
+4. Teach `App` / transport consumers how to render those frames if they are user-visible.

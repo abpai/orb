@@ -9,15 +9,28 @@
 | 2026-03-12 | self | Assumed changing `process.env.HOME` during Bun tests would redirect `os.homedir()` | In Bun, treat `os.homedir()` as effectively fixed for the test process; clean up exact files instead of trying to fake HOME |
 | 2026-03-12 | self | Mocked shared modules in one test file and accidentally polluted unrelated tests through Bun's module cache | For Bun module mocks, import the target module only after mocking, restore mocks after each test, and avoid mocking shared modules when a real implementation is safe |
 | 2026-03-12 | self | Let a pipeline task call `onRunEnd` with placeholder zeroed metrics, which overwrote observer-tracked counts at completion | When observers already accumulate per-frame metrics, finalize from the observer's current snapshot instead of trusting placeholder end-of-run payloads |
+| 2026-03-12 | self | Streaming TTS handed off a `tts-pending` handle and then immediately stopped the controller in the processor `finally`, so Orb never sent the synth request | When async work is handed off via a pending frame, keep ownership with the caller and do not tear it down in the processor cleanup path |
+| 2026-03-12 | self | Treated streaming TTS failures as callback-only side effects, which let `waitForCompletion()` resolve successfully and hid speech failures from the UI | For async side-channel work in this repo, reject the awaited completion promise on real failures so `PipelineTask` can surface UI errors |
+| 2026-03-12 | self | Sending Orb's pocket voice names directly to `tts-gateway` Kokoro caused `502` voice lookup failures (`alba.pt` missing) | For serve-mode compatibility, retry once without an explicit voice when the server rejects the requested voice so gateway defaults can recover |
+| 2026-03-13 | self | Mocked `./tts` in `streaming-tts.test.ts`, which poisoned Bun's module cache and broke later tests that needed the real TTS module | In this repo, prefer mocking runtime primitives like `fetch` and `Bun.spawn` over mocking shared service modules when tests run in the same Bun process |
+| 2026-03-13 | self | Passed OpenAI resume instructions through `ToolLoopAgent.instructions`, which re-appended the system prompt on every `previousResponseId` continuation | When continuing OpenAI Responses conversations, omit agent-level instructions and pass the prompt through `providerOptions.openai.instructions` instead |
+| 2026-03-20 | self | Ran the `useConversation` persistence test in the Codex sandbox and it failed with `EPERM` because session writes target `~/.orb/sessions`, which is outside the writable roots | For hook/session persistence verification in this environment, expect real-save tests to be sandbox-blocked unless the session path is redirected into the workspace |
 
 ## User Preferences
 
 - Prefer concrete readiness reviews with evidence from the repo and real checks.
+- For scratch/demo work, present an alignment table of candidate concepts and wait for approval before creating scripts.
 
 ## Patterns That Work
 
-- For this repo, targeted Bun tests and build/lint/typecheck runs quickly expose whether CLI hardening changes are safe.
+- For this repo, targeted Bun lint/test runs quickly expose whether CLI and pipeline changes are safe; the app now ships as a Bun-native source CLI instead of a built `dist/` package.
+- For this repo's Bun-only quality gate, keep `.prettierignore` aligned with non-product areas like `scratch/` and `.agents/` so `bun run check` enforces source formatting without blocking on demo or memory files.
+- When simplifying Orb's CLI surface, trace config fields from `src/cli.ts` and `src/config.ts` outward; `permissionMode: 'acceptEdits'` had become unreachable even though downstream Anthropic code still carried branches for it.
 - The new frame/pipeline layer is a good seam for cancellation and integration tests without needing live provider credentials.
+- For large Orb refactors, split commits by runtime seam rather than by folder: TTS service hardening, pipeline contract cleanup, UI hook extraction, then legacy/docs cleanup keeps each commit reviewable and green.
+- When updating architecture docs here, anchor the narrative on `src/index.ts -> src/ui/App.tsx -> src/pipeline/**` first, then describe older concepts only as historical caveats.
+- `mock.module()` works under plain `bun run` scripts here, which makes `scratch/` demos a good place to drive runtime seams with mocked provider/TTS boundaries.
+- For hook persistence regressions here, a small Ink harness plus the real session file is more reliable than mocking `saveSession`, especially when other tests may have already cached the hook module.
 
 ## Patterns That Don't Work
 
@@ -27,3 +40,5 @@
 
 - `orb` is a Bun + Ink terminal app for code exploration with Anthropic/OpenAI backends and optional TTS.
 - Public-beta readiness depends more on state-machine correctness, cancellation, auth/session behavior, and seam tests than on a larger architecture rewrite.
+- The current production execution path centers on `src/pipeline/**`; `ARCHITECTURE.md` still describes older `services/agent/*` paths and should not be treated as the full source of truth during recon.
+- For dead-code audits in this repo, treat test-only pipeline seams like inbound transport and observers separately from truly dead symbols so cleanup stays conservative.
