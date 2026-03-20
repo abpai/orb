@@ -1,4 +1,5 @@
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk'
+import { buildProviderPrompt } from '../../services/prompts'
 import type { Frame } from '../frames'
 import { createFrame } from '../frames'
 import type { AgentAdapter, AgentAdapterConfig } from './types'
@@ -8,7 +9,6 @@ import {
   isToolUseBlock,
   isToolResultBlock,
   extractToolResultText,
-  VOICE_SYSTEM_PROMPT,
 } from './utils'
 
 export function createAnthropicAdapter(config: AgentAdapterConfig): AgentAdapter {
@@ -19,6 +19,11 @@ export function createAnthropicAdapter(config: AgentAdapterConfig): AgentAdapter
       let accumulatedText = ''
       let toolIndex = 0
       const toolIdToIndex = new Map<string, number>()
+      const systemPrompt = await buildProviderPrompt({
+        provider: 'anthropic',
+        projectPath: appConfig.projectPath,
+        ttsEnabled: appConfig.ttsEnabled,
+      })
 
       const response = query({
         prompt,
@@ -29,7 +34,7 @@ export function createAnthropicAdapter(config: AgentAdapterConfig): AgentAdapter
           resume: activeSessionId,
           permissionMode: 'default',
           abortController,
-          ...(appConfig.ttsEnabled && { systemPrompt: VOICE_SYSTEM_PROMPT }),
+          systemPrompt,
         },
       })
 

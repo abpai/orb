@@ -10,9 +10,9 @@ const PROVIDER_ALIASES: Record<string, LlmProvider> = {
 }
 
 const ANTHROPIC_MODEL_ALIASES: Record<string, AnthropicModel> = {
-  opus: 'claude-opus-4-20250514',
+  opus: 'claude-opus-4-6',
   haiku: 'claude-haiku-4-5-20251001',
-  sonnet: 'claude-sonnet-4-5-20250929',
+  sonnet: 'claude-sonnet-4-6',
 }
 
 const DEFAULT_MODEL_BY_PROVIDER: Record<LlmProvider, LlmModelId> = {
@@ -85,7 +85,7 @@ function nonNegativeInt(value: string): number {
 
 const HELP_EPILOGUE = `
 Auto provider selection (when --provider and --model are omitted):
-  1) Claude Agent SDK (OAuth / Max)
+  1) Claude Agent SDK (Claude Code / Max or API key)
   2) OPENAI_API_KEY
   3) ANTHROPIC_API_KEY
 
@@ -93,8 +93,8 @@ Examples:
   orb                           # Current directory with defaults
   orb /path/to/project          # Specific project
   orb --voice=marius
-  orb --provider=openai --model=gpt-4o
-  orb --model=openai:gpt-4o
+  orb --provider=openai --model=gpt-5.4
+  orb --model=openai:gpt-5.4
 
 Controls:
   - Type your question and press Enter
@@ -141,6 +141,7 @@ function createProgram(): Command {
       DEFAULT_CONFIG.ttsGraceWindowMs,
     )
     .option('--new', 'Start fresh (ignore saved session)')
+    .option('--skip-intro', 'Skip the welcome animation')
     .option('--tts', 'Enable text-to-speech (default: true)')
     .option('--no-tts', 'Disable text-to-speech')
     .option('--streaming-tts', 'Enable streaming TTS (default: true)')
@@ -169,6 +170,7 @@ interface ParsedOpts {
   ttsMaxWaitMs: number
   ttsGraceWindowMs: number
   new?: boolean
+  skipIntro?: boolean
   tts?: boolean
   streamingTts?: boolean
 }
@@ -203,6 +205,7 @@ export function parseCliArgs(args: string[]): ParseResult {
     ...DEFAULT_CONFIG,
     projectPath,
     startFresh: opts.new ?? false,
+    skipIntro: opts.skipIntro ?? false,
     ttsEnabled: opts.tts !== false,
     ttsStreamingEnabled: opts.streamingTts !== false,
     ttsSpeed: opts.ttsSpeed,

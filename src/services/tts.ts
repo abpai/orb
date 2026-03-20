@@ -8,7 +8,7 @@ import { cleanTextForSpeech } from '../ui/utils/markdown'
 
 export { cleanTextForSpeech }
 
-const DEFAULT_SERVER_URL = 'http://localhost:8000'
+export const DEFAULT_SERVER_URL = 'http://localhost:8000'
 
 function categorizeTTSError(err: unknown, context: 'generate' | 'playback'): TTSError {
   if (err instanceof TTSError) return err

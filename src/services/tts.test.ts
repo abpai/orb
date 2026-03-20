@@ -91,4 +91,26 @@ describe('generateAudio', () => {
 
     await rm(tempDir, { recursive: true, force: true })
   })
+
+  it('uses the documented default server URL when none is configured', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'orb-tts-'))
+    const outputPath = join(tempDir, 'speech.wav')
+    let requestedUrl: string | undefined
+    const generateAudio = await importGenerateAudio()
+
+    globalThis.fetch = mock(async (input: string | globalThis.URL | Request) => {
+      requestedUrl = String(input)
+      return new Response(new Uint8Array([1, 2, 3]).buffer, { status: 200 })
+    }) as unknown as typeof globalThis.fetch
+
+    await generateAudio(
+      'hello world',
+      { ...DEFAULT_CONFIG, ttsMode: 'serve', ttsServerUrl: undefined },
+      outputPath,
+    )
+
+    expect(requestedUrl).toBe('http://localhost:8000/tts')
+
+    await rm(tempDir, { recursive: true, force: true })
+  })
 })

@@ -1,19 +1,11 @@
 import { createBashTool } from 'bash-tool'
 import { ToolLoopAgent, stepCountIs, type ToolSet, type StepResult } from 'ai'
+import { buildProviderPrompt } from '../../services/prompts'
 import type { Frame } from '../frames'
 import { createFrame } from '../frames'
 import type { AgentAdapter, AgentAdapterConfig } from './types'
-import { normalizeToolInput, isToolError, formatToolResult, VOICE_SYSTEM_PROMPT } from './utils'
+import { normalizeToolInput, isToolError, formatToolResult } from './utils'
 import { resolveOpenAiProvider } from '../../services/openai-auth'
-
-const BASE_INSTRUCTIONS = `You are a helpful coding assistant.
-
-The project is mounted at /workspace.
-Use the provided bash, readFile, and writeFile tools to explore or edit files.
-Edits happen in a sandbox overlay; describe any changes you make.
-Never claim to be Claude or Anthropic; you are an OpenAI model.
-Prefer concise bash commands (ls, rg, sed, awk, jq) and keep outputs short.
-If you need to modify files, do so via writeFile so changes are explicit.`
 
 interface OaiToolCall {
   toolCallId: string
@@ -33,9 +25,11 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
       const { appConfig, session, abortController } = config
       const previousResponseId =
         session?.provider === 'openai' ? session.previousResponseId : undefined
-      const instructions = appConfig.ttsEnabled
-        ? `${BASE_INSTRUCTIONS}\n\n${VOICE_SYSTEM_PROMPT}`
-        : BASE_INSTRUCTIONS
+      const instructions = await buildProviderPrompt({
+        provider: 'openai',
+        projectPath: appConfig.projectPath,
+        ttsEnabled: appConfig.ttsEnabled,
+      })
 
       const { tools, sandbox } = await createBashTool({
         uploadDirectory: {

@@ -1,6 +1,6 @@
 export type AppState = 'idle' | 'processing' | 'processing_speaking' | 'speaking'
 
-export type ViewMode = 'main' | 'transcript'
+export type DetailMode = 'compact' | 'expanded'
 
 export type TTSErrorType = 'command_not_found' | 'audio_playback' | 'generation_failed'
 
@@ -36,8 +36,14 @@ export type LlmProvider = 'anthropic' | 'openai'
 
 export const ANTHROPIC_MODELS = [
   'claude-haiku-4-5-20251001',
+  'claude-sonnet-4-6',
+  'claude-opus-4-6',
+  'claude-opus-4-5-20251101',
   'claude-sonnet-4-5-20250929',
+  'claude-opus-4-1-20250805',
   'claude-opus-4-20250514',
+  'claude-sonnet-4-20250514',
+  'claude-3-haiku-20240307',
 ] as const
 
 export const VOICES = ['alba', 'marius', 'jean'] as const
@@ -80,6 +86,7 @@ export interface AppConfig {
   ttsMaxWaitMs: number
   ttsGraceWindowMs: number
   startFresh: boolean
+  skipIntro: boolean
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -97,4 +104,5 @@ export const DEFAULT_CONFIG: AppConfig = {
   ttsMaxWaitMs: 150,
   ttsGraceWindowMs: 50,
   startFresh: false,
+  skipIntro: false,
 }

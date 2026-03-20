@@ -10,7 +10,7 @@ type ClaudeAuthState = {
   hasApiKey: boolean
 }
 
-const CLAUDE_AUTH_TIMEOUT_MS = 3000
+const CLAUDE_AUTH_TIMEOUT_MS = 10_000
 
 function getAnthropicApiKey(): string | null {
   return Bun.env.ANTHROPIC_API_KEY || Bun.env.CLAUDE_API_KEY || null
@@ -36,6 +36,10 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
 }
 
 async function detectClaudeAuth(config: AppConfig): Promise<ClaudeAuthState> {
+  if (!Bun.which('claude')) {
+    return { hasOAuth: false, hasApiKey: false }
+  }
+
   const abortController = new AbortController()
   const prompt = EMPTY_PROMPT
   const queryInstance = query({
@@ -57,7 +61,9 @@ async function detectClaudeAuth(config: AppConfig): Promise<ClaudeAuthState> {
       hasOAuth: Boolean(info?.tokenSource || info?.subscriptionType),
       hasApiKey: Boolean(info?.apiKeySource),
     }
-  } catch {
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    console.warn(`[orb] Claude credential detection failed: ${reason}`)
     return { hasOAuth: false, hasApiKey: false }
   } finally {
     abortController.abort()

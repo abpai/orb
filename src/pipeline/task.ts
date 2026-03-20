@@ -1,4 +1,4 @@
-import type { AppState, AgentSession, AppConfig } from '../types'
+import { TTSError, type AppState, type AgentSession, type AppConfig } from '../types'
 import type { Frame } from './frames'
 import { createFrame } from './frames'
 import { singleFrame } from './processor'
@@ -177,12 +177,10 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
         try {
           await completion.waitForCompletion()
         } catch (err) {
-          // Streaming mode already emits `tts-error` frames via the processor callback.
-          // Batch mode surfaces failures only through the completion handle.
-          if (!config.ttsStreamingEnabled && err instanceof Error && 'type' in err) {
+          if (runId === runCounter && err instanceof TTSError) {
             transport.sendOutbound(
               createFrame('tts-error', {
-                errorType: (err as { type: string }).type as import('../types').TTSErrorType,
+                errorType: err.type,
                 message: err.message,
               }) as OutboundFrame,
             )

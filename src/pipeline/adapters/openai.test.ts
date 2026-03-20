@@ -29,6 +29,10 @@ describe('createOpenAiAdapter', () => {
       }),
     }))
 
+    mock.module('../../services/prompts', () => ({
+      buildProviderPrompt: async () => 'You are a helpful coding assistant.\n\nPrompt from files.',
+    }))
+
     mock.module('ai', () => ({
       stepCountIs: (count: number) => count,
       ToolLoopAgent: class {
@@ -70,7 +74,7 @@ describe('createOpenAiAdapter', () => {
       openai: expect.objectContaining({
         truncation: 'auto',
         previousResponseId: 'resp_prev',
-        instructions: expect.stringContaining('You are a helpful coding assistant.'),
+        instructions: 'You are a helpful coding assistant.\n\nPrompt from files.',
       }),
     })
     expect(frames.at(-1)).toEqual(
