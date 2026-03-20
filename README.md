@@ -53,8 +53,8 @@ orb --model=sonnet --voice=marius
 orb --provider=anthropic --model=opus
 
 # OpenAI provider
-orb --provider=openai --model=gpt-4o
-orb --model=openai:gpt-4o  # shorthand syntax
+orb --provider=openai --model=gpt-5.4
+orb --model=openai:gpt-5.4  # shorthand syntax
 ```
 
 ### Options
@@ -73,15 +73,27 @@ orb --model=openai:gpt-4o  # shorthand syntax
 | `--tts-grace-window-ms=<ms>`     | Extra wait when near a boundary                                                | `50` (OpenAI: `200`)                    |
 | `--model=<model>`                | Model ID or alias (`haiku`, `sonnet`, `opus`) or `provider:model`              | `haiku` (anthropic), `gpt-5.4` (openai) |
 | `--new`                          | Start fresh (ignore saved session)                                             | -                                       |
+| `--skip-intro`                   | Skip the welcome animation                                                     | -                                       |
 | `--no-tts`                       | Disable text-to-speech                                                         | -                                       |
 | `--no-streaming-tts`             | Disable streaming (batch mode)                                                 | -                                       |
 | `--help`                         | Show help message                                                              | -                                       |
 
 Sessions are stored under `~/.orb/sessions/` (one per project).
 
+## Customizing Prompts
+
+Orb’s built-in instructions live in the root-level `prompts/` directory so they are easy to find and edit:
+
+- `prompts/base.md` for shared behavior
+- `prompts/anthropic.md` for Anthropic-specific system instructions
+- `prompts/openai.md` for OpenAI-specific tool/sandbox instructions
+- `prompts/voice.md` for voice-mode guidance added when TTS is enabled
+
+Prompt files are read fresh for each run, so edits apply to the next question without rebuilding the app.
+
 If you do not pass `--provider` or `--model`, orb auto-selects a provider in this order:
 
-1. Claude Agent SDK (OAuth / Max subscription)
+1. Claude Agent SDK (Claude Code / Max or API key)
 2. `OPENAI_API_KEY`
 3. `ANTHROPIC_API_KEY`
 
@@ -91,7 +103,7 @@ If you do not pass `--provider` or `--model`, orb auto-selects a provider in thi
 - Paste MacWhisper transcription with **Cmd+V**
 - Press **Esc** or **Ctrl+S** to stop speech
 - Press **Shift+Tab** to cycle Claude models (Anthropic only)
-- Press **Ctrl+O** to open the transcript viewer
+- Press **Ctrl+O** to toggle live tool-call details
 - Press **Ctrl+C** to exit
 
 ## Requirements
@@ -106,13 +118,13 @@ orb supports two LLM providers: **Anthropic (Claude)** and **OpenAI**. Each prov
 
 If you do not specify a provider, orb chooses the first available option in this order:
 
-1. Claude Agent SDK (OAuth / Max subscription)
+1. Claude Agent SDK (Claude Code / Max or API key)
 2. `OPENAI_API_KEY`
 3. `ANTHROPIC_API_KEY`
 
 ### Anthropic (Claude) - Default
 
-Anthropic uses the Claude Agent SDK for authentication. No additional setup is required if you're already authenticated with the Claude Agent SDK. You can also set `ANTHROPIC_API_KEY` or `CLAUDE_API_KEY` for API-key auth.
+Anthropic uses the Claude Agent SDK. Orb can reuse a local Claude Code / Max-authenticated session when available, or fall back to `ANTHROPIC_API_KEY` / `CLAUDE_API_KEY`.
 
 #### Quick Start
 
@@ -125,8 +137,8 @@ orb --provider=anthropic
 
 # Use model aliases
 orb --model=haiku    # claude-haiku-4-5-20251001
-orb --model=sonnet   # claude-sonnet-4-5-20250929
-orb --model=opus     # claude-opus-4-20250514
+orb --model=sonnet   # claude-sonnet-4-6
+orb --model=opus     # claude-opus-4-6
 
 # Use full model IDs
 orb --model=claude-haiku-4-5-20251001
@@ -135,19 +147,14 @@ orb --model=claude-haiku-4-5-20251001
 #### Available Models
 
 - `claude-haiku-4-5-20251001` (default, alias: `haiku`) - Fast and efficient
-- `claude-sonnet-4-5-20250929` (alias: `sonnet`) - Balanced performance
-- `claude-opus-4-20250514` (alias: `opus`) - Most capable
+- `claude-sonnet-4-6` (alias: `sonnet`) - Best combination of speed and intelligence
+- `claude-opus-4-6` (alias: `opus`) - Most capable model for complex reasoning and coding
 
 #### Authentication
 
-Anthropic uses the Claude Agent SDK for authentication. Ensure you're authenticated:
+Anthropic uses the Claude Agent SDK for authentication. If you are not already signed in through Claude Code / Max, set `ANTHROPIC_API_KEY` or `CLAUDE_API_KEY` before starting Orb.
 
-```bash
-# Check if authenticated (if using Anthropic CLI)
-anthropic auth status
-```
-
-If not authenticated, follow the [Claude Agent SDK setup guide](https://docs.anthropic.com/claude/docs/agents-quickstart).
+For setup details, see the [Claude Agent SDK quickstart](https://platform.claude.com/docs/en/agent-sdk/quickstart) and the [Claude models overview](https://platform.claude.com/docs/en/about-claude/models/overview).
 
 ### OpenAI
 
@@ -171,14 +178,12 @@ orb --model=openai:gpt-5.4
 
 #### Available Models
 
-With an API key, any OpenAI model ID can be used. Common options include:
+With an API key, any supported OpenAI model ID can be used. Common current examples include:
 
 - `gpt-5.4` (default for OpenAI)
 - `gpt-5`
 - `gpt-4o`
-- `gpt-4-turbo`
-- `o1-preview`
-- `o1-mini`
+- `gpt-5.4-mini`
 
 > **Note**: OpenAI runs in a sandboxed environment via `bash-tool`. File edits happen in a sandbox overlay and are **not** applied to your actual repository. The assistant will describe any changes it makes, and you can apply them manually.
 
@@ -271,7 +276,7 @@ bun install
 bun run dev
 
 # Run with OpenAI provider
-bun run dev --provider=openai --model=gpt-4o
+bun run dev --provider=openai --model=gpt-5.4
 
 # Run checks
 bun run check    # prettier + test

@@ -15,6 +15,7 @@
 | 2026-03-13 | self | Mocked `./tts` in `streaming-tts.test.ts`, which poisoned Bun's module cache and broke later tests that needed the real TTS module | In this repo, prefer mocking runtime primitives like `fetch` and `Bun.spawn` over mocking shared service modules when tests run in the same Bun process |
 | 2026-03-13 | self | Passed OpenAI resume instructions through `ToolLoopAgent.instructions`, which re-appended the system prompt on every `previousResponseId` continuation | When continuing OpenAI Responses conversations, omit agent-level instructions and pass the prompt through `providerOptions.openai.instructions` instead |
 | 2026-03-20 | self | Ran the `useConversation` persistence test in the Codex sandbox and it failed with `EPERM` because session writes target `~/.orb/sessions`, which is outside the writable roots | For hook/session persistence verification in this environment, expect real-save tests to be sandbox-blocked unless the session path is redirected into the workspace |
+| 2026-03-20 | self | Changed the default serve-mode TTS URL in code without updating the documented setup flow, which would have broken out-of-the-box speech for users following the README | When moving runtime defaults here, verify the code, README examples, and CLI help still agree before treating the change as safe |
 
 ## User Preferences
 
@@ -25,12 +26,14 @@
 
 - For this repo, targeted Bun lint/test runs quickly expose whether CLI and pipeline changes are safe; the app now ships as a Bun-native source CLI instead of a built `dist/` package.
 - For this repo's Bun-only quality gate, keep `.prettierignore` aligned with non-product areas like `scratch/` and `.agents/` so `bun run check` enforces source formatting without blocking on demo or memory files.
+- In this repo's often-dirty worktree, run `bun run check` for signal, but verify touched files with targeted `prettier --check` too so unrelated formatting drift does not force edits to user-owned files.
 - When simplifying Orb's CLI surface, trace config fields from `src/cli.ts` and `src/config.ts` outward; `permissionMode: 'acceptEdits'` had become unreachable even though downstream Anthropic code still carried branches for it.
 - The new frame/pipeline layer is a good seam for cancellation and integration tests without needing live provider credentials.
 - For large Orb refactors, split commits by runtime seam rather than by folder: TTS service hardening, pipeline contract cleanup, UI hook extraction, then legacy/docs cleanup keeps each commit reviewable and green.
 - When updating architecture docs here, anchor the narrative on `src/index.ts -> src/ui/App.tsx -> src/pipeline/**` first, then describe older concepts only as historical caveats.
 - `mock.module()` works under plain `bun run` scripts here, which makes `scratch/` demos a good place to drive runtime seams with mocked provider/TTS boundaries.
 - For hook persistence regressions here, a small Ink harness plus the real session file is more reliable than mocking `saveSession`, especially when other tests may have already cached the hook module.
+- For provider-doc audits here, prefer the canonical English Anthropic/OpenAI docs pages over localized variants; localized Anthropic model pages can lag the current model IDs.
 
 ## Patterns That Don't Work
 
