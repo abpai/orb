@@ -6,12 +6,11 @@ import { unlink } from 'node:fs/promises'
 import { TTSError, type AppConfig, type TTSErrorType } from '../types'
 import { cleanTextForSpeech } from '../ui/utils/markdown'
 
-// Re-export for streaming-tts and other consumers
 export { cleanTextForSpeech }
 
 const DEFAULT_SERVER_URL = 'http://localhost:8000'
 
-export function categorizeTTSError(err: unknown, context: 'generate' | 'playback'): TTSError {
+function categorizeTTSError(err: unknown, context: 'generate' | 'playback'): TTSError {
   if (err instanceof TTSError) return err
 
   const error = err instanceof Error ? err : new Error(String(err))
@@ -37,7 +36,7 @@ export function resetPlaybackStoppedFlag(): void {
   playbackStoppedManually = false
 }
 
-export function splitIntoSentences(text: string): string[] {
+function splitIntoSentences(text: string): string[] {
   const sentences: string[] = []
   let current = ''
 
@@ -74,7 +73,7 @@ function normalizeServerUrl(rawUrl: string): string {
   try {
     url = new URL(trimmed)
   } catch {
-    throw new TTSError('Invalid Pocket TTS server URL', 'generation_failed')
+    throw new TTSError('Invalid TTS server URL', 'generation_failed')
   }
 
   if (!url.pathname || url.pathname === '/') {
@@ -97,33 +96,50 @@ function isValidSpeed(speed: number | undefined): speed is number {
   return typeof speed === 'number' && Number.isFinite(speed) && speed > 0
 }
 
-async function requestServerSpeech(
-  serverUrl: string,
+function buildSpeechFormData(
   text: string,
-  voice: string,
+  voice: string | undefined,
   speed: number,
-): Promise<Buffer> {
+): globalThis.FormData {
   const formData = new globalThis.FormData()
   formData.append('text', text)
   if (voice) {
+    // Support both the legacy pocket-tts server field and the newer tts-gateway field.
+    formData.append('voice', voice)
     formData.append('voice_url', voice)
   }
   if (isValidSpeed(speed)) {
     formData.append('speed', String(speed))
   }
+  return formData
+}
 
-  const response = await fetch(serverUrl, {
-    method: 'POST',
-    body: formData,
-  })
+async function requestServerSpeech(
+  serverUrl: string,
+  text: string,
+  voice: string,
+  speed: number,
+  signal?: globalThis.AbortSignal,
+): Promise<Buffer> {
+  async function postSpeech(formData: globalThis.FormData): Promise<Response> {
+    return await fetch(serverUrl, {
+      method: 'POST',
+      body: formData,
+      signal,
+    })
+  }
+
+  let response = await postSpeech(buildSpeechFormData(text, voice, speed))
+  if (!response.ok && voice) {
+    // Some tts-gateway providers use a different voice namespace than Orb's pocket presets.
+    // Retry once without an explicit voice so the server can fall back to its default.
+    response = await postSpeech(buildSpeechFormData(text, undefined, speed))
+  }
 
   if (!response.ok) {
     const message = await readErrorMessage(response)
     const details = message ? `: ${message}` : ''
-    throw new TTSError(
-      `Pocket TTS server error (${response.status})${details}`,
-      'generation_failed',
-    )
+    throw new TTSError(`TTS server error (${response.status})${details}`, 'generation_failed')
   }
 
   const audioBuffer = await response.arrayBuffer()
@@ -152,11 +168,18 @@ export async function generateAudio(
   text: string,
   config: AppConfig,
   outputPath: string,
+  signal?: globalThis.AbortSignal,
 ): Promise<void> {
   try {
     if (config.ttsMode === 'serve') {
       const serverUrl = normalizeServerUrl(config.ttsServerUrl ?? DEFAULT_SERVER_URL)
-      const audio = await requestServerSpeech(serverUrl, text, config.ttsVoice, config.ttsSpeed)
+      const audio = await requestServerSpeech(
+        serverUrl,
+        text,
+        config.ttsVoice,
+        config.ttsSpeed,
+        signal,
+      )
       await Bun.write(outputPath, audio)
       return
     }
@@ -168,7 +191,6 @@ export async function generateAudio(
 }
 
 export async function playAudio(path: string, speed?: number): Promise<void> {
-  resetPlaybackStoppedFlag()
   const args = isValidSpeed(speed) ? [path, '-r', String(speed)] : [path]
 
   try {

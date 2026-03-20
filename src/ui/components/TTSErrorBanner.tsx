@@ -13,7 +13,10 @@ interface ErrorConfig {
 }
 
 const ERROR_CONFIG: Record<TTSErrorType, ErrorConfig> = {
-  command_not_found: { icon: '⚠', hint: 'Install pocket-tts to enable voice output' },
+  command_not_found: {
+    icon: '⚠',
+    hint: 'Install tts-gateway or pocket-tts to enable voice output',
+  },
   audio_playback: { icon: '🔇', hint: 'Audio playback failed' },
   generation_failed: { icon: '🔇', hint: 'Voice synthesis failed' },
 }

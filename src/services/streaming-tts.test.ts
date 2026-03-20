@@ -1,7 +1,29 @@
-import { describe, expect, it } from 'bun:test'
-import type { AppConfig } from '../../types'
-import { DEFAULT_CONFIG } from '../../types'
-import { createStreamingSpeechController } from '../streaming-tts'
+import { afterEach, describe, expect, it, mock } from 'bun:test'
+import type { AppConfig } from '../types'
+import { DEFAULT_CONFIG } from '../types'
+import { createStreamingSpeechController } from './streaming-tts'
+
+const originalFetch = globalThis.fetch
+const originalSpawn = Bun.spawn
+
+afterEach(() => {
+  globalThis.fetch = originalFetch
+  Bun.spawn = originalSpawn
+  mock.restore()
+})
+
+function installTTSMocks() {
+  globalThis.fetch = mock(async () => {
+    return new Response(new Uint8Array([1, 2, 3]).buffer, { status: 200 })
+  }) as unknown as typeof globalThis.fetch
+
+  Bun.spawn = mock(() => {
+    return {
+      exited: Promise.resolve(0),
+      kill: () => {},
+    } as Bun.Subprocess
+  }) as typeof Bun.spawn
+}
 
 function createTestConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
@@ -20,6 +42,7 @@ function createTestConfig(overrides: Partial<AppConfig> = {}): AppConfig {
 describe('createStreamingSpeechController', () => {
   describe('chunk extraction', () => {
     it('extracts chunks at sentence boundaries', () => {
+      installTTSMocks()
       const config = createTestConfig()
       const controller = createStreamingSpeechController(config, {
         onSpeakingStart: () => {},
@@ -29,92 +52,84 @@ describe('createStreamingSpeechController', () => {
       controller.feedText('This is a test. ')
       controller.finalize()
 
-      // The controller should have processed these as separate chunks
       expect(controller.isActive()).toBe(true)
+      controller.stop()
     })
 
     it('handles text without sentence boundaries', () => {
+      installTTSMocks()
       const config = createTestConfig({ ttsMaxWaitMs: 0 })
       const controller = createStreamingSpeechController(config)
 
       controller.feedText('A continuous stream of words without punctuation')
       controller.finalize()
 
-      // Should complete without hanging
       expect(controller.isActive()).toBe(true)
+      controller.stop()
     })
   })
 
   describe('long text without whitespace', () => {
     it('handles text without any whitespace by triggering forced flush', async () => {
+      installTTSMocks()
       const config = createTestConfig({ ttsMaxWaitMs: 50 })
       const controller = createStreamingSpeechController(config)
 
-      // Feed text with no whitespace - this should trigger forced flush after timeout
-      const longWord = 'a'.repeat(250)
-      controller.feedText(longWord)
+      controller.feedText('a'.repeat(250))
 
-      // Give time for timeout to trigger the forced flush path
       await new Promise((resolve) => setTimeout(resolve, 100))
 
-      // The controller should have queued work (not stuck in infinite loop)
-      // It will try to generate audio which may fail, but that's separate from the chunking logic
       expect(controller.isActive()).toBe(true)
-
-      // Clean up
       controller.stop()
     })
 
     it('handles long text without punctuation via whitespace boundaries', async () => {
+      installTTSMocks()
       const config = createTestConfig({ ttsMaxWaitMs: 50 })
       const controller = createStreamingSpeechController(config)
 
-      // Text with spaces but no sentence-ending punctuation
       controller.feedText('word '.repeat(50))
 
       await new Promise((resolve) => setTimeout(resolve, 100))
 
-      // Should have extracted chunks at whitespace boundaries
       expect(controller.isActive()).toBe(true)
-
-      // Clean up
       controller.stop()
     })
   })
 
   describe('controller lifecycle', () => {
     it('starts inactive', () => {
+      installTTSMocks()
       const config = createTestConfig()
       const controller = createStreamingSpeechController(config)
 
-      // Before any text is fed, should not be active
       expect(controller.isActive()).toBe(false)
     })
 
     it('becomes active after receiving text', () => {
+      installTTSMocks()
       const config = createTestConfig()
       const controller = createStreamingSpeechController(config)
 
       controller.feedText('Hello world.')
 
-      // After feeding text, should become active
       expect(controller.isActive()).toBe(true)
-
       controller.stop()
     })
 
     it('can be stopped', () => {
+      installTTSMocks()
       const config = createTestConfig()
       const controller = createStreamingSpeechController(config)
 
       controller.feedText('Some text.')
       controller.stop()
 
-      // After stop, isActive should be false
       expect(controller.isActive()).toBe(false)
     })
 
     it('ignores text when TTS is disabled', () => {
+      installTTSMocks()
       const config = createTestConfig({ ttsEnabled: false })
       const controller = createStreamingSpeechController(config)
 
@@ -127,20 +142,19 @@ describe('createStreamingSpeechController', () => {
 
   describe('finalization', () => {
     it('extracts remaining text on finalize', () => {
+      installTTSMocks()
       const config = createTestConfig()
       const controller = createStreamingSpeechController(config)
 
-      // Text without ending punctuation
       controller.feedText('Incomplete sentence without period')
       controller.finalize()
 
-      // Should process remaining text
       expect(controller.isActive()).toBe(true)
-
       controller.stop()
     })
 
     it('handles empty input gracefully', async () => {
+      installTTSMocks()
       const config = createTestConfig()
       const controller = createStreamingSpeechController(config)
 
@@ -151,13 +165,13 @@ describe('createStreamingSpeechController', () => {
     })
 
     it('handles whitespace-only input gracefully', async () => {
+      installTTSMocks()
       const config = createTestConfig()
       const controller = createStreamingSpeechController(config)
 
       controller.feedText('   \n\t  ')
       controller.finalize()
 
-      // Should not be active with only whitespace
       expect(controller.isActive()).toBe(false)
     })
   })

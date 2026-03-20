@@ -108,8 +108,11 @@ export function createStreamingSpeechController(
 
   let isGenerating = false
   let isPlaying = false
+  let generationAbortController: AbortController | null = null
   let completionResolve: (() => void) | null = null
+  let completionReject: ((error: TTSError) => void) | null = null
   let completionPromise: Promise<void> | null = null
+  let fatalError: TTSError | null = null
 
   function clearTimers(): void {
     if (maxWaitTimeout) {
@@ -121,6 +124,17 @@ export function createStreamingSpeechController(
       graceTimeout = null
     }
     pendingGrace = false
+  }
+
+  async function cleanupAudioPath(path: string): Promise<void> {
+    await unlink(path).catch(() => {})
+  }
+
+  function clearAudioQueue(): void {
+    for (const audio of audioQueue) {
+      void cleanupAudioPath(audio.path)
+    }
+    audioQueue.length = 0
   }
 
   function enqueueChunk(chunk: string, now: number): void {
@@ -294,32 +308,27 @@ export function createStreamingSpeechController(
     }
 
     isGenerating = true
+    generationAbortController = new AbortController()
     const audioPath = join(
       tmpdir(),
       `tts-stream-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.wav`,
     )
 
     try {
-      await generateAudio(sentence, config, audioPath)
+      await generateAudio(sentence, config, audioPath, generationAbortController.signal)
       if (!stopped) {
         audioQueue.push({ path: audioPath, sentence })
         processPlaybackQueue()
       } else {
-        // Cleanup if stopped during generation
-        try {
-          await unlink(audioPath)
-        } catch {
-          // Ignore cleanup errors
-        }
+        await cleanupAudioPath(audioPath)
       }
     } catch (err) {
       const ttsError =
         err instanceof TTSError ? err : new TTSError(String(err), 'generation_failed')
-      if (ttsError.type === 'command_not_found') {
-        stopped = true
-      }
       callbacks.onError?.(ttsError)
+      fail(ttsError)
     } finally {
+      generationAbortController = null
       isGenerating = false
       if (!stopped) {
         processGenerationQueue()
@@ -352,14 +361,10 @@ export function createStreamingSpeechController(
       if (!wasPlaybackStopped()) {
         const ttsError = err instanceof TTSError ? err : new TTSError(String(err), 'audio_playback')
         callbacks.onError?.(ttsError)
+        fail(ttsError)
       }
     } finally {
-      // Cleanup audio file
-      try {
-        await unlink(audio.path)
-      } catch {
-        // Ignore cleanup errors
-      }
+      await cleanupAudioPath(audio.path)
 
       isPlaying = false
       if (!stopped) {
@@ -373,9 +378,20 @@ export function createStreamingSpeechController(
   }
 
   function markComplete(): void {
+    if (completed) return
     completed = true
     if (speakingStarted) callbacks.onSpeakingEnd?.()
     completionResolve?.()
+  }
+
+  function fail(error: TTSError): void {
+    if (completed) return
+    fatalError = error
+    stopped = true
+    completed = true
+    sentenceQueue.length = 0
+    clearAudioQueue()
+    completionReject?.(error)
   }
 
   function checkCompletion(): void {
@@ -422,11 +438,10 @@ export function createStreamingSpeechController(
       clearTimers()
       sentenceQueue.length = 0
 
-      // Clear audio queue and cleanup files
-      for (const audio of audioQueue) {
-        unlink(audio.path).catch(() => {})
-      }
-      audioQueue.length = 0
+      clearAudioQueue()
+
+      generationAbortController?.abort()
+      generationAbortController = null
 
       // Stop current playback
       stopSpeaking()
@@ -438,15 +453,21 @@ export function createStreamingSpeechController(
     waitForCompletion(): Promise<void> {
       if (completionPromise) return completionPromise
 
-      completionPromise = new Promise((resolve) => {
+      completionPromise = new Promise((resolve, reject) => {
         completionResolve = resolve
+        completionReject = reject
+
+        if (fatalError) {
+          reject(fatalError)
+          return
+        }
 
         const alreadyDone = stopped || completed || !config.ttsEnabled
         const justFinished = finalized && !hasWorkRemaining()
 
         if (alreadyDone || justFinished) {
-          if (justFinished) markComplete()
-          else resolve()
+          markComplete()
+          resolve()
         }
       })
 
