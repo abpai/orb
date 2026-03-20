@@ -67,22 +67,10 @@ export interface TTSErrorFrame extends BaseFrame {
   message: string
 }
 
-export interface TTSPendingFrame extends BaseFrame {
-  kind: 'tts-pending'
-  waitForCompletion: () => Promise<void>
-  stop: () => void
-}
-
 // ── Control ──
 
 export interface CancelFrame extends BaseFrame {
   kind: 'cancel'
-}
-
-export interface EndFrame extends BaseFrame {
-  kind: 'end'
-  reason: 'complete' | 'cancelled' | 'error'
-  error?: Error
 }
 
 // ── Union ──
@@ -98,9 +86,7 @@ export type Frame =
   | TTSSpeakingStartFrame
   | TTSSpeakingEndFrame
   | TTSErrorFrame
-  | TTSPendingFrame
   | CancelFrame
-  | EndFrame
 
 // ── Factory ──
 

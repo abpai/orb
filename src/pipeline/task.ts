@@ -1,10 +1,11 @@
 import type { AppState, AgentSession, AppConfig } from '../types'
-import type { Frame, TTSPendingFrame } from './frames'
+import type { Frame } from './frames'
 import { createFrame } from './frames'
+import { singleFrame } from './processor'
 import { createPipeline } from './pipeline'
 import type { PipelineObserver } from './observer'
 import { createAgentProcessor } from './processors/agent'
-import { createTTSProcessor } from './processors/tts'
+import { createTTSProcessor, type TTSCompletionHandle } from './processors/tts'
 import type { Transport, OutboundFrame } from './transports/types'
 import { isAbortError } from './adapters/utils'
 
@@ -33,11 +34,10 @@ export interface PipelineTask {
   run(query: string, entryId: string): Promise<RunResult>
   cancel(): void
   updateConfig(config: AppConfig): void
-  updateSession(session: AgentSession | undefined): void
 }
 
 /** Outbound frame kinds that get routed to the transport */
-const OUTBOUND_KINDS = new Set<string>([
+const OUTBOUND_KINDS = new Set<Frame['kind']>([
   'agent-text-delta',
   'agent-text-complete',
   'tool-call-start',
@@ -58,7 +58,7 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
 
   let runCounter = 0
   let currentAbort: AbortController | null = null
-  let currentTtsPending: TTSPendingFrame | null = null
+  let currentTtsCompletion: TTSCompletionHandle | null = null
 
   function setState(next: TaskState): void {
     if (next === state) return
@@ -88,9 +88,9 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
         currentAbort.abort()
         currentAbort = null
       }
-      if (currentTtsPending) {
-        currentTtsPending.stop()
-        currentTtsPending = null
+      if (currentTtsCompletion) {
+        currentTtsCompletion.stop()
+        currentTtsCompletion = null
       }
 
       const runId = ++runCounter
@@ -101,7 +101,7 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
 
       let finalText = ''
       let finalSession: AgentSession | undefined
-      let ttsPending: TTSPendingFrame | null = null
+      let ttsCompletion: TTSCompletionHandle | null = null
       let error: Error | undefined
 
       // Notify observers
@@ -117,13 +117,18 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
             session,
             abortController,
           }),
-          createTTSProcessor(config),
+          createTTSProcessor(config, {
+            setCompletion(handle) {
+              ttsCompletion = handle
+              currentTtsCompletion = handle
+            },
+          }),
         ],
         observers,
       })
 
       // Create frame source
-      const source = singleFrameSource(createFrame('user-text', { text: query, entryId }))
+      const source = singleFrame(createFrame('user-text', { text: query, entryId }))
 
       try {
         for await (const frame of pipeline(source)) {
@@ -152,11 +157,6 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
               if (state === 'processing_speaking') setState('processing')
               else if (state === 'speaking') setState('idle')
               break
-
-            case 'tts-pending':
-              ttsPending = frame
-              currentTtsPending = frame
-              break
           }
 
           // Route displayable frames to transport
@@ -171,13 +171,15 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
       }
 
       // Handle TTS pending work (speaking state after agent completes)
-      if (ttsPending && runId === runCounter && !error) {
+      if (ttsCompletion && runId === runCounter && !error) {
+        const completion = ttsCompletion as TTSCompletionHandle
         setState('speaking')
         try {
-          await ttsPending.waitForCompletion()
+          await completion.waitForCompletion()
         } catch (err) {
-          // TTS completion errors are non-fatal; the text was already delivered
-          if (err instanceof Error && 'type' in err) {
+          // Streaming mode already emits `tts-error` frames via the processor callback.
+          // Batch mode surfaces failures only through the completion handle.
+          if (!config.ttsStreamingEnabled && err instanceof Error && 'type' in err) {
             transport.sendOutbound(
               createFrame('tts-error', {
                 errorType: (err as { type: string }).type as import('../types').TTSErrorType,
@@ -186,8 +188,8 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
             )
           }
         } finally {
-          if (currentTtsPending === ttsPending) {
-            currentTtsPending = null
+          if (currentTtsCompletion === completion) {
+            currentTtsCompletion = null
           }
         }
       }
@@ -225,24 +227,15 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
       runCounter++ // invalidate current run
       currentAbort?.abort()
       currentAbort = null
-      currentTtsPending?.stop()
-      currentTtsPending = null
+      currentTtsCompletion?.stop()
+      currentTtsCompletion = null
       setState('idle')
     },
 
     updateConfig(newConfig: AppConfig): void {
       config = newConfig
     },
-
-    updateSession(newSession: AgentSession | undefined): void {
-      session = newSession
-    },
   }
 
   return task
-}
-
-/** Creates an async iterable that yields a single frame */
-async function* singleFrameSource(frame: Frame): AsyncIterable<Frame> {
-  yield frame
 }

@@ -53,19 +53,6 @@ describe('createFrame', () => {
     expect(frame.toolCall.input).toEqual({ command: 'ls' })
   })
 
-  it('creates tts-pending frame with handles', () => {
-    let stopped = false
-    const frame = createFrame('tts-pending', {
-      waitForCompletion: () => Promise.resolve(),
-      stop: () => {
-        stopped = true
-      },
-    })
-    expect(frame.kind).toBe('tts-pending')
-    frame.stop()
-    expect(stopped).toBe(true)
-  })
-
   it('creates data-less frames without second argument', () => {
     const cancel = createFrame('cancel')
     expect(cancel.kind).toBe('cancel')

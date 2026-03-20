@@ -9,26 +9,38 @@ import {
 } from '../../services/streaming-tts'
 import { speak, stopSpeaking } from '../../services/tts'
 
+export interface TTSCompletionHandle {
+  waitForCompletion(): Promise<void>
+  stop(): void
+}
+
+export interface TTSRunControl {
+  setCompletion(handle: TTSCompletionHandle | null): void
+}
+
 /**
  * TTSProcessor: intercepts agent text frames to drive TTS.
  *
  * Streaming mode: wraps StreamingSpeechController, feeds text deltas,
- * emits speaking start/end/error frames, and yields a tts-pending frame
- * for the PipelineTask to await.
+ * emits speaking start/end/error frames, and hands a completion handle
+ * to the PipelineTask to await.
  *
- * Batch mode: yields a tts-pending frame on completion that speaks the full text.
+ * Batch mode: hands a completion handle to the PipelineTask on completion
+ * that speaks the full text.
  *
  * All frames pass through to downstream (transport sees them for UI updates).
  */
-export function createTTSProcessor(appConfig: AppConfig): Processor {
+export function createTTSProcessor(appConfig: AppConfig, runControl?: TTSRunControl): Processor {
   return async function* ttsProcessor(upstream: AsyncIterable<Frame>): AsyncGenerator<Frame> {
     if (!appConfig.ttsEnabled) {
+      runControl?.setCompletion(null)
       yield* upstream
       return
     }
 
     const useStreaming = appConfig.ttsStreamingEnabled
     let controller: StreamingSpeechController | null = null
+    let controllerHandedOff = false
     const pendingTTSFrames: Frame[] = []
 
     if (useStreaming) {
@@ -77,7 +89,8 @@ export function createTTSProcessor(appConfig: AppConfig): Processor {
 
             if (controller.isActive()) {
               const ctrl = controller
-              yield createFrame('tts-pending', {
+              controllerHandedOff = true
+              runControl?.setCompletion({
                 waitForCompletion: () => ctrl.waitForCompletion(),
                 stop: () => ctrl.stop(),
               })
@@ -85,9 +98,9 @@ export function createTTSProcessor(appConfig: AppConfig): Processor {
             continue
           }
 
-          // Batch mode: yield frame, then pending frame for batch speak
+          // Batch mode: hand the synthesized playback work to the task layer.
           yield frame
-          yield createFrame('tts-pending', {
+          runControl?.setCompletion({
             waitForCompletion: () => speak(completedText, appConfig),
             stop: () => stopSpeaking(),
           })
@@ -99,7 +112,9 @@ export function createTTSProcessor(appConfig: AppConfig): Processor {
         yield* drainPending()
       }
     } finally {
-      controller?.stop()
+      if (!controllerHandedOff) {
+        controller?.stop()
+      }
     }
   }
 }

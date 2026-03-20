@@ -2,18 +2,15 @@ import { afterEach, describe, expect, it, mock } from 'bun:test'
 
 import { createFrame, type Frame } from '../frames'
 import type { Transport } from '../transports/types'
-import { DEFAULT_CONFIG } from '../../types'
+import { DEFAULT_CONFIG, TTSError } from '../../types'
 
 let stopCalls = 0
 let releaseWait: (() => void) | null = null
 
 function createTransport(): Transport {
   return {
-    onInbound: () => () => {},
-    emitInbound: () => {},
     onOutbound: () => () => {},
     sendOutbound: () => {},
-    dispose: () => {},
   }
 }
 
@@ -34,12 +31,15 @@ describe('createPipelineTask', () => {
     }))
 
     mock.module('../processors/tts', () => ({
-      createTTSProcessor: () =>
+      createTTSProcessor: (
+        _config: unknown,
+        runControl?: { setCompletion?: (handle: unknown) => void },
+      ) =>
         async function* (upstream: AsyncIterable<Frame>) {
           for await (const frame of upstream) {
             yield frame
             if (frame.kind === 'agent-text-complete') {
-              yield createFrame('tts-pending', {
+              runControl?.setCompletion?.({
                 waitForCompletion: () =>
                   new Promise<void>((resolve) => {
                     releaseWait = resolve
@@ -76,5 +76,55 @@ describe('createPipelineTask', () => {
     expect(states).toContain('processing')
     expect(states).toContain('speaking')
     expect(task.state).toBe('idle')
+  })
+
+  it('does not emit duplicate tts-error frames for streaming failures', async () => {
+    const outboundFrames: Frame[] = []
+
+    mock.module('../processors/agent', () => ({
+      createAgentProcessor: () =>
+        async function* () {
+          yield createFrame('agent-text-complete', { text: 'done' })
+        },
+    }))
+
+    mock.module('../processors/tts', () => ({
+      createTTSProcessor: (
+        _config: unknown,
+        runControl?: { setCompletion?: (handle: unknown) => void },
+      ) =>
+        async function* (upstream: AsyncIterable<Frame>) {
+          for await (const frame of upstream) {
+            yield frame
+            if (frame.kind === 'agent-text-complete') {
+              yield createFrame('tts-error', {
+                errorType: 'generation_failed',
+                message: 'tts failed',
+              })
+
+              runControl?.setCompletion?.({
+                waitForCompletion: () =>
+                  Promise.reject(new TTSError('tts failed', 'generation_failed')),
+                stop: () => {},
+              })
+            }
+          }
+        },
+    }))
+
+    const { createPipelineTask } = await import('../task')
+    const task = createPipelineTask({
+      appConfig: DEFAULT_CONFIG,
+      transport: {
+        onOutbound: () => () => {},
+        sendOutbound: (frame) => {
+          outboundFrames.push(frame)
+        },
+      },
+    })
+
+    await task.run('hello', 'entry-1')
+
+    expect(outboundFrames.filter((frame) => frame.kind === 'tts-error')).toHaveLength(1)
   })
 })
