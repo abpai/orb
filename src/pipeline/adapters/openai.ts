@@ -1,11 +1,10 @@
 import { createBashTool } from 'bash-tool'
 import { ToolLoopAgent, stepCountIs, type ToolSet, type StepResult } from 'ai'
-import type { OpenAiMessage } from '../../types'
 import type { Frame } from '../frames'
 import { createFrame } from '../frames'
 import type { AgentAdapter, AgentAdapterConfig } from './types'
-import { normalizeToolInput, isToolError, formatToolResult } from './utils'
-import { resolveOpenAiProvider, validateCodexModel } from '../../services/openai-auth'
+import { normalizeToolInput, isToolError, formatToolResult, VOICE_SYSTEM_PROMPT } from './utils'
+import { resolveOpenAiProvider } from '../../services/openai-auth'
 
 const BASE_INSTRUCTIONS = `You are a helpful coding assistant.
 
@@ -15,18 +14,6 @@ Edits happen in a sandbox overlay; describe any changes you make.
 Never claim to be Claude or Anthropic; you are an OpenAI model.
 Prefer concise bash commands (ls, rg, sed, awk, jq) and keep outputs short.
 If you need to modify files, do so via writeFile so changes are explicit.`
-
-const VOICE_SYSTEM_PROMPT = `You are a helpful coding assistant responding via voice.
-
-Guidelines for voice responses:
-- Keep responses concise: 2-4 sentences for simple questions, up to a paragraph for complex topics
-- Use conversational, natural language that sounds good when spoken aloud
-- Avoid code blocks, markdown formatting, bullet lists, and technical symbols
-- When discussing code, describe it verbally rather than showing syntax
-- End with a follow-up question or offer to elaborate if the topic warrants it
-- If a question requires showing code, briefly explain what you would write and ask if they'd like details
-
-Remember: Your response will be read aloud, so optimize for listening, not reading.`
 
 interface OaiToolCall {
   toolCallId: string
@@ -40,22 +27,12 @@ interface OaiToolResult {
   output: unknown
 }
 
-function buildConversationPrompt(messages: OpenAiMessage[]): string {
-  return messages
-    .map((message) => {
-      const label = message.role === 'user' ? 'User' : 'Assistant'
-      return `${label}: ${message.content}`
-    })
-    .join('\n\n')
-}
-
 export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
   return {
     async *stream(prompt: string): AsyncIterable<Frame> {
       const { appConfig, session, abortController } = config
-      const priorMessages = session?.provider === 'openai' ? session.messages : []
-      const nextMessages: OpenAiMessage[] = [...priorMessages, { role: 'user', content: prompt }]
-      const conversationPrompt = buildConversationPrompt(nextMessages)
+      const previousResponseId =
+        session?.provider === 'openai' ? session.previousResponseId : undefined
       const instructions = appConfig.ttsEnabled
         ? `${BASE_INSTRUCTIONS}\n\n${VOICE_SYSTEM_PROMPT}`
         : BASE_INSTRUCTIONS
@@ -127,34 +104,37 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
         )
       }
 
-      const { provider, source: authSource } = await resolveOpenAiProvider(appConfig)
+      const { provider } = await resolveOpenAiProvider(appConfig)
+      const model = provider.responses(appConfig.llmModel as never)
 
-      if (authSource === 'chatgpt') {
-        validateCodexModel(appConfig.llmModel)
-      }
+      let finalResponseId: string | undefined
 
-      const effectiveApi = authSource === 'chatgpt' ? 'chat' : appConfig.openaiApi
-
-      const buildModel = (api: 'responses' | 'chat') =>
-        api === 'chat'
-          ? provider.chat(appConfig.llmModel as never)
-          : provider.responses(appConfig.llmModel as never)
-
-      const runStream = async function* (api: 'responses' | 'chat'): AsyncIterable<Frame> {
+      const runStream = async function* (continuationResponseId?: string): AsyncIterable<Frame> {
         accumulatedText = ''
         toolIndex = 0
         toolIdToIndex.clear()
         pendingFrames.length = 0
 
         const agent = new ToolLoopAgent({
-          model: buildModel(api),
-          instructions,
+          model,
+          ...(continuationResponseId ? {} : { instructions }),
           tools: allowedTools,
           stopWhen: stepCountIs(20),
+          providerOptions: {
+            openai: {
+              truncation: 'auto',
+              ...(continuationResponseId
+                ? {
+                    previousResponseId: continuationResponseId,
+                    instructions,
+                  }
+                : {}),
+            },
+          },
         })
 
         const agentStream = await agent.stream({
-          prompt: conversationPrompt,
+          prompt,
           onStepFinish: (stepResult: StepResult<ToolSet>) => {
             for (const call of stepResult.toolCalls) {
               registerToolCall(call)
@@ -183,30 +163,39 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
         while (pendingFrames.length > 0) {
           yield pendingFrames.shift()!
         }
+
+        finalResponseId = (await agentStream.response).id
+      }
+
+      const isInvalidContinuationError = (err: unknown): boolean => {
+        if (!previousResponseId) return false
+        const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase()
+        const statusCode =
+          typeof err === 'object' && err !== null && 'statusCode' in err
+            ? (err as { statusCode?: number }).statusCode
+            : undefined
+
+        return (
+          statusCode === 400 ||
+          statusCode === 404 ||
+          message.includes('previous_response_id') ||
+          message.includes('previous response') ||
+          message.includes('conversation')
+        )
       }
 
       try {
-        let succeeded = false
         try {
-          yield* runStream(effectiveApi)
-          succeeded = true
+          yield* runStream(previousResponseId)
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err)
-          const canFallback =
-            effectiveApi === 'responses' && message.includes('api.responses.write')
-          if (!canFallback) throw err
-          yield* runStream('chat')
-          succeeded = true
+          if (!isInvalidContinuationError(err)) throw err
+          yield* runStream()
         }
 
-        if (succeeded) {
-          const updatedMessages: OpenAiMessage[] = [
-            ...nextMessages,
-            { role: 'assistant', content: accumulatedText },
-          ]
+        if (finalResponseId) {
           yield createFrame('agent-text-complete', {
             text: accumulatedText,
-            session: { provider: 'openai', messages: updatedMessages },
+            session: { provider: 'openai', previousResponseId: finalResponseId },
           })
         }
       } finally {
