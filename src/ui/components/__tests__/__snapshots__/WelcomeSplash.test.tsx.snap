@@ -1,8 +1,7 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
 exports[`WelcomeSplash animation modes renders idle mode (default) 1`] = `
-"
-                                        ..:::=====-=====:::..
+"                                        ..:::=====-=====:::..
                                        ..::===---------===::..
                                       ..::===---+++++---===::..
                                       ..::==--+++***+++--==::..
@@ -16,12 +15,11 @@ exports[`WelcomeSplash animation modes renders idle mode (default) 1`] = `
 
                                            talk to claude
 
-                                            say anything"
+                                      press enter to continue"
 `;
 
 exports[`WelcomeSplash animation modes renders idle mode explicitly 1`] = `
-"
-                                        ..:::=====-=====:::..
+"                                        ..:::=====-=====:::..
                                        ..::===---------===::..
                                       ..::===---+++++---===::..
                                       ..::==--+++***+++--==::..
@@ -35,12 +33,11 @@ exports[`WelcomeSplash animation modes renders idle mode explicitly 1`] = `
 
                                            talk to claude
 
-                                            say anything"
+                                      press enter to continue"
 `;
 
 exports[`WelcomeSplash animation modes renders processing mode 1`] = `
-"
-                                        ..:::=====-=====:::..
+"                                        ..:::=====-=====:::..
                                        ..::===---------===::..
                                       ..::===---+++++---===::..
                                       ..::==--+++***+++--==::..
@@ -54,12 +51,11 @@ exports[`WelcomeSplash animation modes renders processing mode 1`] = `
 
                                            talk to claude
 
-                                            say anything"
+                                      press enter to continue"
 `;
 
 exports[`WelcomeSplash animation modes renders speaking mode 1`] = `
-"
-                                        ..:::=====-=====:::..
+"                                        ..:::=====-=====:::..
                                        ..::===---------===::..
                                       ..::===---+++++---===::..
                                       ..::==--+++***+++--==::..
@@ -73,5 +69,5 @@ exports[`WelcomeSplash animation modes renders speaking mode 1`] = `
 
                                            talk to claude
 
-                                            say anything"
+                                      press enter to continue"
 `;

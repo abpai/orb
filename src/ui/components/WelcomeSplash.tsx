@@ -1,4 +1,4 @@
-import { Box, Text } from 'ink'
+import { Box, Text, useInput } from 'ink'
 
 import { AsciiOrb, type AnimationMode } from './AsciiOrb'
 
@@ -10,6 +10,7 @@ interface WelcomeSplashProps {
   ttsVoice?: string
   ttsSpeed?: number
   ttsEnabled?: boolean
+  onDismiss?: () => void
 }
 
 function formatConfigSummary(
@@ -39,11 +40,16 @@ export function WelcomeSplash({
   ttsVoice,
   ttsSpeed,
   ttsEnabled,
+  onDismiss,
 }: WelcomeSplashProps) {
   const configSummary = formatConfigSummary(modelLabel, ttsVoice, ttsSpeed, ttsEnabled)
 
+  useInput((_input, key) => {
+    if (key.return) onDismiss?.()
+  })
+
   return (
-    <Box flexDirection="column" alignItems="center" marginY={1}>
+    <Box flexDirection="column" alignItems="center">
       {projectName && (
         <>
           <Text color="gray" dimColor>
@@ -56,8 +62,8 @@ export function WelcomeSplash({
       <Text> </Text>
       <Text color="gray">talk to {assistantLabel}</Text>
       <Text> </Text>
-      <Text color="cyan" dimColor>
-        say anything
+      <Text color="gray" dimColor>
+        press enter to continue
       </Text>
       {configSummary && (
         <>

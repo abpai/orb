@@ -41,7 +41,7 @@ describe('WelcomeSplash', () => {
       const frame = normalizeFrame(lastFrame())
 
       expect(frame).toContain('talk to claude')
-      expect(frame).toContain('say anything')
+      expect(frame).toContain('press enter to continue')
     })
 
     it('displays custom assistant label', () => {

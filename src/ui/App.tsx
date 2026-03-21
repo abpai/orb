@@ -40,6 +40,7 @@ export function isInputDisabled(state: AppState): boolean {
 export function App({ config, initialSession }: AppProps) {
   const [detailMode, setDetailMode] = useState<DetailMode>('compact')
   const [state, setState] = useState<AppState>('idle')
+  const [splashDismissed, setSplashDismissed] = useState(false)
 
   const conversation = useConversation({
     config,
@@ -96,7 +97,8 @@ export function App({ config, initialSession }: AppProps) {
     conversation.completedTurns.length === 0 &&
     !conversation.liveTurn &&
     !config.skipIntro &&
-    !initialSession?.history?.length
+    !initialSession?.history?.length &&
+    !splashDismissed
 
   // ── Rendering ──
 
@@ -114,6 +116,7 @@ export function App({ config, initialSession }: AppProps) {
           ttsVoice={config.ttsVoice}
           ttsSpeed={config.ttsSpeed}
           ttsEnabled={config.ttsEnabled}
+          onDismiss={() => setSplashDismissed(true)}
         />
       ) : (
         <ConversationRail
@@ -124,14 +127,16 @@ export function App({ config, initialSession }: AppProps) {
           assistantLabel={assistantLabel}
         />
       )}
-      <Footer
-        state={state}
-        onSubmit={submit}
-        inputDisabled={inputDisabled}
-        model={conversation.activeModel}
-        provider={config.llmProvider}
-        canCycleModel={canCycleModel}
-      />
+      {!showWelcome && (
+        <Footer
+          state={state}
+          onSubmit={submit}
+          inputDisabled={inputDisabled}
+          model={conversation.activeModel}
+          provider={config.llmProvider}
+          canCycleModel={canCycleModel}
+        />
+      )}
     </Box>
   )
 }
