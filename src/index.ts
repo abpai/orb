@@ -1,11 +1,13 @@
 import React from 'react'
 import { render } from 'ink'
 import { App } from './ui/App'
-import { DEFAULT_MODEL_BY_PROVIDER, parseCliArgs } from './config'
+import { DEFAULT_CONFIG, DEFAULT_MODEL_BY_PROVIDER, parseCliArgs } from './config'
 import type { ExplicitFlags } from './config'
 import type { AppConfig } from './types'
+import { applyGlobalConfig, loadGlobalConfig } from './services/global-config'
 import { resolveSmartProvider } from './services/provider-defaults'
 import { loadSession } from './services/session'
+import { runSetupCommand } from './setup'
 
 export { App } from './ui/App'
 export { parseCliArgs, DEFAULT_CONFIG } from './config'
@@ -41,7 +43,22 @@ function applyOpenAiStreamingDefaults(config: AppConfig, explicit: ExplicitFlags
 }
 
 export async function run(args: string[]): Promise<void> {
-  const { config, explicit } = parseCliArgs(args)
+  const command = args[0]
+  if (command === 'setup' || command === 'init') {
+    await runSetupCommand(args.slice(1))
+    return
+  }
+
+  const globalConfig = await loadGlobalConfig()
+  for (const warning of globalConfig.warnings) {
+    console.warn(`[orb] ${warning}`)
+  }
+
+  const baseConfig = applyGlobalConfig(DEFAULT_CONFIG, globalConfig.config)
+  const { config, explicit } = parseCliArgs(args, {
+    baseConfig,
+    baseExplicit: globalConfig.explicit,
+  })
   if (!explicit.provider && !explicit.model) {
     const smartProvider = await resolveSmartProvider(config)
     if (!smartProvider) {

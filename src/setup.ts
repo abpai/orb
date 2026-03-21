@@ -1,0 +1,210 @@
+import { cancel, confirm, intro, isCancel, outro, select, text } from '@clack/prompts'
+import { Command } from 'commander'
+import {
+  getGlobalConfigPath,
+  loadGlobalConfig,
+  writeGlobalConfig,
+  type OrbGlobalConfig,
+} from './services/global-config'
+import { DEFAULT_MODEL_BY_PROVIDER } from './config'
+import { VOICES, type LlmProvider, type Voice } from './types'
+
+const SETUP_CANCELED = 'Setup canceled.'
+
+interface RunSetupOptions {
+  configPath?: string
+}
+
+function ensureInteractiveTerminal(): void {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error('Interactive setup requires a TTY.')
+  }
+}
+
+function throwIfCanceled<T>(value: T | symbol): T {
+  if (isCancel(value)) {
+    cancel(SETUP_CANCELED)
+    throw new Error(SETUP_CANCELED)
+  }
+
+  return value
+}
+
+async function promptText(args: {
+  message: string
+  initialValue?: string
+  placeholder?: string
+  validate?: (value: string) => string | undefined
+}): Promise<string> {
+  const value = await text({
+    message: args.message,
+    initialValue: args.initialValue,
+    placeholder: args.placeholder,
+    validate: args.validate ? (raw) => args.validate?.((raw ?? '').toString().trim()) : undefined,
+  })
+
+  return String(throwIfCanceled(value)).trim()
+}
+
+function defaultModelFor(provider: LlmProvider, current?: string): string {
+  if (!current?.trim()) return DEFAULT_MODEL_BY_PROVIDER[provider]
+  return current
+}
+
+function mergeSetupConfig(base: OrbGlobalConfig, updates: OrbGlobalConfig): OrbGlobalConfig {
+  return {
+    ...base,
+    ...updates,
+    tts: {
+      ...base.tts,
+      ...updates.tts,
+    },
+  }
+}
+
+export async function runSetup(options: RunSetupOptions = {}): Promise<void> {
+  ensureInteractiveTerminal()
+
+  const configPath = options.configPath ?? getGlobalConfigPath()
+  const existing = await loadGlobalConfig(configPath)
+  for (const warning of existing.warnings) {
+    console.warn(`[orb] ${warning}`)
+  }
+
+  const current = existing.config
+  const currentProvider = current.provider ?? 'anthropic'
+  const currentModel = defaultModelFor(currentProvider, current.model)
+
+  intro('orb setup')
+  console.info(`Orb will save your defaults to ${configPath}.`)
+
+  const provider = throwIfCanceled(
+    await select({
+      message: 'Default provider',
+      initialValue: currentProvider,
+      options: [
+        { value: 'anthropic', label: 'Anthropic' },
+        { value: 'openai', label: 'OpenAI' },
+      ],
+    }),
+  ) as LlmProvider
+
+  const model = await promptText({
+    message: 'Default model',
+    initialValue:
+      current.provider === provider ? currentModel : DEFAULT_MODEL_BY_PROVIDER[provider],
+    validate: (value) => (value.length === 0 ? 'Model is required.' : undefined),
+  })
+
+  const skipIntro = throwIfCanceled(
+    await confirm({
+      message: 'Skip the welcome animation by default?',
+      initialValue: current.skipIntro ?? false,
+    }),
+  ) as boolean
+
+  const ttsEnabled = throwIfCanceled(
+    await confirm({
+      message: 'Enable text-to-speech by default?',
+      initialValue: current.tts?.enabled ?? true,
+    }),
+  ) as boolean
+
+  const streamingEnabled = throwIfCanceled(
+    await confirm({
+      message: 'Enable streaming TTS by default?',
+      initialValue: current.tts?.streaming ?? true,
+    }),
+  ) as boolean
+
+  const ttsMode = throwIfCanceled(
+    await select({
+      message: 'Default TTS mode',
+      initialValue: current.tts?.mode ?? 'serve',
+      options: [
+        { value: 'serve', label: 'Serve (HTTP TTS server)' },
+        { value: 'generate', label: 'Generate (local macOS say fallback)' },
+      ],
+    }),
+  ) as 'serve' | 'generate'
+
+  const serverUrl =
+    ttsMode === 'serve'
+      ? await promptText({
+          message: 'Default TTS server URL',
+          initialValue: current.tts?.serverUrl ?? 'http://localhost:8000',
+          validate: (value) =>
+            value.length === 0 ? 'Server URL is required in serve mode.' : undefined,
+        })
+      : undefined
+
+  const voice = throwIfCanceled(
+    await select({
+      message: 'Default voice',
+      initialValue: current.tts?.voice ?? 'alba',
+      options: VOICES.map((value) => ({ value, label: value })),
+    }),
+  ) as Voice
+
+  const speedRaw = await promptText({
+    message: 'Default speech speed',
+    initialValue: String(current.tts?.speed ?? 1.5),
+    validate: (value) => {
+      const num = Number(value)
+      return Number.isFinite(num) && num > 0 ? undefined : 'Enter a positive number.'
+    },
+  })
+
+  const nextConfig = mergeSetupConfig(current, {
+    provider,
+    model,
+    skipIntro,
+    tts: {
+      enabled: ttsEnabled,
+      streaming: streamingEnabled,
+      mode: ttsMode,
+      serverUrl: serverUrl ?? current.tts?.serverUrl,
+      voice,
+      speed: Number(speedRaw),
+    },
+  })
+
+  if (ttsMode !== 'serve' && nextConfig.tts) {
+    delete nextConfig.tts.serverUrl
+  }
+
+  if (existing.exists) {
+    const shouldWrite = throwIfCanceled(
+      await confirm({
+        message: `Overwrite ${configPath}?`,
+        initialValue: true,
+      }),
+    ) as boolean
+
+    if (!shouldWrite) {
+      outro('No changes made.')
+      return
+    }
+  }
+
+  await writeGlobalConfig(nextConfig, configPath)
+  outro(`Saved config to ${configPath}`)
+}
+
+export async function runSetupCommand(
+  args: string[],
+  options: RunSetupOptions = {},
+): Promise<void> {
+  const program = new Command()
+    .name('orb setup')
+    .description('Create or update ~/.orb/config.toml')
+    .exitOverride()
+    .allowExcessArguments(false)
+    .configureOutput({
+      writeOut: (str) => process.stdout.write(str),
+      writeErr: (str) => process.stderr.write(str),
+    })
+
+  program.parse(args, { from: 'user' })
+  await runSetup(options)
+}
