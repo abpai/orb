@@ -6,13 +6,13 @@ Voice-driven code explorer powered by Anthropic (Claude) or OpenAI. Ask question
 
 - **Natural language queries** - Ask questions about your code in plain English
 - **Voice input** - Paste transcriptions from MacWhisper for hands-free interaction
-- **Text-to-speech** - Hear responses spoken aloud via `tts-gateway` in server mode or `pocket-tts` in generate mode
+- **Text-to-speech** - Hear responses spoken aloud via `tts-gateway` in server mode or built-in macOS `say` in generate mode
 - **Streaming TTS** - Speech begins while processing
 - **Model switching (Claude)** - Cycle Anthropic models during a conversation with Shift+Tab
 - **Provider selection** - Choose Anthropic (Claude) or OpenAI via CLI flags
 - **Session persistence** - Automatically resumes the last session per project
 - **Session continuity** - Follow-up questions maintain conversation context
-- **Terminal UI** - Ink-based interface with tool call visualization, orb animation, and transcript view
+- **Terminal UI** - Ink-based interface with live tool activity, orb animation, and focused conversation history
 
 ## Installation
 
@@ -45,6 +45,9 @@ npm install @andypai/orb
 # Explore current directory (uses smart default provider selection)
 orb
 
+# Guided setup for persistent defaults
+orb setup
+
 # Explore specific project
 orb /path/to/project
 
@@ -59,26 +62,60 @@ orb --model=openai:gpt-5.4  # shorthand syntax
 
 ### Options
 
-| Option                           | Description                                                                    | Default                                 |
-| -------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------- |
-| `--provider=<provider>`          | LLM provider: `anthropic`\|`claude`, `openai`\|`gpt` (alias: `--llm-provider`) | `auto`                                  |
-| `--voice=<voice>`                | TTS voice: `alba`, `marius`, `jean`                                            | `alba`                                  |
-| `--tts-mode=<mode>`              | TTS mode: `generate`, `serve`                                                  | `serve`                                 |
-| `--tts-server-url=<url>`         | TTS gateway server URL                                                         | `http://localhost:8000`                 |
-| `--tts-speed=<rate>`             | TTS speed multiplier                                                           | `1.5`                                   |
-| `--tts-buffer-sentences=<count>` | Sentences to buffer before playback                                            | `1` (OpenAI: `3`)                       |
-| `--tts-clause-boundaries`        | Enable comma/semicolon/colon split points                                      | `off` (OpenAI: `on`)                    |
-| `--tts-min-chunk-length=<count>` | Minimum chars before soft flush                                                | `15` (OpenAI: `60`)                     |
-| `--tts-max-wait-ms=<ms>`         | Max latency before forcing a flush                                             | `150` (OpenAI: `600`)                   |
-| `--tts-grace-window-ms=<ms>`     | Extra wait when near a boundary                                                | `50` (OpenAI: `200`)                    |
-| `--model=<model>`                | Model ID or alias (`haiku`, `sonnet`, `opus`) or `provider:model`              | `haiku` (anthropic), `gpt-5.4` (openai) |
-| `--new`                          | Start fresh (ignore saved session)                                             | -                                       |
-| `--skip-intro`                   | Skip the welcome animation                                                     | -                                       |
-| `--no-tts`                       | Disable text-to-speech                                                         | -                                       |
-| `--no-streaming-tts`             | Disable streaming (batch mode)                                                 | -                                       |
-| `--help`                         | Show help message                                                              | -                                       |
+| Option                   | Description                                                                    | Default                                 |
+| ------------------------ | ------------------------------------------------------------------------------ | --------------------------------------- |
+| `--provider=<provider>`  | LLM provider: `anthropic`\|`claude`, `openai`\|`gpt` (alias: `--llm-provider`) | `auto`                                  |
+| `--voice=<voice>`        | TTS voice: `alba`, `marius`, `jean`                                            | `alba`                                  |
+| `--tts-mode=<mode>`      | TTS mode: `generate`, `serve`                                                  | `serve`                                 |
+| `--tts-server-url=<url>` | TTS gateway server URL                                                         | `http://localhost:8000`                 |
+| `--tts-speed=<rate>`     | TTS speed multiplier                                                           | `1.5`                                   |
+| `--model=<model>`        | Model ID or alias (`haiku`, `sonnet`, `opus`) or `provider:model`              | `haiku` (anthropic), `gpt-5.4` (openai) |
+| `--new`                  | Start fresh (ignore saved session)                                             | -                                       |
+| `--skip-intro`           | Skip the welcome animation                                                     | -                                       |
+| `--no-tts`               | Disable text-to-speech                                                         | -                                       |
+| `--no-streaming-tts`     | Disable streaming (batch mode)                                                 | -                                       |
+| `--help`                 | Show help message                                                              | -                                       |
 
 Sessions are stored under `~/.orb/sessions/` (one per project).
+
+Persistent defaults live in `~/.orb/config.toml`. CLI flags override config values for one-off runs.
+
+## Global Config
+
+The easiest way to create `~/.orb/config.toml` is:
+
+```bash
+orb setup
+```
+
+Orb also supports editing the file directly. A typical config looks like:
+
+```toml
+provider = "anthropic"
+model = "claude-haiku-4-5-20251001"
+skip_intro = false
+
+[tts]
+enabled = true
+streaming = true
+mode = "serve"
+server_url = "http://localhost:8000"
+voice = "alba"
+speed = 1.5
+buffer_sentences = 1
+clause_boundaries = false
+min_chunk_length = 15
+max_wait_ms = 150
+grace_window_ms = 50
+```
+
+Config-only advanced tuning keys live under `[tts]`:
+
+- `buffer_sentences`
+- `clause_boundaries`
+- `min_chunk_length`
+- `max_wait_ms`
+- `grace_window_ms`
 
 ## Customizing Prompts
 
@@ -110,7 +147,7 @@ If you do not pass `--provider` or `--model`, orb auto-selects a provider in thi
 
 - **Runtime**: Bun >= 1.1 (Node runtime not supported)
 - **LLM Provider**: Anthropic (Claude) or OpenAI authentication (see Provider Setup below)
-- **TTS** (optional): [tts-gateway](https://github.com/abpai/tts-gateway) for server mode or [pocket-tts](https://github.com/nicholasgriffintn/pocket-tts) for generate mode, plus macOS `afplay`
+- **TTS** (optional): [tts-gateway](https://github.com/abpai/tts-gateway) for server mode, or macOS built-in `say` and `afplay` for generate mode
 
 ## Provider Setup
 
@@ -192,9 +229,9 @@ With an API key, any supported OpenAI model ID can be used. Common current examp
 orb supports two TTS paths:
 
 - **Server mode** (default): send speech requests to a local `tts-gateway` server
-- **Generate mode**: shell out to `pocket-tts generate`
+- **Generate mode**: use built-in macOS `say` for local fallback speech
 
-> Note: audio playback uses macOS `afplay`. For other platforms, run with `--no-tts`.
+> Note: generate mode and audio playback use macOS built-ins (`say` and `afplay`). For other platforms, use serve mode with `tts-gateway` or run with `--no-tts`.
 
 ### Server mode (recommended)
 
@@ -208,22 +245,21 @@ tts serve --provider kokoro --port 8000
 Then run orb with default settings (uses server mode automatically).
 
 If you already run `tts-gateway` under PM2, point Orb at that URL with `--tts-server-url`.
+If you always use a non-localhost TTS server, set `tts.server_url` in `~/.orb/config.toml` or run `orb setup`.
 
-`tts-gateway` can use different engines behind the same `POST /tts` API, including Kokoro and Pocket TTS.
+`tts-gateway` can use different engines behind the same `POST /tts` API.
 
 ### Generate mode
 
-For CLI-based generation without a server, install Pocket TTS:
-
-```bash
-pip install pocket-tts
-```
+On macOS, generate mode works out of the box with the built-in `say` command.
 
 Then run:
 
 ```bash
 orb --tts-mode=generate
 ```
+
+If you want advanced voices or non-macOS support, use server mode with `tts-gateway` instead.
 
 ### Disable TTS
 
