@@ -40,7 +40,7 @@ describe('ConversationRail', () => {
     )
     const frame = normalizeFrame(lastFrame())
     expect(frame).toContain('you:')
-    expect(frame).toContain('thinking...')
+    expect(frame).toContain('…')
   })
 
   it('renders both completed and live turns', () => {

@@ -55,7 +55,8 @@ describe('TurnRow', () => {
       <TurnRow turn={turn} detailMode="compact" isLive assistantLabel="claude" />,
     )
     const frame = normalizeFrame(lastFrame())
-    expect(frame).toContain('thinking...')
+    expect(frame).toContain('claude:')
+    expect(frame).toContain('…')
   })
 
   it('does not show thinking indicator for non-live turn with no answer', () => {
@@ -64,7 +65,7 @@ describe('TurnRow', () => {
       <TurnRow turn={turn} detailMode="compact" assistantLabel="claude" />,
     )
     const frame = normalizeFrame(lastFrame())
-    expect(frame).not.toContain('thinking...')
+    expect(frame).not.toContain('…')
   })
 
   it('renders error entries', () => {

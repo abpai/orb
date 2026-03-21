@@ -14,8 +14,6 @@ interface TurnRowProps {
   assistantLabel: string
 }
 
-const THINKING_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const
-
 export const TurnRow = memo(function TurnRow({
   turn,
   detailMode,
@@ -52,7 +50,12 @@ export const TurnRow = memo(function TurnRow({
       {truncatedCount > 0 && <Text dimColor>{`⋮ (${truncatedCount} lines above)`}</Text>}
 
       {isLive && !hasAnswer ? (
-        <Text color="yellow">{THINKING_FRAMES[0]} thinking...</Text>
+        <Text>
+          <Text color="green" bold>
+            {assistantLabel}:{' '}
+          </Text>
+          <Text dimColor>…</Text>
+        </Text>
       ) : hasAnswer ? (
         <Text>
           <Text color="green" bold>
