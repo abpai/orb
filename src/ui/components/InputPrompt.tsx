@@ -82,7 +82,7 @@ export const InputPrompt = memo(function InputPrompt({
     </>
   )
 
-  if (inline) return content
+  if (inline) return <Box>{content}</Box>
 
   return <Box marginTop={1}>{content}</Box>
 })

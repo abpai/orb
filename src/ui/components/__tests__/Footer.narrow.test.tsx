@@ -41,4 +41,10 @@ describe('Footer (narrow terminal < 60 cols)', () => {
     expect(frame).not.toContain('^O detail')
     expect(frame).not.toContain('⇧Tab model')
   })
+
+  it('keeps the orb and prompt on the same line', () => {
+    const { lastFrame } = render(<Footer {...defaultProps} state="processing" inputDisabled />)
+    const frame = normalizeFrame(lastFrame())
+    expect(frame).toContain('⣾ ❯')
+  })
 })
