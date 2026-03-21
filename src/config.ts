@@ -83,6 +83,10 @@ function nonNegativeInt(value: string): number {
   return n
 }
 
+interface ProgramDefaults {
+  config: AppConfig
+}
+
 const HELP_EPILOGUE = `
 Auto provider selection (when --provider and --model are omitted):
   1) Claude Agent SDK (Claude Code / Max or API key)
@@ -92,6 +96,7 @@ Auto provider selection (when --provider and --model are omitted):
 Examples:
   orb                           # Current directory with defaults
   orb /path/to/project          # Specific project
+  orb setup                     # Create ~/.orb/config.toml
   orb --voice=marius
   orb --provider=openai --model=gpt-5.4
   orb --model=openai:gpt-5.4
@@ -100,9 +105,13 @@ Controls:
   - Type your question and press Enter
   - Paste MacWhisper transcription with Cmd+V
   - Shift+Tab to cycle models
-  - Ctrl+C to exit`
+  - Ctrl+C to exit
 
-function createProgram(): Command {
+Config:
+  Persistent defaults live in ~/.orb/config.toml
+  CLI flags override config values for one-off runs`
+
+function createProgram({ config: defaults }: ProgramDefaults): Command {
   const program = new Command()
     .name('orb')
     .description('Voice-Driven Code Explorer')
@@ -110,36 +119,10 @@ function createProgram(): Command {
     .option('--provider <provider>', 'LLM provider: anthropic|claude, openai|gpt')
     .option('--llm-provider <provider>', 'LLM provider (alias for --provider)')
     .option('--model <model>', 'Model ID, alias (haiku, sonnet, opus), or provider:model')
-    .option('--voice <voice>', `TTS voice: ${VOICES.join(', ')}`, DEFAULT_CONFIG.ttsVoice)
-    .option('--tts-mode <mode>', 'TTS mode: generate, serve, server', DEFAULT_CONFIG.ttsMode)
+    .option('--voice <voice>', `TTS voice: ${VOICES.join(', ')}`, defaults.ttsVoice)
+    .option('--tts-mode <mode>', 'TTS mode: generate, serve, server', defaults.ttsMode)
     .option('--tts-server-url <url>', 'TTS gateway server URL')
-    .option('--tts-speed <rate>', 'TTS speed multiplier', positiveFloat, DEFAULT_CONFIG.ttsSpeed)
-    .option(
-      '--tts-buffer-sentences <count>',
-      'Sentences to buffer before playback',
-      positiveInt,
-      DEFAULT_CONFIG.ttsBufferSentences,
-    )
-    .option('--tts-clause-boundaries', 'Enable clause split points')
-    .option('--no-tts-clause-boundaries', 'Disable clause split points')
-    .option(
-      '--tts-min-chunk-length <count>',
-      'Minimum chars before soft flush',
-      nonNegativeInt,
-      DEFAULT_CONFIG.ttsMinChunkLength,
-    )
-    .option(
-      '--tts-max-wait-ms <ms>',
-      'Max latency before forcing a flush',
-      nonNegativeInt,
-      DEFAULT_CONFIG.ttsMaxWaitMs,
-    )
-    .option(
-      '--tts-grace-window-ms <ms>',
-      'Extra wait when near a boundary',
-      nonNegativeInt,
-      DEFAULT_CONFIG.ttsGraceWindowMs,
-    )
+    .option('--tts-speed <rate>', 'TTS speed multiplier', positiveFloat, defaults.ttsSpeed)
     .option('--new', 'Start fresh (ignore saved session)')
     .option('--skip-intro', 'Skip the welcome animation')
     .option('--tts', 'Enable text-to-speech (default: true)')
@@ -164,11 +147,6 @@ interface ParsedOpts {
   ttsMode: string
   ttsServerUrl?: string
   ttsSpeed: number
-  ttsBufferSentences: number
-  ttsClauseBoundaries?: boolean
-  ttsMinChunkLength: number
-  ttsMaxWaitMs: number
-  ttsGraceWindowMs: number
   new?: boolean
   skipIntro?: boolean
   tts?: boolean
@@ -190,29 +168,34 @@ export interface ExplicitFlags {
   ttsClauseBoundaries: boolean
 }
 
+interface ParseCliOptions {
+  baseConfig?: AppConfig
+  baseExplicit?: Partial<ExplicitFlags>
+}
+
 function isUserSet(program: Command, name: string): boolean {
   return program.getOptionValueSource(name) === 'cli'
 }
 
-export function parseCliArgs(args: string[]): ParseResult {
-  const program = createProgram()
+export function parseCliArgs(args: string[], options: ParseCliOptions = {}): ParseResult {
+  const baseConfig = options.baseConfig ?? DEFAULT_CONFIG
+  const baseExplicit = options.baseExplicit ?? {}
+  const program = createProgram({ config: baseConfig })
   program.parse(args, { from: 'user' })
 
   const opts = program.opts<ParsedOpts>()
-  const projectPath = program.args[0] ?? DEFAULT_CONFIG.projectPath
+  const projectPath = program.args[0] ?? baseConfig.projectPath
 
   const config: AppConfig = {
-    ...DEFAULT_CONFIG,
+    ...baseConfig,
     projectPath,
     startFresh: opts.new ?? false,
-    skipIntro: opts.skipIntro ?? false,
-    ttsEnabled: opts.tts !== false,
-    ttsStreamingEnabled: opts.streamingTts !== false,
+    skipIntro: isUserSet(program, 'skipIntro') ? opts.skipIntro === true : baseConfig.skipIntro,
+    ttsEnabled: isUserSet(program, 'tts') ? opts.tts !== false : baseConfig.ttsEnabled,
+    ttsStreamingEnabled: isUserSet(program, 'streamingTts')
+      ? opts.streamingTts !== false
+      : baseConfig.ttsStreamingEnabled,
     ttsSpeed: opts.ttsSpeed,
-    ttsBufferSentences: opts.ttsBufferSentences,
-    ttsMinChunkLength: opts.ttsMinChunkLength,
-    ttsMaxWaitMs: opts.ttsMaxWaitMs,
-    ttsGraceWindowMs: opts.ttsGraceWindowMs,
   }
 
   // Voice validation
@@ -235,10 +218,6 @@ export function parseCliArgs(args: string[]): ParseResult {
   }
 
   // Clause boundaries (Commander handles --no- prefix)
-  if (opts.ttsClauseBoundaries !== undefined) {
-    config.ttsClauseBoundaries = opts.ttsClauseBoundaries
-  }
-
   // Provider and model resolution
   const providerRaw = opts.provider ?? opts.llmProvider
   let providerOverride: LlmProvider | undefined
@@ -264,14 +243,16 @@ export function parseCliArgs(args: string[]): ParseResult {
   }
 
   const explicit: ExplicitFlags = {
-    provider: isUserSet(program, 'provider') || isUserSet(program, 'llmProvider'),
-    model: isUserSet(program, 'model'),
-    ttsBufferSentences: isUserSet(program, 'ttsBufferSentences'),
-    ttsMinChunkLength: isUserSet(program, 'ttsMinChunkLength'),
-    ttsMaxWaitMs: isUserSet(program, 'ttsMaxWaitMs'),
-    ttsGraceWindowMs: isUserSet(program, 'ttsGraceWindowMs'),
-    ttsClauseBoundaries:
-      isUserSet(program, 'ttsClauseBoundaries') || isUserSet(program, 'noTtsClauseBoundaries'),
+    provider:
+      baseExplicit.provider === true ||
+      isUserSet(program, 'provider') ||
+      isUserSet(program, 'llmProvider'),
+    model: baseExplicit.model === true || isUserSet(program, 'model'),
+    ttsBufferSentences: baseExplicit.ttsBufferSentences === true,
+    ttsMinChunkLength: baseExplicit.ttsMinChunkLength === true,
+    ttsMaxWaitMs: baseExplicit.ttsMaxWaitMs === true,
+    ttsGraceWindowMs: baseExplicit.ttsGraceWindowMs === true,
+    ttsClauseBoundaries: baseExplicit.ttsClauseBoundaries === true,
   }
 
   return { config, explicit }

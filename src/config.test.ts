@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 
 import { parseCliArgs } from './config'
+import { DEFAULT_CONFIG } from './types'
 
 describe('parseCliArgs', () => {
   it('supports provider:model shorthand for OpenAI', () => {
@@ -17,16 +18,11 @@ describe('parseCliArgs', () => {
     expect(config.llmModel).toBe('gpt-5.4')
   })
 
-  it('parses TTS flags consistently', () => {
-    const { config } = parseCliArgs([
-      '--no-streaming-tts',
-      '--tts-clause-boundaries',
-      '--tts-max-wait-ms=250',
-    ])
+  it('parses common TTS flags consistently', () => {
+    const { config } = parseCliArgs(['--no-streaming-tts', '--tts-speed=2'])
 
     expect(config.ttsStreamingEnabled).toBe(false)
-    expect(config.ttsClauseBoundaries).toBe(true)
-    expect(config.ttsMaxWaitMs).toBe(250)
+    expect(config.ttsSpeed).toBe(2)
   })
 
   it('detects explicit provider with space-separated syntax', () => {
@@ -43,5 +39,41 @@ describe('parseCliArgs', () => {
     const { explicit } = parseCliArgs([])
     expect(explicit.provider).toBe(false)
     expect(explicit.model).toBe(false)
+  })
+
+  it('uses global-config defaults without marking them as CLI input', () => {
+    const { config, explicit } = parseCliArgs([], {
+      baseConfig: {
+        ...DEFAULT_CONFIG,
+        llmProvider: 'openai',
+        llmModel: 'gpt-5.4-mini',
+        ttsServerUrl: 'http://voicebox.local:8000',
+      },
+      baseExplicit: { provider: true, model: true },
+    })
+
+    expect(config.llmProvider).toBe('openai')
+    expect(config.llmModel).toBe('gpt-5.4-mini')
+    expect(config.ttsServerUrl).toBe('http://voicebox.local:8000')
+    expect(explicit.provider).toBe(true)
+    expect(explicit.model).toBe(true)
+  })
+
+  it('lets CLI flags override global-config defaults', () => {
+    const { config } = parseCliArgs(['--provider=anthropic', '--model=haiku'], {
+      baseConfig: {
+        ...DEFAULT_CONFIG,
+        llmProvider: 'openai',
+        llmModel: 'gpt-5.4-mini',
+      },
+      baseExplicit: { provider: true, model: true },
+    })
+
+    expect(config.llmProvider).toBe('anthropic')
+    expect(config.llmModel).toBe('claude-haiku-4-5-20251001')
+  })
+
+  it('rejects removed advanced tuning flags', () => {
+    expect(() => parseCliArgs(['--tts-max-wait-ms=250'])).toThrow()
   })
 })
