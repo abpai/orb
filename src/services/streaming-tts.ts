@@ -311,7 +311,9 @@ export function createStreamingSpeechController(
     generationAbortController = new AbortController()
     const audioPath = join(
       tmpdir(),
-      `tts-stream-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.wav`,
+      `tts-stream-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${
+        config.ttsMode === 'generate' ? 'aiff' : 'wav'
+      }`,
     )
 
     try {

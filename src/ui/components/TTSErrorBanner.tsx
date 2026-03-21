@@ -15,7 +15,7 @@ interface ErrorConfig {
 const ERROR_CONFIG: Record<TTSErrorType, ErrorConfig> = {
   command_not_found: {
     icon: '⚠',
-    hint: 'Install tts-gateway or pocket-tts to enable voice output',
+    hint: 'Voice output is unavailable',
   },
   audio_playback: { icon: '🔇', hint: 'Audio playback failed' },
   generation_failed: { icon: '🔇', hint: 'Voice synthesis failed' },
@@ -23,7 +23,7 @@ const ERROR_CONFIG: Record<TTSErrorType, ErrorConfig> = {
 
 export function TTSErrorBanner({ type, message }: TTSErrorBannerProps): React.ReactNode {
   const { icon, hint } = ERROR_CONFIG[type]
-  const showMessage = message && type !== 'command_not_found'
+  const showMessage = Boolean(message)
 
   return (
     <Box marginBottom={1}>

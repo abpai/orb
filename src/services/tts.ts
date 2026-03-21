@@ -3,12 +3,18 @@ import { URL } from 'node:url'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { unlink } from 'node:fs/promises'
-import { TTSError, type AppConfig, type TTSErrorType } from '../types'
+import { TTSError, type AppConfig, type TTSErrorType, type Voice } from '../types'
 import { cleanTextForSpeech } from '../ui/utils/markdown'
 
 export { cleanTextForSpeech }
 
 export const DEFAULT_SERVER_URL = 'http://localhost:8000'
+const DEFAULT_SAY_RATE_WPM = 175
+const SAY_VOICE_BY_ORB_VOICE: Record<Voice, string> = {
+  alba: 'Samantha',
+  marius: 'Daniel',
+  jean: 'Eddy (English (US))',
+}
 
 function categorizeTTSError(err: unknown, context: 'generate' | 'playback'): TTSError {
   if (err instanceof TTSError) return err
@@ -17,7 +23,7 @@ function categorizeTTSError(err: unknown, context: 'generate' | 'playback'): TTS
   const nodeError = error as Error & { code?: string }
 
   if (nodeError.code === 'ENOENT') {
-    const cmd = context === 'generate' ? 'pocket-tts' : 'afplay'
+    const cmd = context === 'generate' ? 'say' : 'afplay'
     return new TTSError(`Command not found: ${cmd}`, 'command_not_found', error)
   }
 
@@ -96,6 +102,19 @@ function isValidSpeed(speed: number | undefined): speed is number {
   return typeof speed === 'number' && Number.isFinite(speed) && speed > 0
 }
 
+function getTempAudioExtension(mode: AppConfig['ttsMode']): string {
+  return mode === 'generate' ? 'aiff' : 'wav'
+}
+
+function mapVoiceToSayVoice(voice: Voice): string {
+  return SAY_VOICE_BY_ORB_VOICE[voice]
+}
+
+function mapSpeedToSayRate(speed: number): number | undefined {
+  if (!isValidSpeed(speed)) return undefined
+  return Math.max(90, Math.round(DEFAULT_SAY_RATE_WPM * speed))
+}
+
 function buildSpeechFormData(
   text: string,
   voice: string | undefined,
@@ -104,9 +123,7 @@ function buildSpeechFormData(
   const formData = new globalThis.FormData()
   formData.append('text', text)
   if (voice) {
-    // Support both the legacy pocket-tts server field and the newer tts-gateway field.
     formData.append('voice', voice)
-    formData.append('voice_url', voice)
   }
   if (isValidSpeed(speed)) {
     formData.append('speed', String(speed))
@@ -131,7 +148,7 @@ async function requestServerSpeech(
 
   let response = await postSpeech(buildSpeechFormData(text, voice, speed))
   if (!response.ok && voice) {
-    // Some tts-gateway providers use a different voice namespace than Orb's pocket presets.
+    // Some tts-gateway providers use a different voice namespace than Orb's voice presets.
     // Retry once without an explicit voice so the server can fall back to its default.
     response = await postSpeech(buildSpeechFormData(text, undefined, speed))
   }
@@ -148,19 +165,42 @@ async function requestServerSpeech(
 
 async function runGenerateCommand(
   text: string,
-  voice: string,
+  voice: Voice,
   speed: number,
   outputPath: string,
 ): Promise<void> {
-  const cmd = ['pocket-tts', 'generate', '--text', text, '--voice', voice, '-o', outputPath]
-  if (isValidSpeed(speed)) {
-    cmd.push('--speed', String(speed))
+  if (process.platform !== 'darwin') {
+    throw new TTSError(
+      'Generate mode requires macOS say. Use serve mode with tts-gateway on this platform.',
+      'command_not_found',
+    )
   }
 
-  const proc = Bun.spawn(cmd, { stdout: 'ignore', stderr: 'ignore' })
-  const exitCode = await proc.exited
+  async function runSay(voiceName?: string): Promise<number> {
+    const cmd = ['say', '-o', outputPath]
+    if (voiceName) {
+      cmd.push('-v', voiceName)
+    }
+
+    const rate = mapSpeedToSayRate(speed)
+    if (rate) {
+      cmd.push('-r', String(rate))
+    }
+
+    cmd.push(text)
+
+    const proc = Bun.spawn(cmd, { stdout: 'ignore', stderr: 'ignore' })
+    return await proc.exited
+  }
+
+  const sayVoice = mapVoiceToSayVoice(voice)
+  let exitCode = await runSay(sayVoice)
+  if (exitCode !== 0 && sayVoice) {
+    exitCode = await runSay()
+  }
+
   if (exitCode !== 0) {
-    throw new TTSError(`pocket-tts exited with code ${exitCode}`, 'generation_failed')
+    throw new TTSError(`say exited with code ${exitCode}`, 'generation_failed')
   }
 }
 
@@ -237,7 +277,10 @@ export async function speak(text: string, config: AppConfig): Promise<void> {
   let firstError: TTSError | null = null
 
   for (const [i, sentence] of sentences.entries()) {
-    const audioPath = join(tmpdir(), `tts-${Date.now()}-${i}.wav`)
+    const audioPath = join(
+      tmpdir(),
+      `tts-${Date.now()}-${i}.${getTempAudioExtension(config.ttsMode)}`,
+    )
 
     try {
       await generateAudio(sentence, config, audioPath)
