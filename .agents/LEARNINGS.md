@@ -16,6 +16,8 @@
 | 2026-03-13 | self | Passed OpenAI resume instructions through `ToolLoopAgent.instructions`, which re-appended the system prompt on every `previousResponseId` continuation | When continuing OpenAI Responses conversations, omit agent-level instructions and pass the prompt through `providerOptions.openai.instructions` instead |
 | 2026-03-20 | self | Ran the `useConversation` persistence test in the Codex sandbox and it failed with `EPERM` because session writes target `~/.orb/sessions`, which is outside the writable roots | For hook/session persistence verification in this environment, expect real-save tests to be sandbox-blocked unless the session path is redirected into the workspace |
 | 2026-03-20 | self | Changed the default serve-mode TTS URL in code without updating the documented setup flow, which would have broken out-of-the-box speech for users following the README | When moving runtime defaults here, verify the code, README examples, and CLI help still agree before treating the change as safe |
+| 2026-03-20 | self | Tested `runSetup()` directly and initially missed that `runSetupCommand()` was still prepending `"setup"` into Commander parsing, which would have broken the real `orb setup` path | For new command entrypoints here, add at least one test against the command-level wrapper, not just the lower-level handler |
+| 2026-03-20 | self | Assumed macOS `say` would naturally fit Orb's existing `.wav` temp-file convention | When switching local TTS generation to `say`, treat the output as AIFF-backed and keep temp-path handling aligned with the actual generator instead of assuming WAV semantics |
 
 ## User Preferences
 
