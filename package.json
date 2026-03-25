@@ -1,6 +1,6 @@
 {
   "name": "@andypai/orb",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Voice-driven code explorer for your terminal",
   "homepage": "https://github.com/andypai/orb#readme",
   "bugs": {
