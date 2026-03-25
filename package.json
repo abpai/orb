@@ -2,11 +2,16 @@
   "name": "@andypai/orb",
   "version": "0.1.0",
   "description": "Voice-driven code explorer for your terminal",
+  "homepage": "https://github.com/andypai/orb#readme",
+  "bugs": {
+    "url": "https://github.com/andypai/orb/issues"
+  },
   "type": "module",
   "bin": {
     "orb": "./src/cli.ts"
   },
   "files": [
+    "assets/**/*",
     "prompts/**/*.md",
     "src/**/*.ts",
     "src/**/*.tsx",

@@ -18,6 +18,7 @@
 | 2026-03-20 | self | Changed the default serve-mode TTS URL in code without updating the documented setup flow, which would have broken out-of-the-box speech for users following the README | When moving runtime defaults here, verify the code, README examples, and CLI help still agree before treating the change as safe |
 | 2026-03-20 | self | Tested `runSetup()` directly and initially missed that `runSetupCommand()` was still prepending `"setup"` into Commander parsing, which would have broken the real `orb setup` path | For new command entrypoints here, add at least one test against the command-level wrapper, not just the lower-level handler |
 | 2026-03-20 | self | Assumed macOS `say` would naturally fit Orb's existing `.wav` temp-file convention | When switching local TTS generation to `say`, treat the output as AIFF-backed and keep temp-path handling aligned with the actual generator instead of assuming WAV semantics |
+| 2026-03-24 | self | Release docs originally told users to `uv tool install tts-gateway[kokoro]` but skipped Kokoro's required `en_core_web_sm` install inside the uv tool environment | For Orb's serve-mode docs and setup hints, always include the manual spaCy model install or first-request Kokoro failures will look like Orb bugs |
 
 ## User Preferences
 
@@ -33,9 +34,12 @@
 - The new frame/pipeline layer is a good seam for cancellation and integration tests without needing live provider credentials.
 - For large Orb refactors, split commits by runtime seam rather than by folder: TTS service hardening, pipeline contract cleanup, UI hook extraction, then legacy/docs cleanup keeps each commit reviewable and green.
 - When updating architecture docs here, anchor the narrative on `src/index.ts -> src/ui/App.tsx -> src/pipeline/**` first, then describe older concepts only as historical caveats.
+- Architecture docs here also need the non-runtime support layers called out explicitly: `src/setup.ts`, `src/services/global-config.ts`, and `prompts/*.md` are part of the current operating model, not optional footnotes.
+- For external setup commands in Orb docs, prefer stable upstream entrypoints like `python -m spacy download ...` over pinned artifact URLs unless the version pin is enforced in code too.
 - `mock.module()` works under plain `bun run` scripts here, which makes `scratch/` demos a good place to drive runtime seams with mocked provider/TTS boundaries.
 - For hook persistence regressions here, a small Ink harness plus the real session file is more reliable than mocking `saveSession`, especially when other tests may have already cached the hook module.
 - For provider-doc audits here, prefer the canonical English Anthropic/OpenAI docs pages over localized variants; localized Anthropic model pages can lag the current model IDs.
+- This repo's `prettier --check .` setup does not parse SVG, so release art belongs under an ignored path such as `assets/*.svg` unless the formatter stack changes.
 
 ## Patterns That Don't Work
 

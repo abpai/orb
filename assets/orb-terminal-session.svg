@@ -1,0 +1,72 @@
+<svg width="1440" height="940" viewBox="0 0 1440 940" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1440" height="940" fill="#0B1220"/>
+  <g filter="url(#shadow)">
+    <rect x="70" y="64" width="1300" height="812" rx="26" fill="#111827"/>
+    <rect x="70.5" y="64.5" width="1299" height="811" rx="25.5" stroke="#1F2937"/>
+  </g>
+  <rect x="70" y="64" width="1300" height="54" rx="26" fill="#162033"/>
+  <rect x="70" y="92" width="1300" height="26" fill="#162033"/>
+  <circle cx="112" cy="92" r="8" fill="#F87171"/>
+  <circle cx="140" cy="92" r="8" fill="#FBBF24"/>
+  <circle cx="168" cy="92" r="8" fill="#34D399"/>
+  <text x="214" y="100" fill="#E5E7EB" font-size="22" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace">orb   main  →  orb --new</text>
+
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="18">
+    <text x="94" y="156" fill="#60A5FA">you:</text>
+    <text x="150" y="156" fill="#E5E7EB">what project are we working on?</text>
+
+    <text x="94" y="192" fill="#A3E635">claude:</text>
+    <text x="184" y="192" fill="#9CA3AF">We're working on the "orb" project, located at /Users/andypai/Projects/orb.</text>
+    <text x="184" y="220" fill="#9CA3AF">Would you like me to explore the codebase and give you a better overview?</text>
+
+    <text x="94" y="286" fill="#60A5FA">you:</text>
+    <text x="150" y="286" fill="#E5E7EB">yes, explore and give a summary of the architecture</text>
+
+    <text x="140" y="332" fill="#22D3EE">✓ Agent</text>
+    <text x="224" y="332" fill="#9CA3AF">Explore orb project architecture</text>
+
+    <text x="140" y="360" fill="#34D399">✓ Read</text>
+    <text x="214" y="360" fill="#9CA3AF">/Users/andypai/Projects/orb/package.json</text>
+
+    <text x="140" y="388" fill="#34D399">✓ Read</text>
+    <text x="214" y="388" fill="#9CA3AF">/Users/andypai/Projects/orb/README.md</text>
+
+    <text x="140" y="416" fill="#34D399">✓ Bash</text>
+    <text x="214" y="416" fill="#9CA3AF">find /Users/andypai/Projects/orb/src ...</text>
+
+    <text x="140" y="444" fill="#34D399">✓ Bash</text>
+    <text x="214" y="444" fill="#9CA3AF">ls -la /Users/andypai/Projects/orb/src</text>
+
+    <text x="140" y="472" fill="#34D399">✓ Read</text>
+    <text x="214" y="472" fill="#9CA3AF">/Users/andypai/Projects/orb/src/index.ts</text>
+
+    <text x="94" y="538" fill="#A3E635">claude:</text>
+    <text x="184" y="538" fill="#D1D5DB">Orb is a voice-driven AI terminal assistant for your codebase. It uses Bun,</text>
+    <text x="184" y="566" fill="#D1D5DB">Ink, and a frame-based pipeline that routes prompts through Anthropic or</text>
+    <text x="184" y="594" fill="#D1D5DB">OpenAI, then optionally through streaming text-to-speech.</text>
+
+    <text x="184" y="638" fill="#9CA3AF">The main runtime path is:</text>
+    <text x="184" y="674" fill="#67E8F9">src/index.ts → src/ui/App.tsx → src/pipeline/** → adapters/transports</text>
+
+    <text x="184" y="724" fill="#D1D5DB">Results stream back into the terminal UI in real time, with tool activity,</text>
+    <text x="184" y="752" fill="#D1D5DB">session persistence, and optional spoken playback as the answer arrives.</text>
+  </g>
+
+  <rect x="94" y="800" width="382" height="34" rx="17" fill="#162033"/>
+  <circle cx="116" cy="817" r="6" fill="#67E8F9"/>
+  <text x="134" y="824" fill="#E5E7EB" font-size="18" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace">ask a question about your codebase…</text>
+
+  <text x="1330" y="824" text-anchor="end" fill="#9CA3AF" font-size="18" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace">sonnet 4.6 • alba • x1.5</text>
+
+  <defs>
+    <filter id="shadow" x="22" y="30" width="1396" height="908" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="14"/>
+      <feGaussianBlur stdDeviation="24"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.0156863 0 0 0 0 0.0235294 0 0 0 0 0.0588235 0 0 0 0.45 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow" result="shape"/>
+    </filter>
+  </defs>
+</svg>

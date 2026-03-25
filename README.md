@@ -1,32 +1,43 @@
-# orb
+<p align="center">
+  <img src="./assets/orb-wordmark.svg" alt="orb" width="920" />
+</p>
 
-Voice-driven code explorer powered by Anthropic (Claude) or OpenAI. Ask questions about your codebase, see tool calls live, and optionally hear answers spoken aloud.
+<p align="center">
+  Voice-driven code explorer for your terminal. Ask questions about your codebase, watch tool calls live, and optionally hear answers spoken aloud while they stream.
+</p>
+
+<p align="center">
+  <img src="./assets/orb-terminal-session.svg" alt="Orb running in the terminal with live tool activity and an architecture summary." width="1100" />
+</p>
+
+## Why Orb
+
+Orb is a Bun-native terminal app for exploring real codebases with Anthropic or OpenAI models. It keeps the interface focused, shows tool activity as it happens, remembers project conversations, and can read answers aloud through `tts-gateway` or macOS `say`.
 
 ## Features
 
 - **Natural language queries** - Ask questions about your code in plain English
-- **Voice input** - Paste transcriptions from MacWhisper for hands-free interaction
-- **Text-to-speech** - Hear responses spoken aloud via `tts-gateway` in server mode or built-in macOS `say` in generate mode
-- **Streaming TTS** - Speech begins while processing
-- **Model switching (Claude)** - Cycle Anthropic models during a conversation with Shift+Tab
+- **Live tool activity** - See file reads, shell commands, and exploration steps as they happen
+- **Voice input friendly** - Paste transcriptions from MacWhisper for hands-free interaction
+- **Streaming TTS (serve mode)** - Hear answers while they are still being generated
 - **Provider selection** - Choose Anthropic (Claude) or OpenAI via CLI flags
-- **Session persistence** - Automatically resumes the last session per project
-- **Session continuity** - Follow-up questions maintain conversation context
-- **Terminal UI** - Ink-based interface with live tool activity, orb animation, and focused conversation history
+- **Model switching (Claude)** - Cycle Anthropic models during a conversation with Shift+Tab
+- **Session persistence** - Automatically resume the last session per project
+- **Focused terminal UI** - Ink-based interface with conversation history, tool activity, and the Orb intro
 
 ## Installation
 
-### Global install (recommended)
+### Global install
 
 ```bash
-# With bun
+# With Bun
 bun install -g @andypai/orb
 
-# With npm (requires Bun at runtime)
+# With npm (Bun is still required at runtime)
 npm install -g @andypai/orb
 ```
 
-### Local install
+### Local / one-off use
 
 ```bash
 # Run without installing globally
@@ -39,25 +50,76 @@ bun add @andypai/orb
 npm install @andypai/orb
 ```
 
-## Usage
+## 60-Second Quick Start
+
+### 1. Set up an LLM provider
+
+- Anthropic: sign in with Claude Code / Max, or set `ANTHROPIC_API_KEY`
+- OpenAI: set `OPENAI_API_KEY`
+
+If you do not pass `--provider` or `--model`, Orb auto-selects a provider in this order:
+
+1. Claude Agent SDK (Claude Code / Max or API key)
+2. `OPENAI_API_KEY`
+3. `ANTHROPIC_API_KEY`
+
+### 2. Pick your speech path
+
+#### Fastest path with no speech
 
 ```bash
-# Explore current directory (uses smart default provider selection)
+orb --no-tts
+```
+
+#### Fastest path on macOS (batch speech)
+
+```bash
+orb --tts-mode=generate
+```
+
+Generate mode uses macOS built-ins (`say` and `afplay`) and does not require `tts-gateway`.
+
+#### Recommended path for streaming speech
+
+```bash
+uv tool install tts-gateway[kokoro]
+~/.local/share/uv/tools/tts-gateway/bin/python -m spacy download en_core_web_sm
+tts serve --provider kokoro --port 8000
+```
+
+That spaCy install is important: Kokoro’s first request will crash in a plain `uv tool` install unless `en_core_web_sm` is installed into the `tts-gateway` tool environment.
+
+Orb expects `tts-gateway` at `http://localhost:8000` by default and automatically targets `POST /tts`.
+
+### 3. Run Orb
+
+```bash
+# Explore the current directory
 orb
 
 # Guided setup for persistent defaults
 orb setup
 
-# Explore specific project
+# Explore a specific project
 orb /path/to/project
+```
 
+## Usage
+
+```bash
 # Anthropic with options
 orb --model=sonnet --voice=marius
 orb --provider=anthropic --model=opus
 
 # OpenAI provider
 orb --provider=openai --model=gpt-5.4
-orb --model=openai:gpt-5.4  # shorthand syntax
+orb --model=openai:gpt-5.4
+
+# Fresh conversation
+orb --new
+
+# Skip the intro animation
+orb --skip-intro
 ```
 
 ### Options
@@ -65,30 +127,158 @@ orb --model=openai:gpt-5.4  # shorthand syntax
 | Option                   | Description                                                                    | Default                                 |
 | ------------------------ | ------------------------------------------------------------------------------ | --------------------------------------- |
 | `--provider=<provider>`  | LLM provider: `anthropic`\|`claude`, `openai`\|`gpt` (alias: `--llm-provider`) | `auto`                                  |
-| `--voice=<voice>`        | TTS voice: `alba`, `marius`, `jean`                                            | `alba`                                  |
-| `--tts-mode=<mode>`      | TTS mode: `generate`, `serve`                                                  | `serve`                                 |
-| `--tts-server-url=<url>` | TTS gateway server URL                                                         | `http://localhost:8000`                 |
-| `--tts-speed=<rate>`     | TTS speed multiplier                                                           | `1.5`                                   |
 | `--model=<model>`        | Model ID or alias (`haiku`, `sonnet`, `opus`) or `provider:model`              | `haiku` (anthropic), `gpt-5.4` (openai) |
+| `--voice=<voice>`        | TTS voice: `alba`, `marius`, `jean`                                            | `alba`                                  |
+| `--tts-mode=<mode>`      | `serve` for `tts-gateway`, `generate` for local macOS `say`                    | `serve`                                 |
+| `--tts-server-url=<url>` | Serve-mode gateway URL                                                         | `http://localhost:8000`                 |
+| `--tts-speed=<rate>`     | TTS speed multiplier                                                           | `1.5`                                   |
 | `--new`                  | Start fresh (ignore saved session)                                             | -                                       |
 | `--skip-intro`           | Skip the welcome animation                                                     | -                                       |
 | `--no-tts`               | Disable text-to-speech                                                         | -                                       |
 | `--no-streaming-tts`     | Disable streaming (batch mode)                                                 | -                                       |
 | `--help`                 | Show help message                                                              | -                                       |
 
-Sessions are stored under `~/.orb/sessions/` (one per project).
+### Controls
 
-Persistent defaults live in `~/.orb/config.toml`. CLI flags override config values for one-off runs.
+- Type your question and press **Enter** to submit
+- Paste MacWhisper transcription with **Cmd+V**
+- Press **Esc** or **Ctrl+S** to stop speech
+- Press **Shift+Tab** to cycle Claude models (Anthropic only)
+- Press **Ctrl+O** to toggle live tool-call details
+- Press **Ctrl+C** to exit
+
+## TTS Setup
+
+Orb supports two TTS paths:
+
+- **Serve mode** (default): send speech requests to a local `tts-gateway` server
+- **Generate mode**: use macOS built-in `say` for local fallback speech
+
+### Serve mode
+
+Serve mode gives Orb the best experience for low-latency streaming speech.
+
+#### Install and start `tts-gateway`
+
+```bash
+uv tool install tts-gateway[kokoro]
+~/.local/share/uv/tools/tts-gateway/bin/python -m spacy download en_core_web_sm
+tts serve --provider kokoro --port 8000
+```
+
+#### Verify the server
+
+```bash
+curl http://localhost:8000/health
+curl -X POST http://localhost:8000/tts -F 'text=hello from orb' -o /tmp/orb-check.wav
+```
+
+Then run Orb with defaults:
+
+```bash
+orb
+```
+
+If you use a different host or port:
+
+```bash
+orb --tts-server-url=http://localhost:9000
+```
+
+You can also save that value permanently with `orb setup` or `tts.server_url` in `~/.orb/config.toml`.
+
+#### Voice notes
+
+Orb exposes three portable voice presets: `alba`, `marius`, and `jean`.
+
+Some `tts-gateway` providers use different internal voice names. Orb already retries once without an explicit voice if the gateway rejects a preset, so a working server default will still speak.
+
+### Generate mode
+
+On macOS, generate mode works out of the box with the built-in `say` command:
+
+```bash
+orb --tts-mode=generate
+```
+
+If you want advanced voices, non-macOS support, or streaming playback while the model is still responding, use serve mode with `tts-gateway` instead.
+
+### Disable TTS
+
+```bash
+orb --no-tts
+```
+
+## Provider Setup
+
+Orb supports two LLM providers: **Anthropic (Claude)** and **OpenAI**.
+
+### Anthropic (default)
+
+Anthropic uses the Claude Agent SDK. Orb can reuse a local Claude Code / Max-authenticated session when available, or fall back to `ANTHROPIC_API_KEY` / `CLAUDE_API_KEY`.
+
+#### Quick start
+
+```bash
+# Uses Anthropic by default when available
+orb
+
+# Explicitly specify Anthropic
+orb --provider=anthropic
+
+# Use model aliases
+orb --model=haiku
+orb --model=sonnet
+orb --model=opus
+
+# Or use a full model ID
+orb --model=claude-haiku-4-5-20251001
+```
+
+#### Available models
+
+- `claude-haiku-4-5-20251001` (default, alias: `haiku`)
+- `claude-sonnet-4-6` (alias: `sonnet`)
+- `claude-opus-4-6` (alias: `opus`)
+
+If you are not already signed in through Claude Code / Max, set `ANTHROPIC_API_KEY` or `CLAUDE_API_KEY` before starting Orb.
+
+For setup details, see the [Claude Agent SDK quickstart](https://platform.claude.com/docs/en/agent-sdk/quickstart) and the [Claude models overview](https://platform.claude.com/docs/en/about-claude/models/overview).
+
+### OpenAI
+
+OpenAI support uses the official OpenAI Responses API and requires `OPENAI_API_KEY`.
+
+#### Quick start
+
+```bash
+export OPENAI_API_KEY=sk-...
+
+orb --provider=openai
+orb --provider=openai --model=gpt-5.4
+orb --model=openai:gpt-5.4
+```
+
+#### Common models
+
+- `gpt-5.4` (default for OpenAI)
+- `gpt-5`
+- `gpt-4o`
+- `gpt-5.4-mini`
+
+> Note: OpenAI runs in a sandboxed environment via `bash-tool`. File edits happen in a sandbox overlay and are not applied directly to your working tree. Orb will describe changes it made so you can apply them yourself.
 
 ## Global Config
 
-The easiest way to create `~/.orb/config.toml` is:
+Persistent defaults live in `~/.orb/config.toml`. CLI flags override config values for one-off runs.
+
+The easiest way to create the file is:
 
 ```bash
 orb setup
 ```
 
-Orb also supports editing the file directly. A typical config looks like:
+A typical config looks like:
 
 ```toml
 provider = "anthropic"
@@ -117,206 +307,41 @@ Config-only advanced tuning keys live under `[tts]`:
 - `max_wait_ms`
 - `grace_window_ms`
 
+Sessions are stored under `~/.orb/sessions/` (one per project).
+
 ## Customizing Prompts
 
-Orb’s built-in instructions live in the root-level `prompts/` directory so they are easy to find and edit:
+Orb’s built-in instructions live in the root-level `prompts/` directory:
 
 - `prompts/base.md` for shared behavior
 - `prompts/anthropic.md` for Anthropic-specific system instructions
-- `prompts/openai.md` for OpenAI-specific tool/sandbox instructions
+- `prompts/openai.md` for OpenAI-specific tool and sandbox instructions
 - `prompts/voice.md` for voice-mode guidance added when TTS is enabled
 
 Prompt files are read fresh for each run, so edits apply to the next question without rebuilding the app.
 
-If you do not pass `--provider` or `--model`, orb auto-selects a provider in this order:
-
-1. Claude Agent SDK (Claude Code / Max or API key)
-2. `OPENAI_API_KEY`
-3. `ANTHROPIC_API_KEY`
-
-### Controls
-
-- Type your question and press **Enter** to submit
-- Paste MacWhisper transcription with **Cmd+V**
-- Press **Esc** or **Ctrl+S** to stop speech
-- Press **Shift+Tab** to cycle Claude models (Anthropic only)
-- Press **Ctrl+O** to toggle live tool-call details
-- Press **Ctrl+C** to exit
-
 ## Requirements
 
-- **Runtime**: Bun >= 1.1 (Node runtime not supported)
-- **LLM Provider**: Anthropic (Claude) or OpenAI authentication (see Provider Setup below)
-- **TTS** (optional): [tts-gateway](https://github.com/abpai/tts-gateway) for server mode, or macOS built-in `say` and `afplay` for generate mode
-
-## Provider Setup
-
-orb supports two LLM providers: **Anthropic (Claude)** and **OpenAI**. Each provider has different authentication requirements and available models.
-
-If you do not specify a provider, orb chooses the first available option in this order:
-
-1. Claude Agent SDK (Claude Code / Max or API key)
-2. `OPENAI_API_KEY`
-3. `ANTHROPIC_API_KEY`
-
-### Anthropic (Claude) - Default
-
-Anthropic uses the Claude Agent SDK. Orb can reuse a local Claude Code / Max-authenticated session when available, or fall back to `ANTHROPIC_API_KEY` / `CLAUDE_API_KEY`.
-
-#### Quick Start
-
-```bash
-# Uses Anthropic by default
-orb
-
-# Explicitly specify Anthropic
-orb --provider=anthropic
-
-# Use model aliases
-orb --model=haiku    # claude-haiku-4-5-20251001
-orb --model=sonnet   # claude-sonnet-4-6
-orb --model=opus     # claude-opus-4-6
-
-# Use full model IDs
-orb --model=claude-haiku-4-5-20251001
-```
-
-#### Available Models
-
-- `claude-haiku-4-5-20251001` (default, alias: `haiku`) - Fast and efficient
-- `claude-sonnet-4-6` (alias: `sonnet`) - Best combination of speed and intelligence
-- `claude-opus-4-6` (alias: `opus`) - Most capable model for complex reasoning and coding
-
-#### Authentication
-
-Anthropic uses the Claude Agent SDK for authentication. If you are not already signed in through Claude Code / Max, set `ANTHROPIC_API_KEY` or `CLAUDE_API_KEY` before starting Orb.
-
-For setup details, see the [Claude Agent SDK quickstart](https://platform.claude.com/docs/en/agent-sdk/quickstart) and the [Claude models overview](https://platform.claude.com/docs/en/about-claude/models/overview).
-
-### OpenAI
-
-OpenAI support uses the official OpenAI Responses API and requires `OPENAI_API_KEY`.
-
-#### Quick Start with API Key
-
-```bash
-# Set your API key
-export OPENAI_API_KEY=sk-...
-
-# Run with OpenAI provider
-orb --provider=openai
-
-# Specify a model
-orb --provider=openai --model=gpt-5.4
-
-# Or use the provider:model shorthand
-orb --model=openai:gpt-5.4
-```
-
-#### Available Models
-
-With an API key, any supported OpenAI model ID can be used. Common current examples include:
-
-- `gpt-5.4` (default for OpenAI)
-- `gpt-5`
-- `gpt-4o`
-- `gpt-5.4-mini`
-
-> **Note**: OpenAI runs in a sandboxed environment via `bash-tool`. File edits happen in a sandbox overlay and are **not** applied to your actual repository. The assistant will describe any changes it makes, and you can apply them manually.
-
-## TTS Setup
-
-orb supports two TTS paths:
-
-- **Server mode** (default): send speech requests to a local `tts-gateway` server
-- **Generate mode**: use built-in macOS `say` for local fallback speech
-
-> Note: generate mode and audio playback use macOS built-ins (`say` and `afplay`). For other platforms, use serve mode with `tts-gateway` or run with `--no-tts`.
-
-### Server mode (recommended)
-
-Start `tts-gateway` for low-latency speech generation:
-
-```bash
-uv tool install tts-gateway[kokoro]
-tts serve --provider kokoro --port 8000
-```
-
-Then run orb with default settings (uses server mode automatically).
-
-If you already run `tts-gateway` under PM2, point Orb at that URL with `--tts-server-url`.
-If you always use a non-localhost TTS server, set `tts.server_url` in `~/.orb/config.toml` or run `orb setup`.
-
-`tts-gateway` can use different engines behind the same `POST /tts` API.
-
-### Generate mode
-
-On macOS, generate mode works out of the box with the built-in `say` command.
-
-Then run:
-
-```bash
-orb --tts-mode=generate
-```
-
-If you want advanced voices or non-macOS support, use server mode with `tts-gateway` instead.
-
-### Disable TTS
-
-To use orb without speech:
-
-```bash
-orb --no-tts
-```
-
-## Example Session
-
-```
-╭──────────────────────────────────────────────────────────╮
-│                           orb                            │
-│                                                          │
-│ Project: my-app                                          │
-│ Path: /Users/dev/my-app                                  │
-│ Provider: anthropic                                      │
-│ Model: claude-haiku-4-5-20251001                         │
-│ TTS: alba, server, x1.5                                  │
-│ TTS URL: http://localhost:8000                           │
-╰──────────────────────────────────────────────────────────╯
-
-> What's the main entry point of this project?
-
-─── Tool Calls ───────────────────────────────
-✓ Glob: package.json
-✓ Read: package.json
-✓ Read: src/index.ts
-
-─── Response ─────────────────────────────────
-The main entry point is src/index.ts. It exports a run() function
-that parses CLI arguments and renders the React/Ink application...
-
-> Tell me more about how config parsing works
-
-[Uses session context to understand "config parsing" refers
-to the project you're exploring, not its own implementation]
-```
+- **Runtime**: Bun >= 1.1
+- **LLM provider**: Anthropic or OpenAI authentication
+- **TTS** (optional): `tts-gateway` for serve mode, or macOS `say` and `afplay` for generate mode
 
 ## Development
 
 ```bash
-# Clone and install
 git clone https://github.com/andypai/orb.git
 cd orb
 bun install
 
-# Run in development (Anthropic by default)
+# Run in development
 bun run dev
 
-# Run with OpenAI provider
+# Run with OpenAI
 bun run dev --provider=openai --model=gpt-5.4
 
-# Run checks
-bun run check    # prettier + test
-bun run test     # run tests
+# Checks
+bun run check
+bun run test
 ```
 
 ## License

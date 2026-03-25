@@ -10,6 +10,8 @@ import { DEFAULT_MODEL_BY_PROVIDER } from './config'
 import { VOICES, type LlmProvider, type Voice } from './types'
 
 const SETUP_CANCELED = 'Setup canceled.'
+const KOKORO_SPACY_INSTALL =
+  '~/.local/share/uv/tools/tts-gateway/bin/python -m spacy download en_core_web_sm'
 
 interface RunSetupOptions {
   configPath?: string
@@ -60,6 +62,27 @@ function mergeSetupConfig(base: OrbGlobalConfig, updates: OrbGlobalConfig): OrbG
       ...updates.tts,
     },
   }
+}
+
+function printTtsSetupNextSteps(config: OrbGlobalConfig): void {
+  if (!config.tts?.enabled) return
+
+  console.info('')
+
+  if (config.tts.mode === 'generate') {
+    console.info('Generate mode uses macOS `say` and `afplay`; no tts-gateway server is required.')
+    return
+  }
+
+  const serverUrl = config.tts.serverUrl ?? 'http://localhost:8000'
+
+  console.info('Serve mode quick start:')
+  console.info('  uv tool install tts-gateway[kokoro]')
+  console.info('  # Required once for Kokoro inside uv tool environments')
+  console.info(`  ${KOKORO_SPACY_INSTALL}`)
+  console.info('  tts serve --provider kokoro --port 8000')
+  console.info(`Orb will send speech requests to ${serverUrl}.`)
+  console.info('Use --tts-server-url or tts.server_url if your gateway runs elsewhere.')
 }
 
 export async function runSetup(options: RunSetupOptions = {}): Promise<void> {
@@ -189,6 +212,7 @@ export async function runSetup(options: RunSetupOptions = {}): Promise<void> {
 
   await writeGlobalConfig(nextConfig, configPath)
   outro(`Saved config to ${configPath}`)
+  printTtsSetupNextSteps(nextConfig)
 }
 
 export async function runSetupCommand(

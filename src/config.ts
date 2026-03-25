@@ -107,6 +107,11 @@ Controls:
   - Shift+Tab to cycle models
   - Ctrl+C to exit
 
+TTS quick start:
+  - Serve mode uses tts-gateway at http://localhost:8000 by default
+  - Run "orb setup" for guided defaults and gateway instructions
+  - Use --tts-mode=generate for local macOS fallback speech
+
 Config:
   Persistent defaults live in ~/.orb/config.toml
   CLI flags override config values for one-off runs`
@@ -120,8 +125,12 @@ function createProgram({ config: defaults }: ProgramDefaults): Command {
     .option('--llm-provider <provider>', 'LLM provider (alias for --provider)')
     .option('--model <model>', 'Model ID, alias (haiku, sonnet, opus), or provider:model')
     .option('--voice <voice>', `TTS voice: ${VOICES.join(', ')}`, defaults.ttsVoice)
-    .option('--tts-mode <mode>', 'TTS mode: generate, serve, server', defaults.ttsMode)
-    .option('--tts-server-url <url>', 'TTS gateway server URL')
+    .option(
+      '--tts-mode <mode>',
+      'TTS mode: serve (tts-gateway HTTP server), generate (local macOS say), server',
+      defaults.ttsMode,
+    )
+    .option('--tts-server-url <url>', 'Serve-mode tts-gateway URL (default: http://localhost:8000)')
     .option('--tts-speed <rate>', 'TTS speed multiplier', positiveFloat, defaults.ttsSpeed)
     .option('--new', 'Start fresh (ignore saved session)')
     .option('--skip-intro', 'Skip the welcome animation')

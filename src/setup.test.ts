@@ -28,35 +28,48 @@ describe('runSetup', () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'orb-setup-'))
     tempDirs.push(tempDir)
     const configPath = join(tempDir, 'config.toml')
+    const infoMessages: string[] = []
+    const originalConsoleInfo = console.info
+    console.info = (...args: unknown[]) => {
+      infoMessages.push(args.join(' '))
+    }
 
-    mock.module('@clack/prompts', () => ({
-      intro: () => {},
-      outro: () => {},
-      cancel: () => {},
-      isCancel: () => false,
-      select: async (...args: unknown[]) => {
-        const call = setupCalls.select++
-        return call === 0 ? 'openai' : call === 1 ? 'serve' : 'jean'
-      },
-      confirm: async () => true,
-      text: async (...args: unknown[]) => {
-        const call = setupCalls.text++
-        return call === 0 ? 'gpt-5.4-mini' : call === 1 ? 'http://voicebox.local:8000' : '1.75'
-      },
-    }))
+    try {
+      const setupCalls = { select: 0, text: 0 }
 
-    const setupCalls = { select: 0, text: 0 }
-    const { runSetup } = await importSetupModule()
+      mock.module('@clack/prompts', () => ({
+        intro: () => {},
+        outro: () => {},
+        cancel: () => {},
+        isCancel: () => false,
+        select: async (...args: unknown[]) => {
+          const call = setupCalls.select++
+          return call === 0 ? 'openai' : call === 1 ? 'serve' : 'jean'
+        },
+        confirm: async () => true,
+        text: async (...args: unknown[]) => {
+          const call = setupCalls.text++
+          return call === 0 ? 'gpt-5.4-mini' : call === 1 ? 'http://voicebox.local:8000' : '1.75'
+        },
+      }))
 
-    await runSetup({ configPath })
+      const { runSetup } = await importSetupModule()
 
-    const written = await readFile(configPath, 'utf8')
-    expect(written).toContain('provider = "openai"')
-    expect(written).toContain('model = "gpt-5.4-mini"')
-    expect(written).toContain('skip_intro = true')
-    expect(written).toContain('server_url = "http://voicebox.local:8000"')
-    expect(written).toContain('voice = "jean"')
-    expect(written).toContain('speed = 1.75')
+      await runSetup({ configPath })
+
+      const written = await readFile(configPath, 'utf8')
+      expect(written).toContain('provider = "openai"')
+      expect(written).toContain('model = "gpt-5.4-mini"')
+      expect(written).toContain('skip_intro = true')
+      expect(written).toContain('server_url = "http://voicebox.local:8000"')
+      expect(written).toContain('voice = "jean"')
+      expect(written).toContain('speed = 1.75')
+      expect(infoMessages.join('\n')).toContain('uv tool install tts-gateway[kokoro]')
+      expect(infoMessages.join('\n')).toContain('en_core_web_sm')
+      expect(infoMessages.join('\n')).toContain('http://voicebox.local:8000')
+    } finally {
+      console.info = originalConsoleInfo
+    }
   })
 
   it('does not write when the user cancels overwrite', async () => {
@@ -65,6 +78,7 @@ describe('runSetup', () => {
     tempDirs.push(tempDir)
     const configPath = join(tempDir, 'config.toml')
     await Bun.write(configPath, 'provider = "anthropic"\n')
+    const setupCalls = { select: 0, text: 0, confirm: 0 }
 
     mock.module('@clack/prompts', () => ({
       intro: () => {},
@@ -89,7 +103,6 @@ describe('runSetup', () => {
       },
     }))
 
-    const setupCalls = { select: 0, text: 0, confirm: 0 }
     const { runSetup } = await importSetupModule()
 
     await runSetup({ configPath })
@@ -121,6 +134,7 @@ describe('runSetup', () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'orb-setup-'))
     tempDirs.push(tempDir)
     const configPath = join(tempDir, 'config.toml')
+    const setupCalls = { text: 0 }
 
     mock.module('@clack/prompts', () => ({
       intro: () => {},
@@ -139,11 +153,50 @@ describe('runSetup', () => {
       },
     }))
 
-    const setupCalls = { text: 0 }
     const { runSetupCommand } = await importSetupModule()
     await runSetupCommand([], { configPath })
 
     const written = await readFile(configPath, 'utf8')
     expect(written).toContain('provider = "anthropic"')
+  })
+
+  it('prints the macOS generate-mode note after saving config', async () => {
+    setTTY(true)
+    const tempDir = await mkdtemp(join(tmpdir(), 'orb-setup-'))
+    tempDirs.push(tempDir)
+    const configPath = join(tempDir, 'config.toml')
+    const infoMessages: string[] = []
+    const originalConsoleInfo = console.info
+    console.info = (...args: unknown[]) => {
+      infoMessages.push(args.join(' '))
+    }
+
+    try {
+      const setupCalls = { select: 0, text: 0 }
+
+      mock.module('@clack/prompts', () => ({
+        intro: () => {},
+        outro: () => {},
+        cancel: () => {},
+        isCancel: () => false,
+        select: async (...args: unknown[]) => {
+          const call = setupCalls.select++
+          return call === 0 ? 'anthropic' : call === 1 ? 'generate' : 'alba'
+        },
+        confirm: async () => true,
+        text: async (...args: unknown[]) => {
+          const call = setupCalls.text++
+          return call === 0 ? 'claude-haiku-4-5-20251001' : '1.5'
+        },
+      }))
+
+      const { runSetup } = await importSetupModule()
+
+      await runSetup({ configPath })
+
+      expect(infoMessages.join('\n')).toContain('Generate mode uses macOS `say` and `afplay`')
+    } finally {
+      console.info = originalConsoleInfo
+    }
   })
 })

@@ -1,0 +1,77 @@
+<svg width="1328" height="392" viewBox="0 0 1328 392" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="24" y="16" width="1280" height="360" rx="48" fill="#111827"/>
+  <rect x="52" y="44" width="1224" height="304" rx="36" fill="#131D2B" stroke="#1F2937" stroke-width="2"/>
+  <g transform="translate(118 64)">
+    <rect width="264" height="264" rx="64" fill="url(#logoBg)"/>
+    <g opacity="0.32" filter="url(#logoBlur)">
+      <circle cx="132" cy="132" r="78" fill="#67E8F9"/>
+    </g>
+    <g stroke="#67E8F9" stroke-width="6" stroke-linecap="round">
+      <path d="M42 64H78"/>
+      <path d="M186 64H222"/>
+      <path d="M28 92H68"/>
+      <path d="M196 92H236"/>
+      <path d="M20 120H60"/>
+      <path d="M204 120H244"/>
+      <path d="M18 148H58"/>
+      <path d="M206 148H246"/>
+      <path d="M20 176H60"/>
+      <path d="M204 176H244"/>
+      <path d="M28 204H68"/>
+      <path d="M196 204H236"/>
+      <path d="M42 232H78"/>
+      <path d="M186 232H222"/>
+    </g>
+    <g stroke="#67E8F9" stroke-width="5" stroke-linecap="round">
+      <path d="M70 54H194"/>
+      <path d="M54 82H210"/>
+      <path d="M42 110H222"/>
+      <path d="M36 138H228"/>
+      <path d="M42 166H222"/>
+      <path d="M54 194H210"/>
+      <path d="M70 222H194"/>
+    </g>
+    <g fill="#67E8F9">
+      <rect x="100" y="51" width="8" height="18" rx="4"/>
+      <rect x="156" y="51" width="8" height="18" rx="4"/>
+      <rect x="84" y="79" width="8" height="18" rx="4"/>
+      <rect x="100" y="79" width="8" height="18" rx="4"/>
+      <rect x="116" y="79" width="8" height="18" rx="4"/>
+      <rect x="140" y="79" width="8" height="18" rx="4"/>
+      <rect x="156" y="79" width="8" height="18" rx="4"/>
+      <rect x="172" y="79" width="8" height="18" rx="4"/>
+      <rect x="72" y="107" width="8" height="18" rx="4"/>
+      <rect x="88" y="107" width="8" height="18" rx="4"/>
+      <rect x="104" y="107" width="8" height="18" rx="4"/>
+      <rect x="120" y="107" width="8" height="18" rx="4"/>
+      <rect x="136" y="107" width="8" height="18" rx="4"/>
+      <rect x="152" y="107" width="8" height="18" rx="4"/>
+      <rect x="168" y="107" width="8" height="18" rx="4"/>
+      <rect x="82" y="135" width="8" height="18" rx="4"/>
+      <rect x="98" y="135" width="8" height="18" rx="4"/>
+      <rect x="158" y="135" width="8" height="18" rx="4"/>
+      <rect x="174" y="135" width="8" height="18" rx="4"/>
+      <rect x="92" y="163" width="8" height="18" rx="4"/>
+      <rect x="108" y="163" width="8" height="18" rx="4"/>
+      <rect x="124" y="163" width="8" height="18" rx="4"/>
+      <rect x="140" y="163" width="8" height="18" rx="4"/>
+      <rect x="156" y="163" width="8" height="18" rx="4"/>
+      <rect x="100" y="191" width="8" height="18" rx="4"/>
+      <rect x="156" y="191" width="8" height="18" rx="4"/>
+    </g>
+  </g>
+  <text x="462" y="170" fill="#E5E7EB" font-size="120" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" letter-spacing="20">orb</text>
+  <text x="468" y="222" fill="#67E8F9" opacity="0.9" font-size="28" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" letter-spacing="6">VOICE-DRIVEN CODE EXPLORER</text>
+  <text x="468" y="268" fill="#9CA3AF" font-size="24" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace">Anthropic or OpenAI • live tools • streaming speech</text>
+  <defs>
+    <filter id="logoBlur" x="22" y="22" width="220" height="220" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
+      <feGaussianBlur stdDeviation="18" result="effect1_foregroundBlur"/>
+    </filter>
+    <radialGradient id="logoBg" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(132 132) rotate(90) scale(132)">
+      <stop stop-color="#172554"/>
+      <stop offset="1" stop-color="#111827"/>
+    </radialGradient>
+  </defs>
+</svg>

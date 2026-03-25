@@ -44,7 +44,7 @@ function applyOpenAiStreamingDefaults(config: AppConfig, explicit: ExplicitFlags
 
 export async function run(args: string[]): Promise<void> {
   const command = args[0]
-  if (command === 'setup' || command === 'init') {
+  if (command === 'setup') {
     await runSetupCommand(args.slice(1))
     return
   }

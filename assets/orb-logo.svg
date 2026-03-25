@@ -1,0 +1,75 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" rx="120" fill="#111827"/>
+  <rect x="48" y="48" width="416" height="416" rx="96" fill="url(#bgGlow)"/>
+  <g opacity="0.28" filter="url(#blur)">
+    <circle cx="256" cy="256" r="130" fill="#67E8F9"/>
+  </g>
+  <g stroke="#67E8F9" stroke-width="10" stroke-linecap="round">
+    <path d="M126 158H180"/>
+    <path d="M332 158H386"/>
+    <path d="M104 194H162"/>
+    <path d="M350 194H408"/>
+    <path d="M92 230H150"/>
+    <path d="M362 230H420"/>
+    <path d="M86 266H144"/>
+    <path d="M368 266H426"/>
+    <path d="M92 302H150"/>
+    <path d="M362 302H420"/>
+    <path d="M104 338H162"/>
+    <path d="M350 338H408"/>
+    <path d="M126 374H180"/>
+    <path d="M332 374H386"/>
+  </g>
+  <g stroke="#67E8F9" stroke-width="8" stroke-linecap="round">
+    <path d="M164 144H348"/>
+    <path d="M142 180H370"/>
+    <path d="M126 216H386"/>
+    <path d="M118 252H394"/>
+    <path d="M126 288H386"/>
+    <path d="M142 324H370"/>
+    <path d="M164 360H348"/>
+  </g>
+  <g fill="#67E8F9">
+    <rect x="214" y="139" width="12" height="26" rx="6"/>
+    <rect x="286" y="139" width="12" height="26" rx="6"/>
+    <rect x="192" y="175" width="12" height="26" rx="6"/>
+    <rect x="214" y="175" width="12" height="26" rx="6"/>
+    <rect x="236" y="175" width="12" height="26" rx="6"/>
+    <rect x="264" y="175" width="12" height="26" rx="6"/>
+    <rect x="286" y="175" width="12" height="26" rx="6"/>
+    <rect x="308" y="175" width="12" height="26" rx="6"/>
+    <rect x="176" y="211" width="12" height="26" rx="6"/>
+    <rect x="200" y="211" width="12" height="26" rx="6"/>
+    <rect x="224" y="211" width="12" height="26" rx="6"/>
+    <rect x="248" y="211" width="12" height="26" rx="6"/>
+    <rect x="272" y="211" width="12" height="26" rx="6"/>
+    <rect x="296" y="211" width="12" height="26" rx="6"/>
+    <rect x="320" y="211" width="12" height="26" rx="6"/>
+    <rect x="188" y="247" width="12" height="26" rx="6"/>
+    <rect x="212" y="247" width="12" height="26" rx="6"/>
+    <rect x="300" y="247" width="12" height="26" rx="6"/>
+    <rect x="324" y="247" width="12" height="26" rx="6"/>
+    <rect x="202" y="283" width="12" height="26" rx="6"/>
+    <rect x="226" y="283" width="12" height="26" rx="6"/>
+    <rect x="250" y="283" width="12" height="26" rx="6"/>
+    <rect x="274" y="283" width="12" height="26" rx="6"/>
+    <rect x="298" y="283" width="12" height="26" rx="6"/>
+    <rect x="214" y="319" width="12" height="26" rx="6"/>
+    <rect x="286" y="319" width="12" height="26" rx="6"/>
+  </g>
+  <g fill="#9CA3AF" opacity="0.9">
+    <circle cx="248" cy="256" r="8"/>
+    <circle cx="264" cy="256" r="8"/>
+  </g>
+  <defs>
+    <filter id="blur" x="62" y="62" width="388" height="388" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
+      <feGaussianBlur stdDeviation="32" result="effect1_foregroundBlur"/>
+    </filter>
+    <radialGradient id="bgGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(256 256) rotate(90) scale(208)">
+      <stop stop-color="#172554"/>
+      <stop offset="1" stop-color="#111827"/>
+    </radialGradient>
+  </defs>
+</svg>
