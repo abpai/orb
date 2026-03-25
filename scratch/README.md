@@ -1,7 +1,7 @@
 # Scratch Demo Scripts
 
-Runnable demonstrations that import real production seams and print intermediate
-state so a developer can inspect what the app actually does before shipping.
+These scripts are a guided tour of Orb's core architecture. They are arranged in
+the same order you would use to reconstruct the app from scratch.
 
 ## Quick Start
 
@@ -14,99 +14,95 @@ bun run scratch/05-pipeline-task-runtime.ts
 bun run scratch/06-session-persistence.ts
 ```
 
-## Scripts
+## The Primitive Set
 
-### 01 — Smart Provider Selection Waterfall
+### 01 — Startup Funnel
 
-Calls the real `resolveSmartProvider()` on this machine, then runs fixture-backed
-token payloads through `findToken()` and `parseCodexAuthFile()` to show where
-"token-looking" auth diverges from valid access+refresh token pairs.
-
-Inspect:
-- Which provider wins locally and how long the Claude probe took
-- The mismatch between heuristic token detection and full token parsing
-- Why those fixture payloads no longer affect provider selection
-
-### 02 — CLI Config Resolution
-
-Runs `parseCliArgs()` across common argument shapes, then captures the real config
-that `run()` passes into `App` after OpenAI streaming defaults are applied.
+Shows how `run()` turns CLI args, global defaults, smart-provider detection, and
+saved-session lookup into one runtime config.
 
 Inspect:
-- Alias expansion and `provider:model` parsing
-- Explicit flags vs inferred defaults
-- The real OpenAI TTS overrides that happen in `src/index.ts`
+- The startup call order
+- When smart-provider detection runs and when it is skipped
+- The exact config that reaches `App`
 
-### 03 — Adapter Normalization Seams
+### 02 — Conversation Projection
 
-Exercises the shared adapter helpers directly, then drives both provider adapters
-with mocked SDK layers to show how frames are normalized.
-
-Inspect:
-- `normalizeToolInput()`, `formatToolResult()`, and `isToolError()`
-- Anthropic dropping unmatched `tool_result` blocks
-- OpenAI synthesizing `tool-call-start` for orphan results
-
-### 04 — Streaming TTS Runtime
-
-Mocks the TTS backend but drives the real `createStreamingSpeechController()` so
-chunk generation comes from production code rather than copied regex logic.
+Shows how `useConversation()` turns outbound frames into the UI's live turn,
+completed history, TTS banner state, and persisted session data.
 
 Inspect:
-- Sentence boundary chunking
-- Timer-based flushes, grace windows, and finalize behavior
-- Forced splitting of long text with no whitespace
-- The effect of `ttsMaxWaitMs=0`
+- `startEntry()` creating the live turn
+- Tool call frames mutating the live turn
+- `handleRunComplete()` archiving the turn and triggering persistence
 
-### 05 — PipelineTask Runtime
+### 03 — Provider Normalization
 
-Mocks the agent and TTS processors, then runs the real `createPipelineTask()`
-through success, cancellation, and stale-run scenarios.
-
-Inspect:
-- Outbound frame order
-- State transitions during speaking
-- Why the completion handle stays internal
-- Cancellation stopping active TTS once
-- Late frames from an old run being dropped
-
-### 06 — Session Persistence
-
-Creates isolated fixture projects and real session files to prove load/save
-normalization behavior.
+Shows how Anthropic and OpenAI events collapse into the same canonical frame
+protocol, which is the real seam the rest of Orb depends on.
 
 Inspect:
-- `getSessionPath()` output
-- V1→V2 migration
-- Invalid provider fallback to `anthropic`
-- Invalid OpenAI session payloads being dropped
+- Shared helper normalization
+- Anthropic session/text/tool frames
+- OpenAI text/tool frames and synthetic recovery behavior
+
+### 04 — TTS Sidecar
+
+Shows how streaming TTS hangs off the frame stream as a sidecar process instead
+of changing the frame protocol itself.
+
+Inspect:
+- Sentence-boundary chunking
+- Timeout-driven flushes
+- Finalize behavior when no timer flush occurs
+
+### 05 — Pipeline Orchestrator
+
+Shows how `PipelineTask` composes processors, drives task state, routes outbound
+frames, and keeps delayed TTS completion internal.
+
+Inspect:
+- State transitions
+- Outbound transport ordering
+- Cancellation and stale-run protection
+
+### 06 — Session Memory
+
+Shows the per-project memory layer: how session files are named, migrated,
+normalized, and rewritten.
+
+Inspect:
+- Stable session-path derivation
+- V1 to V2 migration
+- Provider-aware session normalization
 - `saveSession()` rewriting absolute paths and timestamps
 
 ## Side Effects
 
 | Script | Side Effects |
 | ------ | ------------ |
-| `01` | Runs the live Claude SDK auth probe and reads the current `~/.codex/auth.json`; fixture cases use a temporary `CODEX_HOME` and clean it up |
-| `02` | No persistent side effects; mocks `ink` and `loadSession()` while capturing `run()` |
+| `01` | No persistent side effects; mocks startup dependencies in-process |
+| `02` | Writes one real session file under `~/.orb/sessions/`, then cleans it up |
 | `03` | No persistent side effects; mocks provider SDK modules in-process |
 | `04` | No persistent side effects; mocks TTS generation/playback in-process |
 | `05` | No persistent side effects; mocks pipeline processors in-process |
 | `06` | Writes real session fixture files under `~/.orb/sessions/`, then cleans the exact files up; `loadSession()` still triggers 30-day cleanup there |
 
-## Observed Behavior
+## Reconstruction Order
 
-- `01` resolved to `anthropic via claude-oauth` in about `2933ms` on this machine.
-- `02` confirmed `run()` applies OpenAI streaming defaults of `3 / 60 / 600 / 200 / true`, and preserves an explicit `--tts-max-wait-ms=250`.
-- `03` confirmed the Anthropic fixture emitted only one `tool-call-result` frame for two `tool_result` blocks, while the OpenAI fixture synthesized a `tool-call-start` for an orphan result.
-- `04` confirmed a 250-character no-whitespace input splits into `200ch` then `50ch`, and `ttsMaxWaitMs=0` prevents timer-based flushes before `finalize()`.
-- `05` confirmed outbound frames exclude the internal completion handle, cancellation stops active TTS once, and a stale slow run drops its late completion.
-- `06` confirmed invalid providers normalize to `anthropic`, invalid OpenAI session payloads are dropped, and `saveSession()` rewrites paths and timestamps.
+If you only run a few scripts, use this order:
+
+1. `01` to understand startup
+2. `03` to understand the shared frame protocol
+3. `05` to understand orchestration
+4. `02` to understand how the UI projects those frames
+5. `04` to understand TTS as a sidecar
+6. `06` to understand persistence
 
 ## Shipping Checklist
 
-- Verify the expected provider wins for your actual local auth state.
-- Verify the CLI args you plan to document resolve to the provider/model you expect.
-- Verify adapter normalization would not hide the tool results you care about.
-- Verify TTS chunking feels acceptable under both Anthropic-style and OpenAI-style thresholds.
-- Verify cancellation cannot leave the app stuck in a speaking state.
+- Verify startup resolves to the provider/model/config you expect.
+- Verify both providers emit the frame kinds your UI logic expects.
+- Verify the task orchestrator cannot get stuck during TTS or cancellation.
+- Verify TTS chunking feels acceptable for your default tuning.
 - Verify session continuity and provider switching behave the way you want across real runs.

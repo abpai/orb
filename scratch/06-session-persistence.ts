@@ -1,10 +1,8 @@
 /**
- * scratch/06-session-persistence.ts — Session Persistence
+ * scratch/06-session-persistence.ts — Session Memory
  *
- * Proves:
- *   1. Real v1→v2 migration
- *   2. Provider/session normalization on load
- *   3. saveSession() rewriting paths and timestamps
+ * Shows Orb's project-memory layer:
+ *   stable path derivation, migration, normalization, and save rewriting.
  *
  * Run:
  *   bun run scratch/06-session-persistence.ts
@@ -43,9 +41,9 @@ async function cleanup(): Promise<void> {
   }
 }
 
-console.log('╭─────────────────────────────────────────╮')
-console.log('│  06 · Session Persistence                │')
-console.log('╰─────────────────────────────────────────╯\n')
+console.log('06 · Session Memory\n')
+console.log('Primitive:')
+console.log('  project path -> stable session file -> normalized saved conversation\n')
 
 try {
   const sampleProject = await createProject('path')
@@ -161,3 +159,6 @@ try {
 } finally {
   await cleanup()
 }
+
+console.log('\nTakeaway:')
+console.log('  Orb keeps long-lived user defaults and per-project memory separate.')

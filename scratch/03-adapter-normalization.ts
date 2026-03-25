@@ -1,10 +1,8 @@
 /**
- * scratch/03-adapter-normalization.ts — Adapter Normalization Seams
+ * scratch/03-adapter-normalization.ts — Provider Normalization
  *
- * Proves:
- *   1. The shared parsing/formatting helpers used by both providers
- *   2. Anthropic dropping unmatched tool_result blocks
- *   3. OpenAI synthesizing a tool-call-start when a result arrives first
+ * Shows the shared protocol boundary Orb actually depends on:
+ *   vendor-specific streams -> canonical Frame objects
  *
  * Run:
  *   bun run scratch/03-adapter-normalization.ts
@@ -25,11 +23,11 @@ async function collectFrames(source: AsyncIterable<Frame>): Promise<Frame[]> {
   return frames
 }
 
-console.log('╭─────────────────────────────────────────╮')
-console.log('│  03 · Adapter Normalization Seams        │')
-console.log('╰─────────────────────────────────────────╯\n')
+console.log('03 · Provider Normalization\n')
+console.log('Primitive:')
+console.log('  provider-specific events -> shared frame protocol\n')
 
-console.log('─── Shared Helper Functions ───\n')
+console.log('Shared helper examples:\n')
 
 const normalizeCases = [
   { label: 'object', value: { command: 'ls' } },
@@ -55,7 +53,7 @@ console.log(`  isToolError(exitCode=1)         → ${isToolError({ exitCode: 1 }
 console.log(`  isToolError(stdout only)        → ${isToolError({ stdout: 'ok' })}`)
 console.log(`  getContentBlocks("hello")       → ${JSON.stringify(getContentBlocks('hello'))}`)
 
-console.log('\n─── Anthropic Adapter: unmatched tool_result is dropped ───\n')
+console.log('\nAnthropic -> canonical frames:\n')
 
 mock.restore()
 mock.module('@anthropic-ai/claude-agent-sdk', () => ({
@@ -103,8 +101,8 @@ const anthropicFrames = await collectFrames(
 
 const anthropicToolResults = anthropicFrames.filter((frame) => frame.kind === 'tool-call-result')
 console.log('  Fixture contained 2 tool_result blocks:')
-console.log('    - one matched tool_use_id="tool-1"')
-console.log('    - one unmatched tool_use_id="missing-tool"')
+console.log('    one matched tool_use_id="tool-1"')
+console.log('    one unmatched tool_use_id="missing-tool"')
 console.log(`  Adapter emitted ${anthropicToolResults.length} tool-call-result frame(s).\n`)
 
 for (const frame of anthropicFrames) {
@@ -129,7 +127,7 @@ for (const frame of anthropicFrames) {
   }
 }
 
-console.log('\n─── OpenAI Adapter: orphan result synthesizes tool-call-start ───\n')
+console.log('\nOpenAI -> canonical frames:\n')
 
 mock.restore()
 mock.module('bash-tool', () => ({
@@ -219,4 +217,6 @@ for (const frame of openAiFrames) {
 
 mock.restore()
 
-console.log('\n  Notice the orphan OpenAI result created a synthetic tool-call-start with an empty input object.')
+console.log('\nTakeaway:')
+console.log('  The rest of Orb is mostly provider-agnostic because both adapters')
+console.log('  normalize their streams into the same frame vocabulary.')

@@ -1,147 +1,130 @@
 /**
- * scratch/02-config-resolution.ts — CLI Config Resolution
+ * scratch/02-config-resolution.ts — Conversation Projection
  *
- * Proves:
- *   1. How parseCliArgs() resolves aliases, provider:model syntax, and explicit flags
- *   2. How run() applies OpenAI streaming defaults before rendering the app
+ * Shows how useConversation() projects outbound frames into:
+ *   liveTurn + completedTurns + ttsError + persisted session state
  *
  * Run:
  *   bun run scratch/02-config-resolution.ts
  */
-import { mock } from 'bun:test'
-import { parseCliArgs } from '../src/config'
+import React from 'react'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { render } from 'ink-testing-library'
+import { getSessionPath, loadSession } from '../src/services/session'
+import type { RunResult } from '../src/pipeline/task'
+import type { OutboundFrame } from '../src/pipeline/transports/types'
+import { DEFAULT_CONFIG } from '../src/types'
+import { useConversation } from '../src/ui/hooks/useConversation'
 
-type CapturedRun = {
-  args: string[]
-  llmProvider: string
-  llmModel: string
-  ttsBufferSentences: number
-  ttsMinChunkLength: number
-  ttsMaxWaitMs: number
-  ttsGraceWindowMs: number
-  ttsClauseBoundaries: boolean
+function makeRunResult(entryId: string, overrides?: Partial<RunResult>): RunResult {
+  return { entryId, text: '', cancelled: false, ...overrides }
 }
 
-const cliCases: Array<{ label: string; args: string[] }> = [
-  { label: '(bare defaults)', args: [] },
-  { label: '--provider=claude', args: ['--provider=claude'] },
-  { label: '--provider=gpt', args: ['--provider=gpt'] },
-  { label: '--model=openai:gpt-4o', args: ['--model=openai:gpt-4o'] },
-  { label: '--provider=openai --model=opus', args: ['--provider=openai', '--model=opus'] },
-  { label: '--tts-mode=server', args: ['--tts-mode=server'] },
-  {
-    label: '--tts-server-url=http://localhost:9999',
-    args: ['--tts-server-url=http://localhost:9999'],
-  },
-  {
-    label: '--tts-clause-boundaries',
-    args: ['--tts-clause-boundaries'],
-  },
-] as const
-
-async function captureRunConfig(args: string[]): Promise<CapturedRun> {
-  let captured: CapturedRun | null = null
-
-  mock.restore()
-  mock.module('ink', () => ({
-    render: (node: { props?: { config?: CapturedRun } }) => {
-      captured = node.props?.config ?? null
-      return { unmount() {} }
-    },
-  }))
-  mock.module('../src/ui/App', () => ({
-    App: () => null,
-  }))
-  mock.module('../src/services/session', () => ({
-    loadSession: async () => null,
-  }))
-
-  const { run } = await import('../src/index')
-  const originalInfo = console.info
-
-  try {
-    console.info = () => {}
-    await run(args)
-  } finally {
-    console.info = originalInfo
-    mock.restore()
-  }
-
-  if (!captured) {
-    throw new Error(`Failed to capture App config for args: ${JSON.stringify(args)}`)
-  }
-
-  return { args, ...captured }
+let frameId = 0
+function frame(partial: Record<string, unknown>): OutboundFrame {
+  return { id: ++frameId, timestamp: Date.now(), ...partial } as OutboundFrame
 }
 
-console.log('╭─────────────────────────────────────────╮')
-console.log('│  02 · CLI Config Resolution              │')
-console.log('╰─────────────────────────────────────────╯\n')
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-console.log('─── parseCliArgs() ───\n')
-console.log(
-  '  ┌────────────────────────────────────────────┬────────────┬──────────────────────────────┬───────────────────────┐',
-)
-console.log(
-  '  │ Input                                      │ Provider   │ Model                        │ Notable               │',
-)
-console.log(
-  '  ├────────────────────────────────────────────┼────────────┼──────────────────────────────┼───────────────────────┤',
-)
+const root = await mkdtemp(path.join(tmpdir(), 'orb-scratch-conversation-'))
+const projectPath = path.join(root, 'project')
+await mkdir(projectPath, { recursive: true })
 
-for (const cliCase of cliCases) {
-  const { config } = parseCliArgs(cliCase.args)
-  let notable = ''
-  if (cliCase.label.includes('claude')) notable = 'alias'
-  if (cliCase.label.includes('provider=gpt')) notable = notable ? `${notable}, alias` : 'alias'
-  if (cliCase.label.includes('openai:gpt-4o')) notable = 'provider:model'
-  if (cliCase.label.includes('openai --model=opus')) notable = 'cross-provider fallback'
-  if (cliCase.label.includes('server')) notable = notable ? `${notable}, server→serve` : 'server→serve'
-  if (cliCase.label.includes('tts-clause-boundaries')) notable = 'explicit flags'
-  if (cliCase.label.includes('9999')) notable = 'serve forced'
+let controls!: ReturnType<typeof useConversation>
 
-  console.log(
-    `  │ ${cliCase.label.padEnd(42)} │ ${config.llmProvider.padEnd(10)} │ ${config.llmModel.padEnd(28)} │ ${notable.padEnd(21)} │`,
-  )
+function Harness() {
+  controls = useConversation({
+    config: { ...DEFAULT_CONFIG, projectPath },
+    initialSession: null,
+    taskState: 'idle',
+  })
+  return null
 }
 
-console.log(
-  '  └────────────────────────────────────────────┴────────────┴──────────────────────────────┴───────────────────────┘',
-)
+console.log('02 · Conversation Projection\n')
+console.log('Primitive:')
+console.log('  outbound frames -> UI conversation state\n')
 
-console.log('\n─── ExplicitFlags from parseCliArgs() ───\n')
+const app = render(React.createElement(Harness))
 
-const explicitArgs = ['--provider=openai', '--tts-max-wait-ms=250', '--tts-clause-boundaries']
-const { explicit } = parseCliArgs(explicitArgs)
-console.log(`  Args: ${JSON.stringify(explicitArgs)}`)
-for (const [key, value] of Object.entries(explicit)) {
-  console.log(`  ${key.padEnd(20)} → ${value}`)
-}
+try {
+  const pending = controls.startEntry('Explain the architecture')
+  await flush()
 
-console.log('\n─── run() Captured App Config ───')
-console.log('  These rows go through the real run() path in src/index.ts, not just parseCliArgs().\n')
-
-const runCases = [
-  { label: 'anthropic defaults', args: ['--provider=anthropic'] },
-  { label: 'openai defaults', args: ['--provider=openai'] },
-  {
-    label: 'openai with explicit max wait',
-    args: ['--provider=openai', '--tts-max-wait-ms=250'],
-  },
-] as const
-
-for (const runCase of runCases) {
-  const captured = await captureRunConfig(runCase.args)
-  console.log(`  ${runCase.label}:`)
-  console.log(`    provider             : ${captured.llmProvider}`)
-  console.log(`    model                : ${captured.llmModel}`)
-  console.log(`    ttsBufferSentences   : ${captured.ttsBufferSentences}`)
-  console.log(`    ttsMinChunkLength    : ${captured.ttsMinChunkLength}`)
-  console.log(`    ttsMaxWaitMs         : ${captured.ttsMaxWaitMs}`)
-  console.log(`    ttsGraceWindowMs     : ${captured.ttsGraceWindowMs}`)
-  console.log(`    ttsClauseBoundaries  : ${captured.ttsClauseBoundaries}`)
+  console.log('After startEntry():')
+  console.log(`  live question : ${controls.liveTurn?.question}`)
+  console.log(`  completed     : ${controls.completedTurns.length}`)
   console.log()
+
+  controls.handleFrame(
+    frame({
+      kind: 'agent-text-delta',
+      delta: 'Orb is a frame-based ',
+      accumulatedText: 'Orb is a frame-based ',
+    }),
+  )
+  controls.handleFrame(
+    frame({
+      kind: 'tool-call-start',
+      toolCall: {
+        id: 'tool-1',
+        index: 0,
+        name: 'Read',
+        input: { file_path: 'ARCHITECTURE.md' },
+        status: 'running',
+      },
+    }),
+  )
+  controls.handleFrame(
+    frame({
+      kind: 'tool-call-result',
+      toolIndex: 0,
+      result: 'Architecture file loaded',
+      status: 'complete',
+    }),
+  )
+  controls.handleFrame(
+    frame({
+      kind: 'agent-text-complete',
+      text: 'Orb is a frame-based terminal app with provider adapters and TTS.',
+    }),
+  )
+  await flush()
+
+  console.log('After outbound frames:')
+  console.log(`  live answer   : ${controls.liveTurn?.answer}`)
+  console.log(`  tool calls    : ${controls.liveTurn?.toolCalls.length}`)
+  console.log(`  tts error     : ${controls.ttsError ? controls.ttsError.message : '(none)'}`)
+  console.log()
+
+  controls.handleRunComplete(
+    makeRunResult(pending!.entryId, {
+      session: { provider: 'anthropic', sessionId: 'claude-session-1' },
+    }),
+  )
+  await new Promise((resolve) => setTimeout(resolve, 50))
+
+  console.log('After handleRunComplete():')
+  console.log(`  live turn     : ${controls.liveTurn === null ? 'null' : 'present'}`)
+  console.log(`  completed     : ${controls.completedTurns.length}`)
+  console.log(`  archived text : ${controls.completedTurns[0]?.answer}`)
+  console.log()
+
+  const saved = await loadSession(projectPath)
+  console.log('Persisted session snapshot:')
+  console.log(`  provider      : ${saved?.llmProvider}`)
+  console.log(`  model         : ${saved?.llmModel}`)
+  console.log(`  history count : ${saved?.history.length}`)
+  console.log(`  session path  : ${getSessionPath(projectPath)}`)
+} finally {
+  app.unmount()
+  await rm(getSessionPath(projectPath), { force: true })
+  await rm(root, { recursive: true, force: true })
 }
 
-console.log('  OpenAI defaults only apply when the resolved provider is openai,')
-console.log('  streaming TTS is enabled, and the individual knobs were not explicitly set.')
+console.log('\nTakeaway:')
+console.log('  The UI never talks to provider SDKs directly.')
+console.log('  It only knows how to project canonical outbound frames into history.')

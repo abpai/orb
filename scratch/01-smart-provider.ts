@@ -1,105 +1,136 @@
 /**
- * scratch/01-smart-provider.ts — Provider Selection Waterfall
+ * scratch/01-smart-provider.ts — Startup Funnel
  *
- * Proves:
- *   1. What resolveSmartProvider() does on this machine right now
- *   2. Why token-looking auth payloads still do not count as usable OpenAI credentials
+ * Shows the real startup sequence in src/index.ts:
+ *   CLI args + global config + smart-provider detection + session lookup
+ *   -> one App config
  *
  * Run:
  *   bun run scratch/01-smart-provider.ts
  */
-import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
-import { join } from 'node:path'
-import { homedir, tmpdir } from 'node:os'
-import { findToken, parseCodexAuthFile } from '../src/services/auth-utils'
-import { resolveSmartProvider } from '../src/services/provider-defaults'
-import { DEFAULT_CONFIG } from '../src/types'
+import { mock } from 'bun:test'
+import type { AppConfig, SavedSession } from '../src/types'
 
-function mask(value: string | undefined): string {
-  if (!value) return '(not set)'
-  if (value.length <= 8) return '****'
-  return `${value.slice(0, 4)}…${value.slice(-4)}`
+type Scenario = {
+  globalConfig?: Partial<AppConfig>
+  explicit?: Record<string, boolean>
+  smartProvider?: { provider: 'anthropic' | 'openai'; source: string } | null
+  session?: SavedSession | null
 }
 
-async function withFixtureAuthFile(
-  payload: unknown,
-  run: (fixturePath: string) => Promise<void>,
-): Promise<void> {
-  const fixtureRoot = await mkdtemp(join(tmpdir(), 'orb-smart-provider-'))
-  const fixturePath = join(fixtureRoot, 'auth.json')
-  const previousCodexHome = Bun.env.CODEX_HOME
+let scenario: Scenario = {}
+let steps: string[] = []
+let capturedConfig: AppConfig | null = null
+let capturedSession: SavedSession | null = null
 
-  try {
-    await mkdir(fixtureRoot, { recursive: true })
-    await Bun.write(fixturePath, JSON.stringify(payload, null, 2))
-    Bun.env.CODEX_HOME = fixtureRoot
-    await run(fixturePath)
-  } finally {
-    if (previousCodexHome === undefined) delete Bun.env.CODEX_HOME
-    else Bun.env.CODEX_HOME = previousCodexHome
-    await rm(fixtureRoot, { recursive: true, force: true })
-  }
-}
-
-console.log('╭─────────────────────────────────────────╮')
-console.log('│  01 · Smart Provider Selection Waterfall │')
-console.log('╰─────────────────────────────────────────╯\n')
-
-console.log('─── Live Environment Probe ───')
-console.log(`  ANTHROPIC_API_KEY : ${mask(Bun.env.ANTHROPIC_API_KEY)}`)
-console.log(`  CLAUDE_API_KEY    : ${mask(Bun.env.CLAUDE_API_KEY)}`)
-console.log(`  OPENAI_API_KEY    : ${mask(Bun.env.OPENAI_API_KEY)}`)
-console.log(
-  `  ~/.codex/auth.json: ${existsSync(join(homedir(), '.codex', 'auth.json')) ? 'exists' : 'not found'}`,
-)
-
-console.log('\n  Running resolveSmartProvider() — the Claude OAuth probe may take up to ~3s...')
-const startedAt = performance.now()
-const liveResult = await resolveSmartProvider({ ...DEFAULT_CONFIG })
-const liveElapsed = Math.round(performance.now() - startedAt)
-
-console.log(
-  `  result (${liveElapsed}ms): ${liveResult ? `${liveResult.provider} via ${liveResult.source}` : 'null'}`,
-)
-
-console.log('\n─── Deterministic Token Fixture Cases ───')
-
-const fixtureCases = [
-  {
-    label: 'token-looking auth.json but incomplete Codex tokens',
-    payload: {
-      nested: { sessionToken: 'chatgpt-session-token-only' },
-      tokens: { id_token: 'header.payload.signature' },
-    },
+mock.module('ink', () => ({
+  render: (node: { props?: { config?: AppConfig; initialSession?: SavedSession | null } }) => {
+    steps.push('render(App)')
+    capturedConfig = node.props?.config ?? null
+    capturedSession = node.props?.initialSession ?? null
+    return { unmount() {} }
   },
-  {
-    label: 'full Codex auth payload',
-    payload: {
-      last_refresh: '2026-03-12T00:00:00.000Z',
-      tokens: {
-        access_token: 'access-token-123',
-        refresh_token: 'refresh-token-456',
-        id_token: 'header.payload.signature',
+}))
+
+mock.module('../src/ui/App', () => ({
+  App: () => null,
+}))
+
+mock.module('../src/services/global-config', () => ({
+  loadGlobalConfig: async () => {
+    steps.push('loadGlobalConfig()')
+    return {
+      config: {
+        ...(scenario.globalConfig?.llmProvider ? { provider: scenario.globalConfig.llmProvider } : {}),
+        ...(scenario.globalConfig?.llmModel ? { model: scenario.globalConfig.llmModel } : {}),
+        ...(scenario.globalConfig?.skipIntro !== undefined
+          ? { skipIntro: scenario.globalConfig.skipIntro }
+          : {}),
       },
-    },
+      explicit: scenario.explicit ?? {},
+      warnings: [],
+      path: '/mock/.orb/config.toml',
+      exists: true,
+    }
   },
-] as const
+  applyGlobalConfig: (base: AppConfig) => {
+    steps.push('applyGlobalConfig()')
+    return { ...base, ...scenario.globalConfig }
+  },
+}))
 
-for (const fixture of fixtureCases) {
-  await withFixtureAuthFile(fixture.payload, async (fixturePath) => {
-    const heuristicToken = findToken(fixture.payload)
-    const parsedTokens = parseCodexAuthFile(fixture.payload)
+mock.module('../src/services/provider-defaults', () => ({
+  resolveSmartProvider: async () => {
+    steps.push('resolveSmartProvider()')
+    return scenario.smartProvider ?? null
+  },
+}))
 
-    console.log(`\n  ${fixture.label}:`)
-    console.log(`    fixture path         : ${fixturePath}`)
-    console.log(`    findToken(payload)   : ${heuristicToken ? 'token present' : 'null'}`)
-    console.log(`    parseCodexAuthFile   : ${parsedTokens ? 'valid access+refresh tokens' : 'null'}`)
-    console.log(`    provider impact      : none (Orb now checks OPENAI_API_KEY only)`)
-  })
+mock.module('../src/services/session', () => ({
+  loadSession: async () => {
+    steps.push('loadSession()')
+    return scenario.session ?? null
+  },
+}))
+
+mock.module('../src/setup', () => ({
+  runSetupCommand: async () => {
+    steps.push('runSetupCommand()')
+  },
+}))
+
+const { run } = await import('../src/index')
+
+const savedSession: SavedSession = {
+  version: 2,
+  projectPath: '/tmp/orb-demo',
+  llmProvider: 'openai',
+  llmModel: 'gpt-5.4',
+  agentSession: { provider: 'openai', previousResponseId: 'resp_demo_123' },
+  lastModified: '2026-03-24T00:00:00.000Z',
+  history: [{ id: 'turn-1', question: 'hi', toolCalls: [], answer: 'hello', error: null }],
 }
 
-console.log('\nPriority waterfall (first match wins):')
-console.log('  1. Claude OAuth (Claude SDK accountInfo probe)')
-console.log('  2. OPENAI_API_KEY')
-console.log('  3. ANTHROPIC_API_KEY / CLAUDE_API_KEY')
+async function capture(label: string, args: string[], nextScenario: Scenario) {
+  scenario = nextScenario
+  steps = []
+  capturedConfig = null
+  capturedSession = null
+
+  await run(args)
+
+  if (!capturedConfig) {
+    throw new Error(`Failed to capture config for scenario: ${label}`)
+  }
+
+  console.log(`Scenario: ${label}`)
+  console.log(`  steps     : ${steps.join(' -> ')}`)
+  console.log(`  provider  : ${capturedConfig.llmProvider}`)
+  console.log(`  model     : ${capturedConfig.llmModel}`)
+  console.log(`  startFresh: ${capturedConfig.startFresh}`)
+  console.log(`  session   : ${capturedSession ? 'restored' : 'null'}`)
+  console.log()
+}
+
+console.log('01 · Startup Funnel\n')
+console.log('Primitive:')
+console.log('  startup inputs -> one runtime config passed into App\n')
+
+await capture('explicit provider skips smart detection', ['--provider=openai'], {
+  session: savedSession,
+})
+
+await capture('omitted provider triggers smart detection', [], {
+  smartProvider: { provider: 'anthropic', source: 'claude-oauth' },
+  session: null,
+})
+
+await capture('new session skips loadSession()', ['--new', '--provider=anthropic'], {
+  session: savedSession,
+})
+
+mock.restore()
+
+console.log('Takeaway:')
+console.log('  src/index.ts is a startup funnel, not business logic.')
+console.log('  Its job is to collapse multiple input layers into one App config.')

@@ -1,9 +1,8 @@
 /**
- * scratch/04-streaming-tts-runtime.ts — Streaming TTS Runtime
+ * scratch/04-streaming-tts-runtime.ts — TTS Sidecar
  *
- * Proves:
- *   1. The real createStreamingSpeechController() chunking behavior
- *   2. Timeout, grace-window, forced-flush, and finalize behavior
+ * Shows how streaming TTS sits beside the main frame flow:
+ * it consumes text progressively and manages its own timing state.
  *
  * Run:
  *   bun run scratch/04-streaming-tts-runtime.ts
@@ -92,9 +91,9 @@ async function runCase(
   console.log(`  playAudio calls    → ${playedFiles.length}`)
 }
 
-console.log('╭─────────────────────────────────────────╮')
-console.log('│  04 · Streaming TTS Runtime              │')
-console.log('╰─────────────────────────────────────────╯\n')
+console.log('04 · TTS Sidecar\n')
+console.log('Primitive:')
+console.log('  text stream -> chunking/playback sidecar\n')
 
 const markdownInput = `### Status
 
@@ -143,21 +142,6 @@ await runCase(
 )
 
 await runCase(
-  'Grace window near a clause boundary',
-  {
-    ttsMinChunkLength: 1,
-    ttsMaxWaitMs: 40,
-    ttsGraceWindowMs: 20,
-    ttsClauseBoundaries: true,
-  },
-  async (controller) => {
-    controller.feedText('Clause one, ')
-    await sleep(70)
-    controller.finalize()
-  },
-)
-
-await runCase(
   'Forced split for 250 chars with no whitespace',
   {
     ttsMinChunkLength: 1,
@@ -191,3 +175,7 @@ await runCase(
 )
 
 mock.restore()
+
+console.log('\nTakeaway:')
+console.log('  TTS is not the orchestrator.')
+console.log('  It is a sidecar that turns completed or partial text into speech over time.')

@@ -1,10 +1,8 @@
 /**
- * scratch/05-pipeline-task-runtime.ts — PipelineTask Runtime
+ * scratch/05-pipeline-task-runtime.ts — Pipeline Orchestrator
  *
- * Proves:
- *   1. What reaches the transport vs stays internal
- *   2. How TTS pending work affects state
- *   3. How cancellation and stale runs behave
+ * Shows the central runtime primitive:
+ *   one task orchestrates processors, state transitions, and outbound transport.
  *
  * Run:
  *   bun run scratch/05-pipeline-task-runtime.ts
@@ -115,11 +113,11 @@ function createCapture() {
   return { transport, outbound, states }
 }
 
-console.log('╭─────────────────────────────────────────╮')
-console.log('│  05 · PipelineTask Runtime               │')
-console.log('╰─────────────────────────────────────────╯\n')
+console.log('05 · Pipeline Orchestrator\n')
+console.log('Primitive:')
+console.log('  user-text frame -> processors -> outbound frames + task state\n')
 
-console.log('─── Scenario 1: successful run with hidden completion handle ───\n')
+console.log('Scenario 1: successful run with hidden completion handle\n')
 
 {
   const capture = createCapture()
@@ -139,7 +137,7 @@ console.log('─── Scenario 1: successful run with hidden completion handle 
   )
 }
 
-console.log('\n─── Scenario 2: cancel stops active TTS once ───\n')
+console.log('\nScenario 2: cancel stops active TTS once\n')
 
 {
   stopCalls = 0
@@ -162,7 +160,7 @@ console.log('\n─── Scenario 2: cancel stops active TTS once ───\n')
   console.log('  note       → cancel now stops the internal completion handle exactly once')
 }
 
-console.log('\n─── Scenario 3: stale run drops late frames from the older run ───\n')
+console.log('\nScenario 3: stale run drops late frames from the older run\n')
 
 {
   const capture = createCapture()
@@ -199,3 +197,7 @@ console.log('\n─── Scenario 3: stale run drops late frames from the older 
 }
 
 mock.restore()
+
+console.log('\nTakeaway:')
+console.log('  PipelineTask is the orchestrator.')
+console.log('  It owns task state, stale-run invalidation, and the transport boundary.')
