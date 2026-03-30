@@ -341,6 +341,7 @@ bun run dev --provider=openai --model=gpt-5.4
 
 # Checks
 bun run check
+bun run typecheck
 bun run test
 ```
 
