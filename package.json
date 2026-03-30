@@ -49,11 +49,12 @@
     "dev": "bun --watch src/cli.ts",
     "start": "bun src/cli.ts",
     "format": "bunx prettier --write .",
-    "check": "bunx prettier --check . && bun run test",
+    "typecheck": "bunx tsc --noEmit",
+    "check": "bunx prettier --check . && bun run typecheck && bun run test",
     "test": "bun test"
   },
   "dependencies": {
-    "@clack/prompts": "^1.0.1",
+    "@clack/prompts": "^1.1.0",
     "@ai-sdk/openai": "3.0.47",
     "@anthropic-ai/claude-agent-sdk": "0.2.80",
     "@inkjs/ui": "2.0.0",

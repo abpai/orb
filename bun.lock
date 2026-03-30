@@ -7,7 +7,7 @@
       "dependencies": {
         "@ai-sdk/openai": "3.0.47",
         "@anthropic-ai/claude-agent-sdk": "0.2.80",
-        "@clack/prompts": "^1.0.1",
+        "@clack/prompts": "^1.1.0",
         "@iarna/toml": "^2.2.5",
         "@inkjs/ui": "2.0.0",
         "ai": "6.0.134",

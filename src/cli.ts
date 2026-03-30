@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { run } from './index.js'
+import { run } from './index'
 
 run(process.argv.slice(2)).catch((err) => {
   // Commander throws with exitCode for --help, parse errors, etc.
