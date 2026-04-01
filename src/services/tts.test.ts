@@ -51,7 +51,7 @@ describe('generateAudio', () => {
     expect(requestBody!.get('text')).toBe('hello world')
     expect(requestBody!.get('voice')).toBe('alba')
     expect(requestBody!.get('voice_url')).toBeNull()
-    expect(requestBody!.get('speed')).toBe('1.5')
+    expect(requestBody!.get('speed')).toBeNull()
 
     await rm(tempDir, { recursive: true, force: true })
   })
@@ -113,7 +113,7 @@ describe('generateAudio', () => {
       outputPath,
     )
 
-    expect(requestedUrl).toBe('http://localhost:8000/tts')
+    expect(requestedUrl).toBe('http://localhost:8000/v1/speech')
 
     await rm(tempDir, { recursive: true, force: true })
   })

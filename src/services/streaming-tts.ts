@@ -312,7 +312,7 @@ export function createStreamingSpeechController(
     const audioPath = join(
       tmpdir(),
       `tts-stream-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${
-        config.ttsMode === 'generate' ? 'aiff' : 'wav'
+        config.ttsMode === 'generate' ? 'aiff' : 'mp3'
       }`,
     )
 
