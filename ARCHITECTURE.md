@@ -317,7 +317,7 @@ When streaming is disabled:
 
 ### Audio backends
 
-- `serve` mode posts to a `tts-gateway`-compatible HTTP server, defaulting to `http://localhost:8000`
+- `serve` mode posts to `POST /v1/speech` on a `tts-gateway`-compatible HTTP server, defaulting to `http://localhost:8000`
 - `generate` mode uses local macOS generation/playback helpers
 - `src/setup.ts` is the source of truth for the interactive setup flow and Kokoro gateway guidance
 

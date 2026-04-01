@@ -89,7 +89,7 @@ tts serve --provider kokoro --port 8000
 
 That spaCy install is important: Kokoro’s first request will crash in a plain `uv tool` install unless `en_core_web_sm` is installed into the `tts-gateway` tool environment.
 
-Orb expects `tts-gateway` at `http://localhost:8000` by default and automatically targets `POST /tts`.
+Orb expects `tts-gateway` at `http://localhost:8000` by default and automatically targets `POST /v1/speech`.
 
 ### 3. Run Orb
 
@@ -170,7 +170,7 @@ tts serve --provider kokoro --port 8000
 
 ```bash
 curl http://localhost:8000/health
-curl -X POST http://localhost:8000/tts -F 'text=hello from orb' -o /tmp/orb-check.wav
+curl -X POST http://localhost:8000/v1/speech -F 'text=hello from orb' -o /tmp/orb-check.mp3
 ```
 
 Then run Orb with defaults:
