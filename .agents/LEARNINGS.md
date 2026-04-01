@@ -51,3 +51,4 @@
 - Public-beta readiness depends more on state-machine correctness, cancellation, auth/session behavior, and seam tests than on a larger architecture rewrite.
 - The current production execution path centers on `src/pipeline/**`; `ARCHITECTURE.md` still describes older `services/agent/*` paths and should not be treated as the full source of truth during recon.
 - For dead-code audits in this repo, treat test-only pipeline seams like inbound transport and observers separately from truly dead symbols so cleanup stays conservative.
+- Orb's current "streaming TTS" is sentence/chunk scheduling layered on temp audio files plus `afplay`, not end-to-end streamed audio transport; start playback investigations in `src/services/tts.ts` and `src/services/streaming-tts.ts`, not the UI.
