@@ -109,6 +109,7 @@ Controls:
 
 TTS quick start:
   - Serve mode uses tts-gateway at http://localhost:8000 by default
+  - Streaming playback prefers mpv or ffplay when available
   - Run "orb setup" for guided defaults and gateway instructions
   - Use --tts-mode=generate for local macOS fallback speech
 
