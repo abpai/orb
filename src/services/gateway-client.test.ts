@@ -262,4 +262,100 @@ describe('createGatewayClient', () => {
       expect(receivedSignal).toBe(controller.signal)
     })
   })
+
+  describe('speakStream', () => {
+    it('posts to /tts/stream endpoint by default', async () => {
+      const { createGatewayClient } = await importModule()
+      let requestUrl: string | undefined
+
+      globalThis.fetch = mock(async (input: string | globalThis.URL | Request) => {
+        requestUrl = typeof input === 'string' ? input : input.toString()
+        return new Response(new ReadableStream(), { status: 200 })
+      }) as unknown as typeof globalThis.fetch
+
+      await createGatewayClient('http://localhost:8000').speakStream('hello')
+      expect(requestUrl).toBe('http://localhost:8000/tts/stream')
+    })
+
+    it('returns ReadableStream on success', async () => {
+      const { createGatewayClient } = await importModule()
+      const fakeStream = new ReadableStream()
+
+      globalThis.fetch = mock(
+        async () => new Response(fakeStream, { status: 200 }),
+      ) as unknown as typeof globalThis.fetch
+
+      const stream = await createGatewayClient('http://localhost:8000').speakStream('hello')
+      expect(stream).toBeInstanceOf(ReadableStream)
+    })
+
+    it('retries without voice on retriable errors', async () => {
+      const { createGatewayClient } = await importModule()
+      const bodies: globalThis.FormData[] = []
+
+      globalThis.fetch = mock(
+        async (_input: string | globalThis.URL | Request, init?: RequestInit) => {
+          const body = init?.body as globalThis.FormData
+          bodies.push(body)
+          if (body.get('voice')) {
+            return new Response('bad voice', { status: 400 })
+          }
+          return new Response(new ReadableStream(), { status: 200 })
+        },
+      ) as unknown as typeof globalThis.fetch
+
+      await createGatewayClient('http://localhost:8000').speakStream('hello', 'alba')
+
+      expect(bodies).toHaveLength(2)
+      expect(bodies[0]!.get('voice')).toBe('alba')
+      expect(bodies[1]!.get('voice')).toBeNull()
+    })
+
+    it('throws TTSError on non-OK response', async () => {
+      const { createGatewayClient } = await importModule()
+
+      globalThis.fetch = mock(
+        async () => new Response('engines unavailable', { status: 503 }),
+      ) as unknown as typeof globalThis.fetch
+
+      await expect(
+        createGatewayClient('http://localhost:8000').speakStream('hello'),
+      ).rejects.toBeInstanceOf(TTSError)
+    })
+
+    it('throws TTSError when response has no body', async () => {
+      const { createGatewayClient } = await importModule()
+
+      globalThis.fetch = mock(async () => {
+        // Construct a response with null body
+        const resp = new Response(null, { status: 200 })
+        return resp
+      }) as unknown as typeof globalThis.fetch
+
+      await expect(
+        createGatewayClient('http://localhost:8000').speakStream('hello'),
+      ).rejects.toBeInstanceOf(TTSError)
+    })
+
+    it('threads signal to fetch', async () => {
+      const { createGatewayClient } = await importModule()
+      let receivedSignal: AbortSignal | undefined
+
+      globalThis.fetch = mock(
+        async (_input: string | globalThis.URL | Request, init?: RequestInit) => {
+          receivedSignal = init?.signal as AbortSignal | undefined
+          return new Response(new ReadableStream(), { status: 200 })
+        },
+      ) as unknown as typeof globalThis.fetch
+
+      const controller = new AbortController()
+      await createGatewayClient('http://localhost:8000').speakStream(
+        'hello',
+        undefined,
+        controller.signal,
+      )
+
+      expect(receivedSignal).toBe(controller.signal)
+    })
+  })
 })

@@ -1,15 +1,19 @@
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { unlink } from 'node:fs/promises'
 import { TTSError, type AppConfig } from '../types'
 import {
   cleanTextForSpeech,
+  createTempAudioPath,
+  createStreamSession,
+  detectPlayer,
   generateAudio,
   playAudio,
   stopSpeaking,
   wasPlaybackStopped,
   resetPlaybackStoppedFlag,
+  DEFAULT_SERVER_URL,
+  type StreamSession,
 } from './tts'
+import { createGatewayClient } from './gateway-client'
 
 export interface StreamingSpeechCallbacks {
   onSpeakingStart?: () => void
@@ -23,11 +27,6 @@ export interface StreamingSpeechController {
   stop(): void
   waitForCompletion(): Promise<void>
   isActive(): boolean
-}
-
-interface QueuedAudio {
-  path: string
-  sentence: string
 }
 
 const STRONG_BOUNDARY = /[.!?]+["')\]]*(?:\s|$)/g
@@ -104,11 +103,16 @@ export function createStreamingSpeechController(
   let pendingGrace = false
 
   const sentenceQueue: string[] = []
-  const audioQueue: QueuedAudio[] = []
+  const client =
+    config.ttsMode === 'serve'
+      ? createGatewayClient(config.ttsServerUrl ?? DEFAULT_SERVER_URL)
+      : null
 
-  let isGenerating = false
-  let isPlaying = false
-  let generationAbortController: AbortController | null = null
+  let isProcessing = false
+  let currentSession: StreamSession | null = null
+  let activeAbort: AbortController | null = null
+  let prefetchAbort: AbortController | null = null
+  let prefetchedStream: ReadableStream<Uint8Array> | null = null
   let completionResolve: (() => void) | null = null
   let completionReject: ((error: TTSError) => void) | null = null
   let completionPromise: Promise<void> | null = null
@@ -124,17 +128,6 @@ export function createStreamingSpeechController(
       graceTimeout = null
     }
     pendingGrace = false
-  }
-
-  async function cleanupAudioPath(path: string): Promise<void> {
-    await unlink(path).catch(() => {})
-  }
-
-  function clearAudioQueue(): void {
-    for (const audio of audioQueue) {
-      void cleanupAudioPath(audio.path)
-    }
-    audioQueue.length = 0
   }
 
   function enqueueChunk(chunk: string, now: number): void {
@@ -279,7 +272,7 @@ export function createStreamingSpeechController(
       graceTimeout = setTimeout(() => {
         pendingGrace = false
         const remaining = extractChunks({ forceFlush: true, finalized: false })
-        maybeStartGeneration()
+        maybeStartProcessing()
         resetFlushTimers(remaining)
       }, config.ttsGraceWindowMs)
       return
@@ -294,12 +287,88 @@ export function createStreamingSpeechController(
     if (remaining.trim() && lastFlushAt === lastFlush) {
       lastFlushAt = Date.now()
     }
-    maybeStartGeneration()
+    maybeStartProcessing()
     resetFlushTimers(remaining)
   }
 
-  async function processGenerationQueue(): Promise<void> {
-    if (isGenerating || stopped) return
+  async function generateAndPlayViaFile(sentence: string): Promise<void> {
+    const audioPath = createTempAudioPath(
+      config.ttsMode,
+      `tts-stream-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    )
+    try {
+      await generateAudio(sentence, config, audioPath)
+      resetPlaybackStoppedFlag()
+      await playAudio(audioPath, config.ttsSpeed)
+      if (wasPlaybackStopped()) return
+    } finally {
+      await unlink(audioPath).catch(() => {})
+    }
+  }
+
+  function cancelPrefetch(): void {
+    prefetchAbort?.abort()
+    prefetchAbort = null
+    prefetchedStream?.cancel().catch(() => {})
+    prefetchedStream = null
+  }
+
+  function startPrefetch(): void {
+    if (!client || prefetchAbort || stopped || sentenceQueue.length === 0) return
+
+    const nextSentence = sentenceQueue[0]!
+    const abort = new AbortController()
+    prefetchAbort = abort
+    client
+      .speakStream(nextSentence, config.ttsVoice, abort.signal)
+      .then((stream) => {
+        if (stopped || prefetchAbort !== abort) {
+          // stop() or cancelPrefetch() fired while fetch was in-flight
+          stream.cancel().catch(() => {})
+        } else {
+          prefetchedStream = stream
+        }
+      })
+      .catch(() => {
+        // Prefetch failure is non-fatal; will retry in processNextSentence
+        if (prefetchAbort === abort) prefetchAbort = null
+      })
+  }
+
+  async function streamOrFallback(sentence: string): Promise<void> {
+    // Fall back to speakSync + afplay when no stream-capable player is installed
+    try {
+      detectPlayer()
+    } catch (err) {
+      if (err instanceof TTSError && err.type === 'player_not_found') {
+        await generateAndPlayViaFile(sentence)
+        return
+      }
+      throw err
+    }
+
+    let audioStream: ReadableStream<Uint8Array>
+    if (prefetchedStream) {
+      audioStream = prefetchedStream
+      activeAbort = prefetchAbort
+      prefetchedStream = null
+      prefetchAbort = null
+    } else {
+      activeAbort = new AbortController()
+      audioStream = await client!.speakStream(sentence, config.ttsVoice, activeAbort.signal)
+    }
+
+    const session = createStreamSession(audioStream, config.ttsSpeed)
+    currentSession = session
+
+    // Pre-fetch next sentence's audio while this one plays
+    startPrefetch()
+
+    await session.done
+  }
+
+  async function processNextSentence(): Promise<void> {
+    if (isProcessing || stopped) return
 
     const sentence = sentenceQueue.shift()
     if (!sentence) {
@@ -307,76 +376,38 @@ export function createStreamingSpeechController(
       return
     }
 
-    isGenerating = true
-    generationAbortController = new AbortController()
-    const audioPath = join(
-      tmpdir(),
-      `tts-stream-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${
-        config.ttsMode === 'generate' ? 'aiff' : 'mp3'
-      }`,
-    )
+    isProcessing = true
 
-    try {
-      await generateAudio(sentence, config, audioPath, generationAbortController.signal)
-      if (!stopped) {
-        audioQueue.push({ path: audioPath, sentence })
-        processPlaybackQueue()
-      } else {
-        await cleanupAudioPath(audioPath)
-      }
-    } catch (err) {
-      const ttsError =
-        err instanceof TTSError ? err : new TTSError(String(err), 'generation_failed')
-      callbacks.onError?.(ttsError)
-      fail(ttsError)
-    } finally {
-      generationAbortController = null
-      isGenerating = false
-      if (!stopped) {
-        processGenerationQueue()
-      }
-    }
-  }
-
-  async function processPlaybackQueue(): Promise<void> {
-    if (isPlaying || stopped) return
-
-    const audio = audioQueue.shift()
-    if (!audio) {
-      checkCompletion()
-      return
-    }
-
-    isPlaying = true
-    resetPlaybackStoppedFlag()
-
-    // Notify that speaking has started
     if (!speakingStarted) {
       speakingStarted = true
       callbacks.onSpeakingStart?.()
     }
 
     try {
-      await playAudio(audio.path, config.ttsSpeed)
-    } catch (err) {
-      // Check if playback was stopped manually (not an error)
-      if (!wasPlaybackStopped()) {
-        const ttsError = err instanceof TTSError ? err : new TTSError(String(err), 'audio_playback')
-        callbacks.onError?.(ttsError)
-        fail(ttsError)
+      if (config.ttsMode === 'generate') {
+        await generateAndPlayViaFile(sentence)
+      } else {
+        await streamOrFallback(sentence)
       }
+    } catch (err) {
+      if (stopped) return
+      const ttsError =
+        err instanceof TTSError ? err : new TTSError(String(err), 'generation_failed')
+      callbacks.onError?.(ttsError)
+      fail(ttsError)
+      return
     } finally {
-      await cleanupAudioPath(audio.path)
-
-      isPlaying = false
+      currentSession = null
+      activeAbort = null
+      isProcessing = false
       if (!stopped) {
-        processPlaybackQueue()
+        processNextSentence()
       }
     }
   }
 
   function hasWorkRemaining(): boolean {
-    return isGenerating || isPlaying || sentenceQueue.length > 0 || audioQueue.length > 0
+    return isProcessing || sentenceQueue.length > 0
   }
 
   function markComplete(): void {
@@ -392,7 +423,7 @@ export function createStreamingSpeechController(
     stopped = true
     completed = true
     sentenceQueue.length = 0
-    clearAudioQueue()
+    cancelPrefetch()
     completionReject?.(error)
   }
 
@@ -402,10 +433,10 @@ export function createStreamingSpeechController(
     }
   }
 
-  function maybeStartGeneration(): void {
-    if (stopped || isGenerating) return
+  function maybeStartProcessing(): void {
+    if (stopped || isProcessing) return
     if (sentenceQueue.length >= config.ttsBufferSentences || finalized) {
-      processGenerationQueue()
+      processNextSentence()
     }
   }
 
@@ -414,7 +445,7 @@ export function createStreamingSpeechController(
       if (stopped || !config.ttsEnabled) return
       textBuffer += chunk
       const remaining = extractChunks({ forceFlush: false, finalized: false })
-      maybeStartGeneration()
+      maybeStartProcessing()
       resetFlushTimers(remaining)
     },
 
@@ -430,7 +461,7 @@ export function createStreamingSpeechController(
 
       // Extract any remaining chunks
       extractChunks({ forceFlush: true, finalized: true })
-      processGenerationQueue()
+      processNextSentence()
       checkCompletion()
     },
 
@@ -440,12 +471,15 @@ export function createStreamingSpeechController(
       clearTimers()
       sentenceQueue.length = 0
 
-      clearAudioQueue()
+      cancelPrefetch()
 
-      generationAbortController?.abort()
-      generationAbortController = null
+      activeAbort?.abort()
+      activeAbort = null
 
-      // Stop current playback
+      currentSession?.kill()
+      currentSession = null
+
+      // Stop generate-mode playback (afplay)
       stopSpeaking()
 
       // Resolve completion promise

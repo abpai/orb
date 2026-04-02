@@ -2,27 +2,40 @@ import { afterEach, describe, expect, it, mock } from 'bun:test'
 import type { AppConfig } from '../types'
 import { DEFAULT_CONFIG } from '../types'
 import { createStreamingSpeechController } from './streaming-tts'
+import { resetDetectedPlayer } from './tts'
 
 const originalFetch = globalThis.fetch
 const originalSpawn = Bun.spawn
+const originalWhich = Bun.which
 
 afterEach(() => {
   globalThis.fetch = originalFetch
   Bun.spawn = originalSpawn
+  Bun.which = originalWhich
+  resetDetectedPlayer()
   mock.restore()
 })
 
 function installTTSMocks() {
   globalThis.fetch = mock(async () => {
-    return new Response(new Uint8Array([1, 2, 3]).buffer, { status: 200 })
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3]))
+        controller.close()
+      },
+    })
+    return new Response(stream, { status: 200 })
   }) as unknown as typeof globalThis.fetch
+
+  Bun.which = mock(() => '/usr/local/bin/mpv') as unknown as typeof Bun.which
 
   Bun.spawn = mock(() => {
     return {
+      stdin: { write() {}, end() {} },
       exited: Promise.resolve(0),
-      kill: () => {},
-    } as Bun.Subprocess
-  }) as typeof Bun.spawn
+      kill() {},
+    } as unknown as Bun.Subprocess
+  }) as unknown as typeof Bun.spawn
 }
 
 function createTestConfig(overrides: Partial<AppConfig> = {}): AppConfig {

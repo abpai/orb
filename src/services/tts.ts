@@ -7,6 +7,128 @@ import { createGatewayClient, DEFAULT_SERVER_URL } from './gateway-client'
 
 export { cleanTextForSpeech }
 export { DEFAULT_SERVER_URL }
+
+export interface StreamSession {
+  done: Promise<void>
+  kill: () => void
+  readonly wasKilled: boolean
+}
+
+type PlayerBinary = 'mpv' | 'ffplay'
+
+interface PlayerConfig {
+  binary: PlayerBinary
+  buildArgs: (speed: number) => string[]
+}
+
+const PLAYERS: PlayerConfig[] = [
+  {
+    binary: 'mpv',
+    buildArgs: (speed: number) => {
+      const args = ['--no-video', '--no-terminal', '--msg-level=all=error']
+      if (speed !== 1) args.push(`--speed=${speed}`)
+      args.push('-')
+      return args
+    },
+  },
+  {
+    binary: 'ffplay',
+    buildArgs: (speed: number) => {
+      const args = ['-nodisp', '-autoexit', '-loglevel', 'error']
+      if (speed !== 1) {
+        const clamped = Math.max(0.5, Math.min(2.0, speed))
+        args.push('-af', `atempo=${clamped}`)
+      }
+      args.push('-i', 'pipe:0')
+      return args
+    },
+  },
+]
+
+let detectedPlayer: PlayerConfig | null | undefined = undefined
+
+function throwPlayerNotFound(): never {
+  throw new TTSError('No audio player found. Install mpv: brew install mpv', 'player_not_found')
+}
+
+export function detectPlayer(): PlayerConfig {
+  if (detectedPlayer !== undefined) {
+    if (detectedPlayer === null) throwPlayerNotFound()
+    return detectedPlayer
+  }
+
+  for (const player of PLAYERS) {
+    if (Bun.which(player.binary)) {
+      detectedPlayer = player
+      return player
+    }
+  }
+
+  detectedPlayer = null
+  throwPlayerNotFound()
+}
+
+export function resetDetectedPlayer(): void {
+  detectedPlayer = undefined
+}
+
+export function createStreamSession(
+  audioStream: ReadableStream<Uint8Array>,
+  speed: number,
+): StreamSession {
+  let killed = false
+  let proc: Bun.Subprocess<'pipe', 'ignore', 'ignore'> | null = null
+  let activeReader: ReturnType<ReadableStream<Uint8Array>['getReader']> | null = null
+
+  const player = detectPlayer()
+  const args = player.buildArgs(speed)
+
+  const done = (async () => {
+    proc = Bun.spawn([player.binary, ...args], {
+      stdin: 'pipe',
+      stdout: 'ignore',
+      stderr: 'ignore',
+    })
+
+    const writer = proc.stdin
+    const reader = audioStream.getReader()
+    activeReader = reader
+
+    try {
+      while (true) {
+        const { done: readerDone, value } = await reader.read()
+        if (readerDone || killed) break
+        writer.write(value)
+      }
+    } catch (err) {
+      if (!killed) throw err
+    } finally {
+      reader.releaseLock()
+      activeReader = null
+      writer.end()
+    }
+
+    const exitCode = await proc.exited
+    proc = null
+
+    if (exitCode !== 0 && !killed) {
+      throw new TTSError(`Player exited with code ${exitCode}`, 'audio_playback')
+    }
+  })()
+
+  return {
+    done,
+    kill() {
+      killed = true
+      activeReader?.cancel().catch(() => {})
+      proc?.kill()
+    },
+    get wasKilled() {
+      return killed
+    },
+  }
+}
+
 const DEFAULT_SAY_RATE_WPM = 175
 const SAY_VOICE_BY_ORB_VOICE: Record<Voice, string> = {
   alba: 'Samantha',
@@ -74,8 +196,12 @@ function isValidSpeed(speed: number | undefined): speed is number {
   return typeof speed === 'number' && Number.isFinite(speed) && speed > 0
 }
 
-function getTempAudioExtension(mode: AppConfig['ttsMode']): string {
+export function getTempAudioExtension(mode: AppConfig['ttsMode']): string {
   return mode === 'generate' ? 'aiff' : 'mp3'
+}
+
+export function createTempAudioPath(mode: AppConfig['ttsMode'], name: string): string {
+  return join(tmpdir(), `${name}.${getTempAudioExtension(mode)}`)
 }
 
 function mapVoiceToSayVoice(voice: Voice): string {
@@ -195,10 +321,7 @@ export async function speak(text: string, config: AppConfig): Promise<void> {
   let firstError: TTSError | null = null
 
   for (const [i, sentence] of sentences.entries()) {
-    const audioPath = join(
-      tmpdir(),
-      `tts-${Date.now()}-${i}.${getTempAudioExtension(config.ttsMode)}`,
-    )
+    const audioPath = createTempAudioPath(config.ttsMode, `tts-${Date.now()}-${i}`)
 
     try {
       await generateAudio(sentence, config, audioPath)

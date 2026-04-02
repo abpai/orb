@@ -4,13 +4,14 @@ import { TTSError } from '../types'
 
 export const DEFAULT_SERVER_URL = 'http://localhost:8000'
 const DEFAULT_SPEECH_PATH = '/v1/speech'
+const DEFAULT_STREAM_PATH = '/tts/stream'
 
 export interface GatewaySpeechResult {
   audio: Buffer
   contentType: string
 }
 
-function normalizeGatewayUrl(rawUrl: string): string {
+function resolveUrl(rawUrl: string, defaultPath: string): string {
   const trimmed = rawUrl.trim() || DEFAULT_SERVER_URL
 
   let url: URL
@@ -21,7 +22,7 @@ function normalizeGatewayUrl(rawUrl: string): string {
   }
 
   if (!url.pathname || url.pathname === '/') {
-    url.pathname = DEFAULT_SPEECH_PATH
+    url.pathname = defaultPath
   }
 
   return url.toString()
@@ -67,15 +68,39 @@ function isRetryableVoiceError(status: number): boolean {
   return status !== 503 && status !== 504
 }
 
-export function createGatewayClient(baseUrl: string) {
-  const url = normalizeGatewayUrl(baseUrl)
+async function handleVoiceRetry(
+  post: (formData: globalThis.FormData, signal?: AbortSignal) => Promise<Response>,
+  text: string,
+  voice: string | undefined,
+  signal: AbortSignal | undefined,
+): Promise<Response> {
+  let response = await post(buildFormData(text, voice), signal)
 
-  async function postSpeech(
-    formData: globalThis.FormData,
-    signal?: AbortSignal,
-  ): Promise<Response> {
-    return await fetch(url, { method: 'POST', body: formData, signal })
+  if (!response.ok && voice && isRetryableVoiceError(response.status)) {
+    response = await post(buildFormData(text), signal)
   }
+
+  if (!response.ok) {
+    const detail = await readErrorDetail(response)
+    const base = mapStatusToMessage(response.status)
+    const message = detail ? `${base}: ${detail}` : base
+    throw new TTSError(message, 'generation_failed')
+  }
+
+  return response
+}
+
+export function createGatewayClient(baseUrl: string) {
+  const syncUrl = resolveUrl(baseUrl, DEFAULT_SPEECH_PATH)
+  const streamUrl = resolveUrl(baseUrl, DEFAULT_STREAM_PATH)
+
+  function postTo(url: string) {
+    return (formData: globalThis.FormData, signal?: AbortSignal): Promise<Response> =>
+      fetch(url, { method: 'POST', body: formData, signal })
+  }
+
+  const postSync = postTo(syncUrl)
+  const postStream = postTo(streamUrl)
 
   return {
     async speakSync(
@@ -83,26 +108,26 @@ export function createGatewayClient(baseUrl: string) {
       voice?: string,
       signal?: AbortSignal,
     ): Promise<GatewaySpeechResult> {
-      let response = await postSpeech(buildFormData(text, voice), signal)
-
-      if (!response.ok && voice && isRetryableVoiceError(response.status)) {
-        // Voice mismatch — Kokoro reports missing voices as 502, other gateways
-        // may use 4xx. Retry without voice so the server can use its default.
-        // Skip 503/504 where the issue is engine availability, not voice.
-        response = await postSpeech(buildFormData(text), signal)
-      }
-
-      if (!response.ok) {
-        const detail = await readErrorDetail(response)
-        const base = mapStatusToMessage(response.status)
-        const message = detail ? `${base}: ${detail}` : base
-        throw new TTSError(message, 'generation_failed')
-      }
+      const response = await handleVoiceRetry(postSync, text, voice, signal)
 
       const audioBuffer = await response.arrayBuffer()
       const contentType = response.headers.get('content-type') ?? 'audio/mpeg'
 
       return { audio: Buffer.from(audioBuffer), contentType }
+    },
+
+    async speakStream(
+      text: string,
+      voice?: string,
+      signal?: AbortSignal,
+    ): Promise<ReadableStream<Uint8Array>> {
+      const response = await handleVoiceRetry(postStream, text, voice, signal)
+
+      if (!response.body) {
+        throw new TTSError('Server returned no stream body', 'generation_failed')
+      }
+
+      return response.body
     },
   }
 }

@@ -19,6 +19,7 @@ const ERROR_CONFIG: Record<TTSErrorType, ErrorConfig> = {
   },
   audio_playback: { icon: '🔇', hint: 'Audio playback failed' },
   generation_failed: { icon: '🔇', hint: 'Voice synthesis failed' },
+  player_not_found: { icon: '⚠', hint: 'No audio player found — install mpv: brew install mpv' },
 }
 
 export function TTSErrorBanner({ type, message }: TTSErrorBannerProps): React.ReactNode {

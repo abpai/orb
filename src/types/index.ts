@@ -2,7 +2,11 @@ export type AppState = 'idle' | 'processing' | 'processing_speaking' | 'speaking
 
 export type DetailMode = 'compact' | 'expanded'
 
-export type TTSErrorType = 'command_not_found' | 'audio_playback' | 'generation_failed'
+export type TTSErrorType =
+  | 'command_not_found'
+  | 'audio_playback'
+  | 'generation_failed'
+  | 'player_not_found'
 
 export class TTSError extends Error {
   constructor(
