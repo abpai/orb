@@ -98,14 +98,27 @@ export function createStreamSession(
       while (true) {
         const { done: readerDone, value } = await reader.read()
         if (readerDone || killed) break
-        writer.write(value)
+        try {
+          writer.write(value)
+        } catch {
+          break // Pipe broken (player exited); fall through to exit-code check
+        }
       }
     } catch (err) {
       if (!killed) throw err
     } finally {
-      reader.releaseLock()
+      try {
+        reader.releaseLock()
+      } catch {
+        // Bun can throw here for delayed fetch response bodies even after a
+        // successful read loop; cleanup should not fail playback completion.
+      }
       activeReader = null
-      writer.end()
+      try {
+        writer.end()
+      } catch {
+        /* pipe may already be closed */
+      }
     }
 
     const exitCode = await proc.exited

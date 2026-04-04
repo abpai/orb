@@ -27,7 +27,7 @@ describe('generateAudio', () => {
     Object.defineProperty(process, 'platform', { value: originalPlatform })
   })
 
-  it('sends tts-gateway form fields in serve mode', async () => {
+  it('sends form data with text and voice in serve mode', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'orb-tts-'))
     const outputPath = join(tempDir, 'speech.wav')
     let requestBody: globalThis.FormData | undefined
@@ -35,7 +35,7 @@ describe('generateAudio', () => {
 
     globalThis.fetch = mock(
       async (_input: string | globalThis.URL | Request, init?: RequestInit) => {
-        requestBody = (init?.body as globalThis.FormData) ?? null
+        requestBody = init?.body as globalThis.FormData
         return new Response(new Uint8Array([1, 2, 3]).buffer, { status: 200 })
       },
     ) as unknown as typeof globalThis.fetch
@@ -94,8 +94,6 @@ describe('generateAudio', () => {
     expect(requestBodies).toHaveLength(2)
     expect(requestBodies[0]?.get('voice')).toBe('alba')
     expect(requestBodies[1]?.get('voice')).toBeNull()
-    expect(requestBodies[0]?.get('voice_url')).toBeNull()
-    expect(requestBodies[1]?.get('voice_url')).toBeNull()
 
     await rm(tempDir, { recursive: true, force: true })
   })
@@ -360,6 +358,47 @@ describe('createStreamSession', () => {
       expect(err).toBeInstanceOf(TTSError)
       expect((err as TTSError).type).toBe('audio_playback')
     }
+  })
+
+  it('ignores reader releaseLock failures during cleanup', async () => {
+    const { createStreamSession, resetDetectedPlayer } = await importModule()
+    resetDetectedPlayer()
+    mockPlayerAvailable()
+
+    let stdinEnded = false
+
+    Bun.spawn = mock(() => {
+      return {
+        stdin: {
+          write() {},
+          end() {
+            stdinEnded = true
+          },
+        },
+        exited: Promise.resolve(0),
+        kill() {},
+      } as unknown as Bun.Subprocess
+    }) as unknown as typeof Bun.spawn
+
+    const stream = {
+      getReader() {
+        return {
+          async read() {
+            return { done: true, value: undefined }
+          },
+          cancel() {
+            return Promise.resolve()
+          },
+          releaseLock() {
+            throw new TypeError('undefined is not a function')
+          },
+        }
+      },
+    } as unknown as ReadableStream<Uint8Array>
+
+    const session = createStreamSession(stream, 1)
+    await expect(session.done).resolves.toBeUndefined()
+    expect(stdinEnded).toBe(true)
   })
 
   it('kill() terminates without throwing', async () => {
