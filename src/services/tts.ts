@@ -1,14 +1,147 @@
-import { Buffer } from 'node:buffer'
-import { URL } from 'node:url'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { unlink } from 'node:fs/promises'
 import { TTSError, type AppConfig, type TTSErrorType, type Voice } from '../types'
 import { cleanTextForSpeech } from '../ui/utils/markdown'
+import { createGatewayClient, DEFAULT_SERVER_URL } from './gateway-client'
 
 export { cleanTextForSpeech }
+export { DEFAULT_SERVER_URL }
 
-export const DEFAULT_SERVER_URL = 'http://localhost:8000'
+export interface StreamSession {
+  done: Promise<void>
+  kill: () => void
+  readonly wasKilled: boolean
+}
+
+type PlayerBinary = 'mpv' | 'ffplay'
+
+interface PlayerConfig {
+  binary: PlayerBinary
+  buildArgs: (speed: number) => string[]
+}
+
+const PLAYERS: PlayerConfig[] = [
+  {
+    binary: 'mpv',
+    buildArgs: (speed: number) => {
+      const args = ['--no-video', '--no-terminal', '--msg-level=all=error']
+      if (speed !== 1) args.push(`--speed=${speed}`)
+      args.push('-')
+      return args
+    },
+  },
+  {
+    binary: 'ffplay',
+    buildArgs: (speed: number) => {
+      const args = ['-nodisp', '-autoexit', '-loglevel', 'error']
+      if (speed !== 1) {
+        const clamped = Math.max(0.5, Math.min(2.0, speed))
+        args.push('-af', `atempo=${clamped}`)
+      }
+      args.push('-i', 'pipe:0')
+      return args
+    },
+  },
+]
+
+let detectedPlayer: PlayerConfig | null | undefined = undefined
+
+function throwPlayerNotFound(): never {
+  throw new TTSError('No audio player found. Install mpv: brew install mpv', 'player_not_found')
+}
+
+export function detectPlayer(): PlayerConfig {
+  if (detectedPlayer !== undefined) {
+    if (detectedPlayer === null) throwPlayerNotFound()
+    return detectedPlayer
+  }
+
+  for (const player of PLAYERS) {
+    if (Bun.which(player.binary)) {
+      detectedPlayer = player
+      return player
+    }
+  }
+
+  detectedPlayer = null
+  throwPlayerNotFound()
+}
+
+export function resetDetectedPlayer(): void {
+  detectedPlayer = undefined
+}
+
+export function createStreamSession(
+  audioStream: ReadableStream<Uint8Array>,
+  speed: number,
+): StreamSession {
+  let killed = false
+  let proc: Bun.Subprocess<'pipe', 'ignore', 'ignore'> | null = null
+  let activeReader: ReturnType<ReadableStream<Uint8Array>['getReader']> | null = null
+
+  const player = detectPlayer()
+  const args = player.buildArgs(speed)
+
+  const done = (async () => {
+    proc = Bun.spawn([player.binary, ...args], {
+      stdin: 'pipe',
+      stdout: 'ignore',
+      stderr: 'ignore',
+    })
+
+    const writer = proc.stdin
+    const reader = audioStream.getReader()
+    activeReader = reader
+
+    try {
+      while (true) {
+        const { done: readerDone, value } = await reader.read()
+        if (readerDone || killed) break
+        try {
+          writer.write(value)
+        } catch {
+          break // Pipe broken (player exited); fall through to exit-code check
+        }
+      }
+    } catch (err) {
+      if (!killed) throw err
+    } finally {
+      try {
+        reader.releaseLock()
+      } catch {
+        // Bun can throw here for delayed fetch response bodies even after a
+        // successful read loop; cleanup should not fail playback completion.
+      }
+      activeReader = null
+      try {
+        writer.end()
+      } catch {
+        /* pipe may already be closed */
+      }
+    }
+
+    const exitCode = await proc.exited
+    proc = null
+
+    if (exitCode !== 0 && !killed) {
+      throw new TTSError(`Player exited with code ${exitCode}`, 'audio_playback')
+    }
+  })()
+
+  return {
+    done,
+    kill() {
+      killed = true
+      activeReader?.cancel().catch(() => {})
+      proc?.kill()
+    },
+    get wasKilled() {
+      return killed
+    },
+  }
+}
+
 const DEFAULT_SAY_RATE_WPM = 175
 const SAY_VOICE_BY_ORB_VOICE: Record<Voice, string> = {
   alba: 'Samantha',
@@ -72,38 +205,16 @@ function splitIntoSentences(text: string): string[] {
   return sentences
 }
 
-function normalizeServerUrl(rawUrl: string): string {
-  const trimmed = rawUrl.trim() || DEFAULT_SERVER_URL
-
-  let url: URL
-  try {
-    url = new URL(trimmed)
-  } catch {
-    throw new TTSError('Invalid TTS server URL', 'generation_failed')
-  }
-
-  if (!url.pathname || url.pathname === '/') {
-    url.pathname = '/tts'
-  }
-
-  return url.toString()
-}
-
-async function readErrorMessage(response: { text: () => Promise<string> }): Promise<string | null> {
-  try {
-    const text = await response.text()
-    return text.trim() || null
-  } catch {
-    return null
-  }
-}
-
 function isValidSpeed(speed: number | undefined): speed is number {
   return typeof speed === 'number' && Number.isFinite(speed) && speed > 0
 }
 
-function getTempAudioExtension(mode: AppConfig['ttsMode']): string {
-  return mode === 'generate' ? 'aiff' : 'wav'
+export function getTempAudioExtension(mode: AppConfig['ttsMode']): string {
+  return mode === 'generate' ? 'aiff' : 'mp3'
+}
+
+export function createTempAudioPath(mode: AppConfig['ttsMode'], name: string): string {
+  return join(tmpdir(), `${name}.${getTempAudioExtension(mode)}`)
 }
 
 function mapVoiceToSayVoice(voice: Voice): string {
@@ -113,54 +224,6 @@ function mapVoiceToSayVoice(voice: Voice): string {
 function mapSpeedToSayRate(speed: number): number | undefined {
   if (!isValidSpeed(speed)) return undefined
   return Math.max(90, Math.round(DEFAULT_SAY_RATE_WPM * speed))
-}
-
-function buildSpeechFormData(
-  text: string,
-  voice: string | undefined,
-  speed: number,
-): globalThis.FormData {
-  const formData = new globalThis.FormData()
-  formData.append('text', text)
-  if (voice) {
-    formData.append('voice', voice)
-  }
-  if (isValidSpeed(speed)) {
-    formData.append('speed', String(speed))
-  }
-  return formData
-}
-
-async function requestServerSpeech(
-  serverUrl: string,
-  text: string,
-  voice: string,
-  speed: number,
-  signal?: globalThis.AbortSignal,
-): Promise<Buffer> {
-  async function postSpeech(formData: globalThis.FormData): Promise<Response> {
-    return await fetch(serverUrl, {
-      method: 'POST',
-      body: formData,
-      signal,
-    })
-  }
-
-  let response = await postSpeech(buildSpeechFormData(text, voice, speed))
-  if (!response.ok && voice) {
-    // Some tts-gateway providers use a different voice namespace than Orb's voice presets.
-    // Retry once without an explicit voice so the server can fall back to its default.
-    response = await postSpeech(buildSpeechFormData(text, undefined, speed))
-  }
-
-  if (!response.ok) {
-    const message = await readErrorMessage(response)
-    const details = message ? `: ${message}` : ''
-    throw new TTSError(`TTS server error (${response.status})${details}`, 'generation_failed')
-  }
-
-  const audioBuffer = await response.arrayBuffer()
-  return Buffer.from(audioBuffer)
 }
 
 async function runGenerateCommand(
@@ -212,15 +275,9 @@ export async function generateAudio(
 ): Promise<void> {
   try {
     if (config.ttsMode === 'serve') {
-      const serverUrl = normalizeServerUrl(config.ttsServerUrl ?? DEFAULT_SERVER_URL)
-      const audio = await requestServerSpeech(
-        serverUrl,
-        text,
-        config.ttsVoice,
-        config.ttsSpeed,
-        signal,
-      )
-      await Bun.write(outputPath, audio)
+      const client = createGatewayClient(config.ttsServerUrl ?? DEFAULT_SERVER_URL)
+      const result = await client.speakSync(text, config.ttsVoice, signal)
+      await Bun.write(outputPath, result.audio)
       return
     }
 
@@ -277,10 +334,7 @@ export async function speak(text: string, config: AppConfig): Promise<void> {
   let firstError: TTSError | null = null
 
   for (const [i, sentence] of sentences.entries()) {
-    const audioPath = join(
-      tmpdir(),
-      `tts-${Date.now()}-${i}.${getTempAudioExtension(config.ttsMode)}`,
-    )
+    const audioPath = createTempAudioPath(config.ttsMode, `tts-${Date.now()}-${i}`)
 
     try {
       await generateAudio(sentence, config, audioPath)

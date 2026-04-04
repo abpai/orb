@@ -89,7 +89,9 @@ tts serve --provider kokoro --port 8000
 
 That spaCy install is important: Kokoro’s first request will crash in a plain `uv tool` install unless `en_core_web_sm` is installed into the `tts-gateway` tool environment.
 
-Orb expects `tts-gateway` at `http://localhost:8000` by default and automatically targets `POST /tts`.
+Orb expects `tts-gateway` at `http://localhost:8000` by default. Batch speech uses
+`POST /v1/speech`, and streaming playback uses `POST /tts/stream`.
+For the lowest-latency stream playback, install `mpv` or `ffplay`.
 
 ### 3. Run Orb
 
@@ -157,6 +159,8 @@ Orb supports two TTS paths:
 ### Serve mode
 
 Serve mode gives Orb the best experience for low-latency streaming speech.
+Orb streams from the gateway's `/tts/stream` endpoint when streaming TTS is enabled,
+and falls back to the regular `/v1/speech` path for batch generation.
 
 #### Install and start `tts-gateway`
 
@@ -170,7 +174,7 @@ tts serve --provider kokoro --port 8000
 
 ```bash
 curl http://localhost:8000/health
-curl -X POST http://localhost:8000/tts -F 'text=hello from orb' -o /tmp/orb-check.wav
+curl -X POST http://localhost:8000/v1/speech -F 'text=hello from orb' -o /tmp/orb-check.mp3
 ```
 
 Then run Orb with defaults:
@@ -178,6 +182,9 @@ Then run Orb with defaults:
 ```bash
 orb
 ```
+
+For true streamed playback, install `mpv` or `ffplay` locally. If neither is available,
+Orb falls back to saved-file playback where the local platform supports it.
 
 If you use a different host or port:
 
@@ -341,6 +348,7 @@ bun run dev --provider=openai --model=gpt-5.4
 
 # Checks
 bun run check
+bun run typecheck
 bun run test
 ```
 

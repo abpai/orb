@@ -82,6 +82,7 @@ function printTtsSetupNextSteps(config: OrbGlobalConfig): void {
   console.info(`  ${KOKORO_SPACY_INSTALL}`)
   console.info('  tts serve --provider kokoro --port 8000')
   console.info(`Orb will send speech requests to ${serverUrl}.`)
+  console.info('Streaming playback prefers mpv or ffplay when available.')
   console.info('Use --tts-server-url or tts.server_url if your gateway runs elsewhere.')
 }
 

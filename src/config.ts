@@ -109,6 +109,7 @@ Controls:
 
 TTS quick start:
   - Serve mode uses tts-gateway at http://localhost:8000 by default
+  - Streaming playback prefers mpv or ffplay when available
   - Run "orb setup" for guided defaults and gateway instructions
   - Use --tts-mode=generate for local macOS fallback speech
 
@@ -131,7 +132,12 @@ function createProgram({ config: defaults }: ProgramDefaults): Command {
       defaults.ttsMode,
     )
     .option('--tts-server-url <url>', 'Serve-mode tts-gateway URL (default: http://localhost:8000)')
-    .option('--tts-speed <rate>', 'TTS speed multiplier', positiveFloat, defaults.ttsSpeed)
+    .option(
+      '--tts-speed <rate>',
+      'TTS speed multiplier (local playback rate)',
+      positiveFloat,
+      defaults.ttsSpeed,
+    )
     .option('--new', 'Start fresh (ignore saved session)')
     .option('--skip-intro', 'Skip the welcome animation')
     .option('--tts', 'Enable text-to-speech (default: true)')

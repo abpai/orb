@@ -15,8 +15,9 @@
 - `bun run dev` runs the app in watch mode for local development.
 - `bun run start` runs the app once without watch mode.
 - `bun run format` formats code with Prettier.
+- `bun run typecheck` runs the TypeScript compiler without emitting files.
 - `bun run test` executes Bun’s test runner.
-- `bun run check` runs Prettier checks + test.
+- `bun run check` runs Prettier checks + typecheck + test.
 
 ## Coding Style & Naming Conventions
 
