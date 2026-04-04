@@ -85,7 +85,7 @@ describe('createGatewayClient', () => {
 
     it('does not set an explicit Content-Type header', async () => {
       const { createGatewayClient } = await importModule()
-      let requestHeaders: HeadersInit | undefined
+      let requestHeaders: RequestInit['headers'] | undefined
 
       globalThis.fetch = mock(
         async (_input: string | globalThis.URL | Request, init?: RequestInit) => {
@@ -283,7 +283,7 @@ describe('createGatewayClient', () => {
     it('sends JSON payload and header', async () => {
       const { createGatewayClient } = await importModule()
       let parsedBody: Record<string, unknown> | undefined
-      let requestHeaders: HeadersInit | undefined
+      let requestHeaders: RequestInit['headers'] | undefined
 
       globalThis.fetch = mock(
         async (_input: string | globalThis.URL | Request, init?: RequestInit) => {
