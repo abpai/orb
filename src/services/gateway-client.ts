@@ -28,6 +28,19 @@ function resolveUrl(rawUrl: string, defaultPath: string): string {
   return url.toString()
 }
 
+interface SpeechPayload {
+  text: string
+  voice?: string
+}
+
+function buildJsonPayload(text: string, voice?: string): SpeechPayload {
+  const payload: SpeechPayload = { text }
+  if (voice) {
+    payload.voice = voice
+  }
+  return payload
+}
+
 function buildFormData(text: string, voice?: string): globalThis.FormData {
   const formData = new globalThis.FormData()
   formData.append('text', text)
@@ -68,16 +81,17 @@ function isRetryableVoiceError(status: number): boolean {
   return status !== 503 && status !== 504
 }
 
-async function handleVoiceRetry(
-  post: (formData: globalThis.FormData, signal?: AbortSignal) => Promise<Response>,
+async function handleVoiceRetry<TPayload>(
+  post: (payload: TPayload, signal?: AbortSignal) => Promise<Response>,
+  buildPayload: (text: string, voice?: string) => TPayload,
   text: string,
   voice: string | undefined,
   signal: AbortSignal | undefined,
 ): Promise<Response> {
-  let response = await post(buildFormData(text, voice), signal)
+  let response = await post(buildPayload(text, voice), signal)
 
   if (!response.ok && voice && isRetryableVoiceError(response.status)) {
-    response = await post(buildFormData(text), signal)
+    response = await post(buildPayload(text), signal)
   }
 
   if (!response.ok) {
@@ -94,13 +108,27 @@ export function createGatewayClient(baseUrl: string) {
   const syncUrl = resolveUrl(baseUrl, DEFAULT_SPEECH_PATH)
   const streamUrl = resolveUrl(baseUrl, DEFAULT_STREAM_PATH)
 
-  function postTo(url: string) {
-    return (formData: globalThis.FormData, signal?: AbortSignal): Promise<Response> =>
-      fetch(url, { method: 'POST', body: formData, signal })
+  function postForm(url: string) {
+    return (payload: globalThis.FormData, signal?: AbortSignal): Promise<Response> =>
+      fetch(url, {
+        method: 'POST',
+        body: payload,
+        signal,
+      })
   }
 
-  const postSync = postTo(syncUrl)
-  const postStream = postTo(streamUrl)
+  function postJson(url: string) {
+    return (payload: SpeechPayload, signal?: AbortSignal): Promise<Response> =>
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal,
+      })
+  }
+
+  const postSync = postForm(syncUrl)
+  const postStream = postJson(streamUrl)
 
   return {
     async speakSync(
@@ -108,7 +136,7 @@ export function createGatewayClient(baseUrl: string) {
       voice?: string,
       signal?: AbortSignal,
     ): Promise<GatewaySpeechResult> {
-      const response = await handleVoiceRetry(postSync, text, voice, signal)
+      const response = await handleVoiceRetry(postSync, buildFormData, text, voice, signal)
 
       const audioBuffer = await response.arrayBuffer()
       const contentType = response.headers.get('content-type') ?? 'audio/mpeg'
@@ -121,7 +149,7 @@ export function createGatewayClient(baseUrl: string) {
       voice?: string,
       signal?: AbortSignal,
     ): Promise<ReadableStream<Uint8Array>> {
-      const response = await handleVoiceRetry(postStream, text, voice, signal)
+      const response = await handleVoiceRetry(postStream, buildJsonPayload, text, voice, signal)
 
       if (!response.body) {
         throw new TTSError('Server returned no stream body', 'generation_failed')

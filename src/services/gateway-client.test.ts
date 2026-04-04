@@ -47,7 +47,7 @@ describe('createGatewayClient', () => {
     })
   })
 
-  describe('form data', () => {
+  describe('speakSync form data', () => {
     it('sends text and voice but never speed', async () => {
       const { createGatewayClient } = await importModule()
       let requestBody: globalThis.FormData | undefined
@@ -81,6 +81,22 @@ describe('createGatewayClient', () => {
       await createGatewayClient('http://localhost:8000').speakSync('hello world')
 
       expect(requestBody!.get('voice')).toBeNull()
+    })
+
+    it('does not set an explicit Content-Type header', async () => {
+      const { createGatewayClient } = await importModule()
+      let requestHeaders: HeadersInit | undefined
+
+      globalThis.fetch = mock(
+        async (_input: string | globalThis.URL | Request, init?: RequestInit) => {
+          requestHeaders = init?.headers
+          return new Response(new Uint8Array([1]).buffer, { status: 200 })
+        },
+      ) as unknown as typeof globalThis.fetch
+
+      await createGatewayClient('http://localhost:8000').speakSync('hello')
+
+      expect(requestHeaders).toBeUndefined()
     })
   })
 
@@ -264,6 +280,27 @@ describe('createGatewayClient', () => {
   })
 
   describe('speakStream', () => {
+    it('sends JSON payload and header', async () => {
+      const { createGatewayClient } = await importModule()
+      let parsedBody: Record<string, unknown> | undefined
+      let requestHeaders: HeadersInit | undefined
+
+      globalThis.fetch = mock(
+        async (_input: string | globalThis.URL | Request, init?: RequestInit) => {
+          parsedBody = JSON.parse(init?.body as string)
+          requestHeaders = init?.headers
+          return new Response(new ReadableStream(), { status: 200 })
+        },
+      ) as unknown as typeof globalThis.fetch
+
+      await createGatewayClient('http://localhost:8000').speakStream('hello world', 'alba')
+
+      expect(parsedBody).toBeDefined()
+      expect(parsedBody!.text).toBe('hello world')
+      expect(parsedBody!.voice).toBe('alba')
+      expect(requestHeaders).toEqual({ 'Content-Type': 'application/json' })
+    })
+
     it('posts to /tts/stream endpoint by default', async () => {
       const { createGatewayClient } = await importModule()
       let requestUrl: string | undefined
@@ -291,13 +328,13 @@ describe('createGatewayClient', () => {
 
     it('retries without voice on retriable errors', async () => {
       const { createGatewayClient } = await importModule()
-      const bodies: globalThis.FormData[] = []
+      const bodies: Record<string, unknown>[] = []
 
       globalThis.fetch = mock(
         async (_input: string | globalThis.URL | Request, init?: RequestInit) => {
-          const body = init?.body as globalThis.FormData
+          const body = JSON.parse(init?.body as string)
           bodies.push(body)
-          if (body.get('voice')) {
+          if (body.voice) {
             return new Response('bad voice', { status: 400 })
           }
           return new Response(new ReadableStream(), { status: 200 })
@@ -307,8 +344,8 @@ describe('createGatewayClient', () => {
       await createGatewayClient('http://localhost:8000').speakStream('hello', 'alba')
 
       expect(bodies).toHaveLength(2)
-      expect(bodies[0]!.get('voice')).toBe('alba')
-      expect(bodies[1]!.get('voice')).toBeNull()
+      expect(bodies[0]!.voice).toBe('alba')
+      expect(bodies[1]!.voice).toBeUndefined()
     })
 
     it('throws TTSError on non-OK response', async () => {
