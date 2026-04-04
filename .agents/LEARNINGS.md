@@ -19,6 +19,8 @@
 | 2026-03-20 | self | Tested `runSetup()` directly and initially missed that `runSetupCommand()` was still prepending `"setup"` into Commander parsing, which would have broken the real `orb setup` path | For new command entrypoints here, add at least one test against the command-level wrapper, not just the lower-level handler |
 | 2026-03-20 | self | Assumed macOS `say` would naturally fit Orb's existing `.wav` temp-file convention | When switching local TTS generation to `say`, treat the output as AIFF-backed and keep temp-path handling aligned with the actual generator instead of assuming WAV semantics |
 | 2026-03-24 | self | Release docs originally told users to `uv tool install tts-gateway[kokoro]` but skipped Kokoro's required `en_core_web_sm` install inside the uv tool environment | For Orb's serve-mode docs and setup hints, always include the manual spaCy model install or first-request Kokoro failures will look like Orb bugs |
+| 2026-04-03 | self | Treated `ReadableStreamDefaultReader.releaseLock()` as reliable cleanup on Bun fetch response bodies, but delayed prefetched TTS streams can throw `TypeError: undefined is not a function` there after successful playback | In Orb's streaming TTS cleanup, treat `releaseLock()` as best-effort and swallow cleanup-only failures instead of surfacing them as speech synthesis errors |
+| 2026-04-03 | self | Assumed `tts-gateway` used JSON for both `/tts/stream` and `/v1/speech`, but the reference server still expects `multipart/form-data` for `/v1/speech` | In Orb's gateway client, keep `/tts/stream` on JSON and `/v1/speech` on `FormData`; verify each route against the actual FastAPI parameter types instead of normalizing them by intuition |
 
 ## User Preferences
 
@@ -28,6 +30,7 @@
 ## Patterns That Work
 
 - For this repo, targeted Bun lint/test runs quickly expose whether CLI and pipeline changes are safe; the app now ships as a Bun-native source CLI instead of a built `dist/` package.
+- When TTS code needs temp audio files in multiple paths, centralizing the temp-path builder helps keep the `.aiff`/`.mp3` extension choice aligned with `ttsMode` and avoids reintroducing macOS `say` mismatches.
 - For this repo's Bun-only quality gate, keep `.prettierignore` aligned with non-product areas like `scratch/` and `.agents/` so `bun run check` enforces source formatting without blocking on demo or memory files.
 - In this repo's often-dirty worktree, run `bun run check` for signal, but verify touched files with targeted `prettier --check` too so unrelated formatting drift does not force edits to user-owned files.
 - When simplifying Orb's CLI surface, trace config fields from `src/cli.ts` and `src/config.ts` outward; `permissionMode: 'acceptEdits'` had become unreachable even though downstream Anthropic code still carried branches for it.
