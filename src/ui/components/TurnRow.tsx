@@ -23,16 +23,23 @@ export const TurnRow = memo(function TurnRow({
 }: TurnRowProps) {
   const hasAnswer = Boolean(turn.answer || turn.error)
 
+  // While the turn is live, skip stripMarkdown — it runs on the full
+  // accumulated answer on every token delta, which dominates typing-time work
+  // during streaming. The completed turn still gets the cleanup pass.
   const { displayContent, truncatedCount } = useMemo(() => {
     if (!turn.answer && !turn.error) return { displayContent: '', truncatedCount: 0 }
 
-    const rawContent = turn.answer ? stripMarkdown(turn.answer) : `Error: ${turn.error}`
+    const rawContent = turn.answer
+      ? isLive
+        ? turn.answer
+        : stripMarkdown(turn.answer)
+      : `Error: ${turn.error}`
     if (!maxAnswerLines || !turn.answer) {
       return { displayContent: rawContent, truncatedCount: 0 }
     }
     const result = truncateLines(rawContent, maxAnswerLines)
     return { displayContent: result.text, truncatedCount: result.truncatedCount }
-  }, [turn.answer, turn.error, maxAnswerLines])
+  }, [turn.answer, turn.error, maxAnswerLines, isLive])
 
   return (
     <Box flexDirection="column">

@@ -29,12 +29,13 @@ export const Footer = memo(function Footer({
 
   const showModel = columns >= 60
   const showAllHints = columns >= 80
+  const isStreaming = state !== 'idle'
 
   return (
     <Box flexDirection="column" marginTop={1}>
       <Box gap={1}>
         <MicroOrb state={state} />
-        <InputPrompt onSubmit={onSubmit} disabled={inputDisabled} inline />
+        <InputPrompt onSubmit={onSubmit} disabled={inputDisabled} streaming={isStreaming} inline />
       </Box>
       <Box gap={2}>
         {showModel && (

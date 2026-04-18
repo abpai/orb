@@ -37,11 +37,31 @@ export function useConversation({ config, initialSession, taskState }: UseConver
   const activeEntryIdRef = useRef<string | null>(null)
   const agentSessionRef = useRef<AgentSession | undefined>(initialAgentSession)
   const pendingSaveRef = useRef(false)
+  const pendingRenderTurnRef = useRef<HistoryEntry | null>(null)
+  const flushScheduledRef = useRef(false)
 
   /** Update both ref (synchronous, for archive guards) and state (async, for render). */
   const updateLiveTurn = useCallback((turn: HistoryEntry | null) => {
     liveTurnRef.current = turn
     setLiveTurn(turn)
+  }, [])
+
+  /**
+   * Coalesce rapid agent-text-delta updates into one render per event-loop tick.
+   * Without this, 20–50 Hz token bursts reconcile the whole tree and crowd out
+   * keystroke-driven renders, making typing feel laggy during streaming.
+   */
+  const scheduleRenderFlush = useCallback(() => {
+    if (flushScheduledRef.current) return
+    flushScheduledRef.current = true
+    setImmediate(() => {
+      flushScheduledRef.current = false
+      const pending = pendingRenderTurnRef.current
+      pendingRenderTurnRef.current = null
+      if (pending && liveTurnRef.current !== null) {
+        setLiveTurn(pending)
+      }
+    })
   }, [])
 
   const getHistorySnapshot = useCallback(
@@ -86,6 +106,7 @@ export function useConversation({ config, initialSession, taskState }: UseConver
     const existingLiveTurn = liveTurnRef.current
     if (existingLiveTurn !== null) {
       liveTurnRef.current = null
+      pendingRenderTurnRef.current = null
       setCompletedTurns((prev) => [...prev, existingLiveTurn])
     }
 
@@ -111,19 +132,27 @@ export function useConversation({ config, initialSession, taskState }: UseConver
       const cur = liveTurnRef.current
 
       switch (frame.kind) {
-        case 'agent-text-delta':
-          updateLiveTurn({ ...cur, answer: frame.accumulatedText })
+        case 'agent-text-delta': {
+          const next = { ...cur, answer: frame.accumulatedText }
+          liveTurnRef.current = next
+          pendingRenderTurnRef.current = next
+          scheduleRenderFlush()
           break
+        }
 
-        case 'agent-text-complete':
+        case 'agent-text-complete': {
+          pendingRenderTurnRef.current = null
           updateLiveTurn({ ...cur, answer: frame.text })
           break
+        }
 
         case 'tool-call-start':
+          pendingRenderTurnRef.current = null
           updateLiveTurn({ ...cur, toolCalls: [...cur.toolCalls, frame.toolCall] })
           break
 
         case 'tool-call-result':
+          pendingRenderTurnRef.current = null
           updateLiveTurn({
             ...cur,
             toolCalls: cur.toolCalls.map((tc) =>
@@ -135,6 +164,7 @@ export function useConversation({ config, initialSession, taskState }: UseConver
           break
 
         case 'agent-error':
+          pendingRenderTurnRef.current = null
           updateLiveTurn({ ...cur, error: frame.error.message })
           break
 
@@ -143,7 +173,7 @@ export function useConversation({ config, initialSession, taskState }: UseConver
           break
       }
     },
-    [updateLiveTurn],
+    [scheduleRenderFlush, updateLiveTurn],
   )
 
   const handleRunComplete = useCallback(
@@ -159,6 +189,7 @@ export function useConversation({ config, initialSession, taskState }: UseConver
 
       const turnToArchive = liveTurnRef.current
       activeEntryIdRef.current = null
+      pendingRenderTurnRef.current = null
       setCompletedTurns((prev) => [...prev, turnToArchive])
       updateLiveTurn(null)
 
