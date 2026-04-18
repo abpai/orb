@@ -157,3 +157,6 @@ dist
 .pnp.*
 .npm-cache/
 reference
+
+# Pi workflow state
+.agents/
