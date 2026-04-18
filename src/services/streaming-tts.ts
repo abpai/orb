@@ -354,6 +354,12 @@ export function createStreamingSpeechController(
       prefetchedStream = null
       prefetchAbort = null
     } else {
+      // A prefetch may still be in flight for this sentence. If we let it
+      // finish, its .then will populate prefetchedStream — then the *next*
+      // sentence in the queue will walk into the `if (prefetchedStream)`
+      // branch above and play the prior sentence's audio again. Cancel it
+      // before starting a fresh fetch so the prefetch slot is clean.
+      cancelPrefetch()
       activeAbort = new AbortController()
       audioStream = await client!.speakStream(sentence, config.ttsVoice, activeAbort.signal)
     }
