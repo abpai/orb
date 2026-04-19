@@ -3,9 +3,10 @@ import { z } from 'zod'
 import { ctxFrom } from './context.ts'
 
 export const readFile = tool({
-  description: 'Read a file from the sandbox (relative to the project root).',
+  description:
+    'Read a UTF-8 file. Absolute paths are allowed; relative paths resolve against the project root.',
   inputSchema: z.object({
-    path: z.string().describe('Path to read, relative to the project root.'),
+    path: z.string().describe('Absolute path, or path relative to the project root.'),
   }),
   async execute(input, options) {
     const { sandbox, signal } = ctxFrom(options)

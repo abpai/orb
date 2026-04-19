@@ -130,19 +130,22 @@ for (const frame of anthropicFrames) {
 console.log('\nOpenAI -> canonical frames:\n')
 
 mock.restore()
-mock.module('bash-tool', () => ({
-  createBashTool: async () => ({
-    tools: {
-      bash: {},
-      readFile: {},
-      writeFile: {},
+mock.module('../src/pipeline/sandbox/factory', () => ({
+  createSandbox: () => ({
+    rootDir: '/tmp/orb-demo',
+    async exec() {
+      return { stdout: '', stderr: '', exitCode: 0 }
     },
-    sandbox: {
-      stop: async () => {},
+    async readFile() {
+      return ''
     },
+    async writeFile() {},
+    async dispose() {},
+    async [Symbol.asyncDispose]() {},
   }),
 }))
 mock.module('ai', () => ({
+  tool: (def: unknown) => def,
   ToolLoopAgent: class {
     async stream({
       onStepFinish,

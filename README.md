@@ -143,6 +143,7 @@ orb --skip-intro
 ### Controls
 
 - Type your question and press **Enter** to submit
+- Insert a new line with **Ctrl+J** or **Alt+Enter**
 - Paste MacWhisper transcription with **Cmd+V**
 - Press **Esc** or **Ctrl+S** to stop speech
 - Press **Shift+Tab** to cycle Claude models (Anthropic only)
@@ -273,7 +274,7 @@ orb --model=openai:gpt-5.4
 - `gpt-4o`
 - `gpt-5.4-mini`
 
-> Note: OpenAI runs in a sandboxed environment via `bash-tool`. File edits happen in a sandbox overlay and are not applied directly to your working tree. Orb will describe changes it made so you can apply them yourself.
+> Note: OpenAI runs through Orb's owned `bash`, `readFile`, and `writeFile` tools backed by a local subprocess sandbox. `bash` starts in your project root by default, `readFile` can read absolute or project-relative paths, and `writeFile` applies changes directly inside the project root instead of to an overlay.
 
 ## Global Config
 

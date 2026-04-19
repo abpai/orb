@@ -130,16 +130,18 @@ export class LocalSubprocessSandbox implements Sandbox {
     }
   }
 
-  async readFile(relPath: string, opts?: ReadOpts): Promise<string> {
+  async readFile(relOrAbsPath: string, opts?: ReadOpts): Promise<string> {
     this.throwIfAborted(opts?.signal, 'aborted before readFile')
-    const resolved = await this.resolveInside(relPath)
+    // Reads are unrestricted: absolute paths are honored, relative paths
+    // resolve against rootDir for ergonomics. Writes still clamp via writeFile.
+    const resolved = path.resolve(this.rootDir, relOrAbsPath)
     try {
       return await fsp.readFile(resolved, { encoding: 'utf8', signal: opts?.signal })
     } catch (err) {
       if (this.isAbortError(err)) {
         throw new SandboxAbortError('aborted during readFile')
       }
-      throw new SandboxIoError(`readFile failed for ${relPath}: ${(err as Error).message}`)
+      throw new SandboxIoError(`readFile failed for ${relOrAbsPath}: ${(err as Error).message}`)
     }
   }
 

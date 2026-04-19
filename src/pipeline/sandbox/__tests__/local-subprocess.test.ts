@@ -165,8 +165,15 @@ describe('readFile / writeFile', () => {
     expect(got).toBe(payload)
   })
 
-  it('readFile rejects paths that resolve outside rootDir with PathEscapeError', async () => {
-    await expect(sandbox.readFile('../etc/passwd')).rejects.toBeInstanceOf(PathEscapeError)
+  it('readFile allows paths outside rootDir — only writes are clamped', async () => {
+    const outsideDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'orb-outside-')))
+    const outsideFile = path.join(outsideDir, 'note.txt')
+    fs.writeFileSync(outsideFile, 'hi from outside\n')
+    try {
+      expect(await sandbox.readFile(outsideFile)).toBe('hi from outside\n')
+    } finally {
+      fs.rmSync(outsideDir, { recursive: true, force: true })
+    }
   })
 
   it('writeFile to a path outside rootDir throws PathEscapeError and does not create the file', async () => {
@@ -206,8 +213,7 @@ describe('readFile / writeFile', () => {
     expect(fs.existsSync(path.join(tmpRoot, rel))).toBe(false)
   })
 
-  it('rejects symlink-escape: a symlink inside rootDir pointing outside is denied for both read and write', async () => {
-    // Make an out-of-root target dir + a victim file inside it.
+  it('rejects symlink-escape on writes (reads through the symlink are allowed)', async () => {
     const escapeTarget = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'orb-escape-')))
     const targetFile = path.join(escapeTarget, 'secret.txt')
     fs.writeFileSync(targetFile, 'secret\n')
@@ -217,15 +223,10 @@ describe('readFile / writeFile', () => {
     fs.symlinkSync(escapeTarget, linkPath)
 
     try {
-      // readFile through the symlink → escape
-      await expect(sandbox.readFile(`${linkName}/secret.txt`)).rejects.toBeInstanceOf(
-        PathEscapeError,
-      )
-      // writeFile through the symlink (new file) → escape (parent realpath lands outside root)
+      expect(await sandbox.readFile(`${linkName}/secret.txt`)).toBe('secret\n')
       await expect(sandbox.writeFile(`${linkName}/created.txt`, 'nope')).rejects.toBeInstanceOf(
         PathEscapeError,
       )
-      // writeFile to an existing file via symlink → escape too
       await expect(sandbox.writeFile(`${linkName}/secret.txt`, 'overwrite')).rejects.toBeInstanceOf(
         PathEscapeError,
       )
