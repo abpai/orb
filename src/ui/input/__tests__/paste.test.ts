@@ -11,6 +11,10 @@ describe('sanitizePaste', () => {
     expect(sanitizePaste('\u001b[200~hello')).toBe('hello')
   })
 
+  it('strips ESC-less markers after Ink normalizes the pasted input', () => {
+    expect(sanitizePaste('[200~hello[201~')).toBe('hello')
+  })
+
   it('normalizes CRLF and CR line endings to LF', () => {
     expect(sanitizePaste('a\r\nb\rc')).toBe('a\nb\nc')
   })

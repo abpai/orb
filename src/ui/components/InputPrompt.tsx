@@ -31,55 +31,65 @@ interface InputPromptProps {
 }
 
 export const InputPrompt = memo(function InputPrompt({ onSubmit, state }: InputPromptProps) {
-  const [buffer, setBuffer] = useState<TextBufferState>(empty)
+  const [buffer, setBuffer] = useState<TextBufferState>(() => empty())
+  // Mirror of `buffer` for the useInput callback. Ink can fire stdin events
+  // multiple times per tick (chunked paste), so the closure's `buffer` goes
+  // stale before React commits — and `submit` needs a synchronous read that a
+  // setState updater can't provide without doing side effects in the updater.
+  const bufferRef = useRef(buffer)
   const desiredColRef = useRef(0)
 
-  const apply = useCallback((next: TextBufferState, resetDesiredCol = true) => {
-    setBuffer(next)
-    if (resetDesiredCol) desiredColRef.current = next.col
-  }, [])
+  const apply = useCallback(
+    (update: (current: TextBufferState) => TextBufferState, resetDesiredCol = true) => {
+      const next = update(bufferRef.current)
+      if (resetDesiredCol) desiredColRef.current = next.col
+      if (next === bufferRef.current) return
+      bufferRef.current = next
+      setBuffer(next)
+    },
+    [],
+  )
 
   useInput((input, key) => {
     const action = keyToAction(input, key)
     switch (action.kind) {
       case 'submit': {
-        const text = toString(buffer).trim()
+        const text = toString(bufferRef.current).trim()
         if (text.length === 0) return
         onSubmit(text)
-        setBuffer(empty())
-        desiredColRef.current = 0
+        apply(empty)
         return
       }
       case 'newline':
-        return apply(newline(buffer))
+        return apply(newline)
       case 'backspace':
-        return apply(backspace(buffer))
+        return apply(backspace)
       case 'move-left':
-        return apply(moveLeft(buffer))
+        return apply(moveLeft)
       case 'move-right':
-        return apply(moveRight(buffer))
+        return apply(moveRight)
       case 'move-word-left':
-        return apply(moveWordLeft(buffer))
+        return apply(moveWordLeft)
       case 'move-word-right':
-        return apply(moveWordRight(buffer))
+        return apply(moveWordRight)
       case 'move-up':
-        return apply(moveUp(buffer, desiredColRef.current), false)
+        return apply((current) => moveUp(current, desiredColRef.current), false)
       case 'move-down':
-        return apply(moveDown(buffer, desiredColRef.current), false)
+        return apply((current) => moveDown(current, desiredColRef.current), false)
       case 'move-home':
-        return apply(moveHome(buffer))
+        return apply(moveHome)
       case 'move-end':
-        return apply(moveEnd(buffer))
+        return apply(moveEnd)
       case 'delete-word-left':
-        return apply(deleteWordLeft(buffer))
+        return apply(deleteWordLeft)
       case 'kill-to-line-end':
-        return apply(killToLineEnd(buffer))
+        return apply(killToLineEnd)
       case 'kill-line':
-        return apply(killLine(buffer))
+        return apply(killLine)
       case 'insert': {
         const text = action.text.length > 1 ? sanitizePaste(action.text) : action.text
         if (text.length === 0) return
-        return apply(insert(buffer, text))
+        return apply((current) => insert(current, text))
       }
       case 'ignore':
         return

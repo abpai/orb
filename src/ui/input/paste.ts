@@ -6,8 +6,8 @@
  * the `useInput` handler. Strip them here. Also normalize CR / CRLF to LF so
  * the buffer stays in canonical form.
  */
-const PASTE_START = /^\u001b\[200~/
-const PASTE_END = /\u001b\[201~$/
+const PASTE_START = /^(?:\u001b)?\[200~/
+const PASTE_END = /(?:\u001b)?\[201~$/
 
 export const sanitizePaste = (raw: string): string => {
   return raw.replace(PASTE_START, '').replace(PASTE_END, '').replace(/\r\n?/g, '\n')
