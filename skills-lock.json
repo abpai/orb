@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "nothing-design": {
+      "source": "dominikmartn/nothing-design-skill",
+      "sourceType": "github",
+      "computedHash": "005ed742f5cb829f0fbe1ee959a91b3802e15ed1b521c774cc78483caf406a95"
+    }
+  }
+}

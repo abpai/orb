@@ -160,3 +160,7 @@ reference
 
 # Pi workflow state
 .agents/
+
+# Claude Code local/user state
+.claude/settings.local.json
+.claude/skills/
