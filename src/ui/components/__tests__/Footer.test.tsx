@@ -17,7 +17,6 @@ describe('Footer', () => {
   const defaultProps = {
     state: 'idle' as const,
     onSubmit: () => {},
-    inputDisabled: false,
     model: 'claude-haiku-4-5-20251001',
     provider: 'anthropic' as const,
     canCycleModel: true,

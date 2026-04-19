@@ -1,88 +1,132 @@
-import React, { memo, useState, useEffect } from 'react'
+import React, { memo, useCallback, useRef, useState } from 'react'
 import { Box, Text, useInput } from 'ink'
+
+import type { AppState } from '../../types'
+import { keyToAction } from '../input/keymap'
+import { sanitizePaste } from '../input/paste'
+import {
+  backspace,
+  deleteWordLeft,
+  empty,
+  insert,
+  killLine,
+  killToLineEnd,
+  moveDown,
+  moveEnd,
+  moveHome,
+  moveLeft,
+  moveRight,
+  moveUp,
+  moveWordLeft,
+  moveWordRight,
+  newline,
+  toString,
+  type TextBufferState,
+} from '../input/TextBuffer'
+import { MicroOrb } from './MicroOrb'
 
 interface InputPromptProps {
   onSubmit: (value: string) => void
-  disabled: boolean
-  inline?: boolean
+  state: AppState
 }
 
-function Cursor({ visible }: { visible: boolean }): React.ReactNode {
-  if (!visible) return null
-  return <Text backgroundColor="white"> </Text>
-}
+export const InputPrompt = memo(function InputPrompt({ onSubmit, state }: InputPromptProps) {
+  const [buffer, setBuffer] = useState<TextBufferState>(empty)
+  const desiredColRef = useRef(0)
 
-export const InputPrompt = memo(function InputPrompt({
-  onSubmit,
-  disabled,
-  inline = false,
-}: InputPromptProps): React.ReactNode {
-  const [value, setValue] = useState('')
-  const [cursorVisible, setCursorVisible] = useState(true)
+  const apply = useCallback((next: TextBufferState, resetDesiredCol = true) => {
+    setBuffer(next)
+    if (resetDesiredCol) desiredColRef.current = next.col
+  }, [])
 
-  useEffect(() => {
-    if (disabled) return
-    const interval = setInterval(() => setCursorVisible((v) => !v), 530)
-    return () => clearInterval(interval)
-  }, [disabled])
-
-  useInput(
-    (input, key) => {
-      if (key.return) {
-        const trimmed = value.trim()
-        if (trimmed) {
-          onSubmit(trimmed)
-          setValue('')
-        }
+  useInput((input, key) => {
+    const action = keyToAction(input, key)
+    switch (action.kind) {
+      case 'submit': {
+        const text = toString(buffer).trim()
+        if (text.length === 0) return
+        onSubmit(text)
+        setBuffer(empty())
+        desiredColRef.current = 0
         return
       }
-
-      if (key.tab || input === '\u001b[Z') {
+      case 'newline':
+        return apply(newline(buffer))
+      case 'backspace':
+        return apply(backspace(buffer))
+      case 'move-left':
+        return apply(moveLeft(buffer))
+      case 'move-right':
+        return apply(moveRight(buffer))
+      case 'move-word-left':
+        return apply(moveWordLeft(buffer))
+      case 'move-word-right':
+        return apply(moveWordRight(buffer))
+      case 'move-up':
+        return apply(moveUp(buffer, desiredColRef.current), false)
+      case 'move-down':
+        return apply(moveDown(buffer, desiredColRef.current), false)
+      case 'move-home':
+        return apply(moveHome(buffer))
+      case 'move-end':
+        return apply(moveEnd(buffer))
+      case 'delete-word-left':
+        return apply(deleteWordLeft(buffer))
+      case 'kill-to-line-end':
+        return apply(killToLineEnd(buffer))
+      case 'kill-line':
+        return apply(killLine(buffer))
+      case 'insert': {
+        const text = action.text.length > 1 ? sanitizePaste(action.text) : action.text
+        if (text.length === 0) return
+        return apply(insert(buffer, text))
+      }
+      case 'ignore':
         return
-      }
+    }
+  })
 
-      if (key.backspace || key.delete) {
-        setValue((v) => v.slice(0, -1))
-        return
-      }
-
-      // Ctrl+W - delete previous word
-      if (key.ctrl && input === 'w') {
-        setValue((v) => v.replace(/\S+\s*$/, ''))
-        return
-      }
-
-      // Ctrl+U - delete entire line
-      if (key.ctrl && input === 'u') {
-        setValue('')
-        return
-      }
-
-      if (input && !key.ctrl && !key.meta) {
-        setValue((v) => v + input)
-      }
-    },
-    { isActive: !disabled },
+  return (
+    <Box flexDirection="column">
+      {buffer.lines.map((line, idx) => (
+        <InputLine
+          key={idx}
+          line={line}
+          isFirst={idx === 0}
+          state={state}
+          cursor={idx === buffer.row ? buffer.col : null}
+        />
+      ))}
+    </Box>
   )
-
-  const promptColor = disabled ? 'gray' : 'cyan'
-
-  const content = disabled ? (
-    <>
-      <Text color={promptColor}>❯ </Text>
-      <Text color="gray">{value || '...'}</Text>
-    </>
-  ) : (
-    <>
-      <Text color={promptColor}>❯ </Text>
-      <Text>
-        {value}
-        <Cursor visible={cursorVisible} />
-      </Text>
-    </>
-  )
-
-  if (inline) return <Box>{content}</Box>
-
-  return <Box marginTop={1}>{content}</Box>
 })
+
+interface InputLineProps {
+  line: string
+  isFirst: boolean
+  state: AppState
+  cursor: number | null
+}
+
+function InputLine({ line, isFirst, state, cursor }: InputLineProps) {
+  return (
+    <Text>
+      {isFirst ? <MicroOrb state={state} /> : <Text> </Text>}
+      <Text color="cyan">{isFirst ? ' ❯ ' : '   '}</Text>
+      {cursor !== null ? <CursorLine line={line} col={cursor} /> : <Text>{line}</Text>}
+    </Text>
+  )
+}
+
+function CursorLine({ line, col }: { line: string; col: number }) {
+  const before = line.slice(0, col)
+  const cursorChar = col < line.length ? line[col]! : ' '
+  const after = col < line.length ? line.slice(col + 1) : ''
+  return (
+    <>
+      <Text>{before}</Text>
+      <Text inverse>{cursorChar}</Text>
+      <Text>{after}</Text>
+    </>
+  )
+}

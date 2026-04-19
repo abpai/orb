@@ -33,10 +33,6 @@ function mapStateToAnimationMode(state: AppState): AnimationMode {
 
 const FIXED_UI_OVERHEAD = 8
 
-export function isInputDisabled(state: AppState): boolean {
-  return state !== 'idle'
-}
-
 export function App({ config, initialSession }: AppProps) {
   const [detailMode, setDetailMode] = useState<DetailMode>('compact')
   const [state, setState] = useState<AppState>('idle')
@@ -83,7 +79,6 @@ export function App({ config, initialSession }: AppProps) {
 
   const animationMode = useMemo(() => mapStateToAnimationMode(state), [state])
   const assistantLabel = config.llmProvider === 'anthropic' ? 'claude' : 'openai'
-  const inputDisabled = isInputDisabled(state)
   const projectName = useMemo(
     () => basename(config.projectPath) || config.projectPath,
     [config.projectPath],
@@ -103,7 +98,7 @@ export function App({ config, initialSession }: AppProps) {
   // ── Rendering ──
 
   return (
-    <Box flexDirection="column" padding={1}>
+    <Box flexDirection="column" paddingX={1} paddingTop={1} paddingBottom={2}>
       {conversation.ttsError && (
         <TTSErrorBanner type={conversation.ttsError.type} message={conversation.ttsError.message} />
       )}
@@ -131,7 +126,6 @@ export function App({ config, initialSession }: AppProps) {
         <Footer
           state={state}
           onSubmit={submit}
-          inputDisabled={inputDisabled}
           model={conversation.activeModel}
           provider={config.llmProvider}
           canCycleModel={canCycleModel}

@@ -17,7 +17,6 @@ describe('Footer (narrow terminal < 60 cols)', () => {
   const defaultProps = {
     state: 'idle' as const,
     onSubmit: () => {},
-    inputDisabled: false,
     model: 'claude-haiku-4-5-20251001',
     provider: 'anthropic' as const,
     canCycleModel: true,
@@ -43,7 +42,7 @@ describe('Footer (narrow terminal < 60 cols)', () => {
   })
 
   it('keeps the orb and prompt on the same line', () => {
-    const { lastFrame } = render(<Footer {...defaultProps} state="processing" inputDisabled />)
+    const { lastFrame } = render(<Footer {...defaultProps} state="processing" />)
     const frame = normalizeFrame(lastFrame())
     expect(frame).toContain('⣾ ❯')
   })

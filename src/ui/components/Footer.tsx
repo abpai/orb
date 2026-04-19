@@ -5,12 +5,10 @@ import type { AppState, LlmModelId, LlmProvider } from '../../types'
 import { useTerminalSize } from '../hooks/useTerminalSize'
 import { formatModelLabel } from '../utils/model-label'
 import { InputPrompt } from './InputPrompt'
-import { MicroOrb } from './MicroOrb'
 
 interface FooterProps {
   state: AppState
   onSubmit: (value: string) => void
-  inputDisabled: boolean
   model: LlmModelId
   provider: LlmProvider
   canCycleModel: boolean
@@ -19,7 +17,6 @@ interface FooterProps {
 export const Footer = memo(function Footer({
   state,
   onSubmit,
-  inputDisabled,
   model,
   provider,
   canCycleModel,
@@ -31,11 +28,8 @@ export const Footer = memo(function Footer({
   const showAllHints = columns >= 80
 
   return (
-    <Box flexDirection="column" marginTop={1}>
-      <Box gap={1}>
-        <MicroOrb state={state} />
-        <InputPrompt onSubmit={onSubmit} disabled={inputDisabled} inline />
-      </Box>
+    <Box flexDirection="column">
+      <InputPrompt onSubmit={onSubmit} state={state} />
       <Box gap={2}>
         {showModel && (
           <Text color="gray" dimColor>
