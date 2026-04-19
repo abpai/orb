@@ -1,0 +1,1587 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Orb — A voice in the dark</title>
+    <meta
+      name="description"
+      content="A celestial observation log: Orb is a voice-driven code explorer for the terminal. Ask your codebase, listen to the answer."
+    />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT@0,9..144,200..900,0..100;1,9..144,200..900,0..100&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      :root {
+        --ink: #0a0e1f;
+        --ink-raised: #121833;
+        --ink-line: #1e2645;
+        --star: #2a3360;
+        --cream: #f0e8d6;
+        --cream-muted: #a8a193;
+        --cream-dim: #6b6658;
+        --amber: #e8b44c;
+        --amber-glow: rgba(232, 180, 76, 0.18);
+        --amber-deep: #b8944a;
+        --ember: #d35a4a;
+        --gold-line: rgba(232, 180, 76, 0.28);
+
+        --serif: 'Fraunces', 'Cormorant Garamond', 'Iowan Old Style', serif;
+        --serif-alt: 'Instrument Serif', 'Fraunces', serif;
+        --mono: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        background: var(--ink);
+        color: var(--cream);
+        font-family: var(--serif);
+        font-variation-settings:
+          'opsz' 14,
+          'SOFT' 50,
+          'wght' 400;
+        font-size: 17px;
+        line-height: 1.55;
+        min-height: 100vh;
+        overflow-x: hidden;
+        position: relative;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      /* Starfield background */
+      body::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        background-image:
+          radial-gradient(1px 1px at 23% 14%, var(--cream) 50%, transparent 51%),
+          radial-gradient(1px 1px at 67% 9%, var(--cream-muted) 50%, transparent 51%),
+          radial-gradient(1px 1px at 81% 38%, var(--cream) 50%, transparent 51%),
+          radial-gradient(1px 1px at 12% 52%, var(--cream-muted) 50%, transparent 51%),
+          radial-gradient(1.2px 1.2px at 44% 71%, var(--amber) 50%, transparent 51%),
+          radial-gradient(1px 1px at 91% 79%, var(--cream) 50%, transparent 51%),
+          radial-gradient(1px 1px at 28% 88%, var(--cream-muted) 50%, transparent 51%),
+          radial-gradient(0.8px 0.8px at 58% 31%, var(--cream) 50%, transparent 51%),
+          radial-gradient(0.8px 0.8px at 72% 61%, var(--cream) 50%, transparent 51%),
+          radial-gradient(0.8px 0.8px at 5% 23%, var(--cream-muted) 50%, transparent 51%);
+        background-size: 100% 100%;
+        opacity: 0.75;
+        pointer-events: none;
+        z-index: 0;
+        animation: twinkle 8s ease-in-out infinite;
+      }
+
+      @keyframes twinkle {
+        0%,
+        100% {
+          opacity: 0.65;
+        }
+        50% {
+          opacity: 0.9;
+        }
+      }
+
+      /* Noise overlay */
+      body::after {
+        content: '';
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0.035;
+        mix-blend-mode: overlay;
+        z-index: 1;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      }
+
+      main,
+      header,
+      footer,
+      section {
+        position: relative;
+        z-index: 2;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      ::selection {
+        background: var(--amber);
+        color: var(--ink);
+      }
+
+      /* ---------- layout ---------- */
+
+      .page {
+        max-width: 1320px;
+        margin: 0 auto;
+        padding: 32px 56px 0;
+      }
+
+      @media (max-width: 780px) {
+        .page {
+          padding: 20px 24px 0;
+        }
+      }
+
+      /* ---------- bearings bar ---------- */
+
+      .bearings {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 4px 0 28px;
+        font-family: var(--mono);
+        font-size: 10.5px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--cream-muted);
+        border-bottom: 1px solid var(--ink-line);
+        padding-bottom: 20px;
+      }
+
+      .bearings__center {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .bearings__dot {
+        width: 6px;
+        height: 6px;
+        background: var(--amber);
+        border-radius: 50%;
+        box-shadow: 0 0 10px var(--amber);
+        animation: pulse 2.2s ease-in-out infinite;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 0.55;
+          transform: scale(0.85);
+        }
+      }
+
+      .bearings a:hover {
+        color: var(--amber);
+      }
+
+      /* ---------- hero ---------- */
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.15fr 1fr;
+        gap: 48px;
+        align-items: center;
+        padding: 64px 0 88px;
+        min-height: 82vh;
+        position: relative;
+      }
+
+      @media (max-width: 980px) {
+        .hero {
+          grid-template-columns: 1fr;
+          padding: 48px 0 64px;
+          gap: 32px;
+        }
+      }
+
+      .eyebrow {
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.3em;
+        text-transform: uppercase;
+        color: var(--amber);
+        margin-bottom: 28px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .eyebrow::before {
+        content: '';
+        width: 48px;
+        height: 1px;
+        background: var(--amber);
+      }
+
+      .hero__title {
+        font-family: var(--serif-alt);
+        font-style: italic;
+        font-weight: 400;
+        font-size: clamp(96px, 17vw, 240px);
+        line-height: 0.92;
+        letter-spacing: -0.02em;
+        color: var(--cream);
+        margin-bottom: 24px;
+      }
+
+      .hero__title .amp {
+        color: var(--amber);
+        font-size: 0.6em;
+        vertical-align: 0.25em;
+      }
+
+      .hero__lede {
+        font-family: var(--serif);
+        font-variation-settings:
+          'opsz' 60,
+          'SOFT' 100,
+          'wght' 300;
+        font-size: clamp(22px, 2.3vw, 30px);
+        line-height: 1.35;
+        color: var(--cream);
+        max-width: 22ch;
+        margin-bottom: 36px;
+      }
+
+      .hero__lede em {
+        font-style: italic;
+        color: var(--amber);
+        font-variation-settings:
+          'opsz' 60,
+          'wght' 400;
+      }
+
+      .hero__install {
+        display: inline-flex;
+        align-items: center;
+        gap: 16px;
+        padding: 14px 20px;
+        border: 1px solid var(--gold-line);
+        font-family: var(--mono);
+        font-size: 13px;
+        color: var(--cream);
+        position: relative;
+        background: rgba(18, 24, 51, 0.45);
+        backdrop-filter: blur(4px);
+      }
+
+      .hero__install::before {
+        content: '';
+        position: absolute;
+        top: -5px;
+        left: -5px;
+        width: 10px;
+        height: 10px;
+        border-left: 1px solid var(--amber);
+        border-top: 1px solid var(--amber);
+      }
+      .hero__install::after {
+        content: '';
+        position: absolute;
+        bottom: -5px;
+        right: -5px;
+        width: 10px;
+        height: 10px;
+        border-right: 1px solid var(--amber);
+        border-bottom: 1px solid var(--amber);
+      }
+
+      .hero__install .dollar {
+        color: var(--cream-muted);
+      }
+      .hero__install .copy {
+        font-size: 10px;
+        letter-spacing: 0.18em;
+        color: var(--amber);
+        text-transform: uppercase;
+        margin-left: 8px;
+        padding-left: 16px;
+        border-left: 1px solid var(--ink-line);
+      }
+
+      /* ---------- the orb ---------- */
+
+      .orb-stage {
+        position: relative;
+        aspect-ratio: 1 / 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 440px;
+      }
+
+      .orb {
+        position: relative;
+        width: 62%;
+        aspect-ratio: 1 / 1;
+        border-radius: 50%;
+        background: radial-gradient(
+          circle at 32% 28%,
+          #f8e5a3 0%,
+          #e8b44c 18%,
+          #b8733a 45%,
+          #4a2814 75%,
+          #120a1c 100%
+        );
+        box-shadow:
+          0 0 80px 10px rgba(232, 180, 76, 0.35),
+          0 0 180px 30px rgba(211, 90, 74, 0.22),
+          inset -40px -40px 80px rgba(10, 14, 31, 0.7),
+          inset 20px 20px 40px rgba(248, 229, 163, 0.15);
+        animation:
+          float 9s ease-in-out infinite,
+          rotate-glow 24s linear infinite;
+        z-index: 3;
+      }
+
+      .orb::before {
+        content: '';
+        position: absolute;
+        top: 14%;
+        left: 20%;
+        width: 28%;
+        height: 18%;
+        background: radial-gradient(ellipse, rgba(255, 245, 220, 0.55), transparent 70%);
+        border-radius: 50%;
+        filter: blur(4px);
+      }
+
+      @keyframes float {
+        0%,
+        100% {
+          transform: translateY(0) scale(1);
+        }
+        50% {
+          transform: translateY(-14px) scale(1.015);
+        }
+      }
+
+      @keyframes rotate-glow {
+        0% {
+          filter: hue-rotate(0deg);
+        }
+        100% {
+          filter: hue-rotate(360deg);
+        }
+      }
+
+      .ring {
+        position: absolute;
+        inset: 0;
+        margin: auto;
+        border: 1px solid var(--gold-line);
+        border-radius: 50%;
+        z-index: 2;
+        pointer-events: none;
+      }
+      .ring--1 {
+        width: 78%;
+        aspect-ratio: 1;
+        border-style: dashed;
+        animation: spin 60s linear infinite;
+      }
+      .ring--2 {
+        width: 94%;
+        aspect-ratio: 1;
+        transform: rotate(15deg);
+      }
+      .ring--3 {
+        width: 110%;
+        aspect-ratio: 1;
+        border-color: rgba(232, 180, 76, 0.12);
+        border-style: dotted;
+        animation: spin 90s linear infinite reverse;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .tick {
+        position: absolute;
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.2em;
+        color: var(--amber);
+        text-transform: uppercase;
+        pointer-events: none;
+      }
+      .tick--n {
+        top: 4%;
+        left: 50%;
+        transform: translateX(-50%);
+      }
+      .tick--e {
+        right: 4%;
+        top: 50%;
+        transform: translateY(-50%);
+      }
+      .tick--s {
+        bottom: 4%;
+        left: 50%;
+        transform: translateX(-50%);
+      }
+      .tick--w {
+        left: 4%;
+        top: 50%;
+        transform: translateY(-50%);
+      }
+
+      .tick__line {
+        display: inline-block;
+        width: 20px;
+        height: 1px;
+        background: var(--amber);
+        vertical-align: middle;
+        margin: 0 8px;
+      }
+
+      .crosshair {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 1;
+      }
+      .crosshair::before,
+      .crosshair::after {
+        content: '';
+        position: absolute;
+        background: var(--gold-line);
+      }
+      .crosshair::before {
+        top: 50%;
+        left: 0;
+        right: 0;
+        height: 1px;
+        transform: translateY(-50%);
+        background: linear-gradient(to right, transparent, var(--gold-line), transparent);
+      }
+      .crosshair::after {
+        left: 50%;
+        top: 0;
+        bottom: 0;
+        width: 1px;
+        transform: translateX(-50%);
+        background: linear-gradient(to bottom, transparent, var(--gold-line), transparent);
+      }
+
+      /* ---------- section ornament ---------- */
+
+      .rule {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        padding: 8px 0;
+        color: var(--cream-muted);
+      }
+      .rule::before,
+      .rule::after {
+        content: '';
+        flex: 1;
+        height: 1px;
+        background: var(--ink-line);
+      }
+      .rule__star {
+        font-family: var(--serif-alt);
+        font-style: italic;
+        font-size: 22px;
+        color: var(--amber);
+      }
+
+      /* ---------- sections ---------- */
+
+      section.chapter {
+        padding: 120px 0 24px;
+        position: relative;
+      }
+
+      @media (max-width: 780px) {
+        section.chapter {
+          padding: 80px 0 16px;
+        }
+      }
+
+      .chapter__head {
+        display: grid;
+        grid-template-columns: 220px 1fr;
+        gap: 64px;
+        padding-bottom: 56px;
+        align-items: baseline;
+      }
+
+      @media (max-width: 860px) {
+        .chapter__head {
+          grid-template-columns: 1fr;
+          gap: 20px;
+          padding-bottom: 32px;
+        }
+      }
+
+      .chapter__num {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .chapter__roman {
+        font-family: var(--serif-alt);
+        font-style: italic;
+        font-size: 42px;
+        color: var(--amber);
+        line-height: 1;
+      }
+
+      .chapter__meta {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--cream-muted);
+      }
+
+      .chapter__title {
+        font-family: var(--serif);
+        font-variation-settings:
+          'opsz' 100,
+          'SOFT' 100,
+          'wght' 300;
+        font-size: clamp(36px, 5vw, 64px);
+        line-height: 1.04;
+        letter-spacing: -0.015em;
+        color: var(--cream);
+        max-width: 20ch;
+      }
+
+      .chapter__title em {
+        font-family: var(--serif-alt);
+        font-style: italic;
+        color: var(--amber);
+        font-weight: 400;
+      }
+
+      /* ---------- chapter I : the instrument ---------- */
+
+      .instrument {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 64px;
+      }
+
+      @media (max-width: 860px) {
+        .instrument {
+          grid-template-columns: 1fr;
+          gap: 32px;
+        }
+      }
+
+      .instrument__quote {
+        font-family: var(--serif-alt);
+        font-style: italic;
+        font-size: clamp(28px, 3vw, 40px);
+        line-height: 1.2;
+        color: var(--cream);
+        padding-left: 24px;
+        border-left: 1px solid var(--amber);
+      }
+
+      .instrument__quote .mark {
+        font-size: 1.4em;
+        color: var(--amber);
+        line-height: 0;
+        vertical-align: -0.2em;
+      }
+
+      .instrument__body {
+        font-variation-settings:
+          'opsz' 24,
+          'wght' 400;
+        color: var(--cream);
+        max-width: 52ch;
+        font-size: 17px;
+      }
+
+      .instrument__body p + p {
+        margin-top: 16px;
+      }
+      .instrument__body em {
+        color: var(--amber);
+        font-style: italic;
+      }
+
+      /* ---------- chapter II : observations grid ---------- */
+
+      .observations {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 1px;
+        background: var(--ink-line);
+        border: 1px solid var(--ink-line);
+      }
+
+      .observation {
+        grid-column: span 4;
+        padding: 36px 28px 44px;
+        background: var(--ink);
+        position: relative;
+        transition: background 400ms ease;
+      }
+
+      .observation:hover {
+        background: var(--ink-raised);
+      }
+
+      .observation--wide {
+        grid-column: span 8;
+      }
+      .observation--feature {
+        grid-column: span 8;
+      }
+      .observation--narrow {
+        grid-column: span 4;
+      }
+
+      @media (max-width: 860px) {
+        .observation,
+        .observation--wide,
+        .observation--feature,
+        .observation--narrow {
+          grid-column: span 12;
+        }
+      }
+
+      .observation__num {
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.2em;
+        color: var(--amber);
+        text-transform: uppercase;
+      }
+
+      .observation__title {
+        margin-top: 20px;
+        font-family: var(--serif-alt);
+        font-style: italic;
+        font-size: 30px;
+        line-height: 1.15;
+        color: var(--cream);
+        font-weight: 400;
+      }
+
+      .observation__title.plain {
+        font-family: var(--serif);
+        font-style: normal;
+        font-variation-settings:
+          'opsz' 60,
+          'wght' 400;
+      }
+
+      .observation__body {
+        margin-top: 14px;
+        font-size: 15px;
+        color: var(--cream-muted);
+        line-height: 1.55;
+        max-width: 38ch;
+      }
+
+      .observation--feature {
+        background:
+          linear-gradient(135deg, rgba(232, 180, 76, 0.05) 0%, transparent 70%), var(--ink);
+      }
+
+      .observation--feature .observation__title {
+        font-size: 44px;
+      }
+
+      /* ---------- chapter III : transmission (terminal) ---------- */
+
+      .transmission {
+        border: 1px solid var(--gold-line);
+        position: relative;
+        background: rgba(10, 14, 31, 0.6);
+        backdrop-filter: blur(2px);
+      }
+
+      .transmission::before,
+      .transmission::after,
+      .transmission__corners::before,
+      .transmission__corners::after {
+        content: '';
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        border-color: var(--amber);
+        border-style: solid;
+      }
+      .transmission::before {
+        top: -1px;
+        left: -1px;
+        border-width: 1px 0 0 1px;
+        width: 16px;
+        height: 16px;
+      }
+      .transmission::after {
+        top: -1px;
+        right: -1px;
+        border-width: 1px 1px 0 0;
+        width: 16px;
+        height: 16px;
+      }
+      .transmission__corners::before {
+        bottom: -1px;
+        left: -1px;
+        border-width: 0 0 1px 1px;
+        width: 16px;
+        height: 16px;
+        position: absolute;
+        content: '';
+      }
+      .transmission__corners::after {
+        bottom: -1px;
+        right: -1px;
+        border-width: 0 1px 1px 0;
+        width: 16px;
+        height: 16px;
+        position: absolute;
+        content: '';
+      }
+
+      .transmission__head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 24px;
+        border-bottom: 1px solid var(--ink-line);
+        font-family: var(--mono);
+        font-size: 10.5px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--cream-muted);
+      }
+
+      .transmission__head strong {
+        color: var(--amber);
+        font-weight: 500;
+      }
+
+      .transmission__body {
+        padding: 32px 32px 36px;
+        font-family: var(--mono);
+        font-size: 14px;
+        line-height: 1.7;
+        color: var(--cream);
+        white-space: pre-wrap;
+      }
+
+      .transmission__body .you {
+        color: var(--amber);
+        font-weight: 500;
+      }
+      .transmission__body .orb-r {
+        color: var(--cream);
+      }
+      .transmission__body .tool {
+        color: var(--cream-muted);
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        font-size: 11px;
+      }
+      .transmission__body .ok {
+        color: var(--amber);
+      }
+      .transmission__body .dim {
+        color: var(--cream-dim);
+      }
+      .transmission__body .em {
+        color: var(--ember);
+        font-style: italic;
+        font-family: var(--serif-alt);
+        font-size: 15px;
+      }
+
+      .caret {
+        display: inline-block;
+        width: 8px;
+        height: 1em;
+        background: var(--amber);
+        vertical-align: -0.15em;
+        margin-left: 3px;
+        animation: blink 1.1s steps(2) infinite;
+        box-shadow: 0 0 8px var(--amber);
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0;
+        }
+      }
+
+      /* ---------- chapter IV : calibration steps ---------- */
+
+      .procedure {
+        counter-reset: step;
+        display: grid;
+        gap: 0;
+      }
+
+      .proc {
+        display: grid;
+        grid-template-columns: 100px 1fr 1.15fr;
+        gap: 40px;
+        padding: 40px 0;
+        border-top: 1px solid var(--ink-line);
+        align-items: start;
+      }
+
+      .proc:last-child {
+        border-bottom: 1px solid var(--ink-line);
+      }
+
+      @media (max-width: 860px) {
+        .proc {
+          grid-template-columns: 60px 1fr;
+          gap: 20px;
+        }
+        .proc pre {
+          grid-column: 1 / -1;
+          margin-top: 8px;
+        }
+      }
+
+      .proc__n {
+        font-family: var(--serif-alt);
+        font-style: italic;
+        font-size: 64px;
+        line-height: 1;
+        color: var(--amber);
+      }
+
+      .proc__label {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--cream-muted);
+        margin-bottom: 8px;
+      }
+
+      .proc__title {
+        font-family: var(--serif-alt);
+        font-style: italic;
+        font-size: 30px;
+        line-height: 1.15;
+        color: var(--cream);
+        margin-bottom: 14px;
+      }
+
+      .proc__body {
+        color: var(--cream-muted);
+        max-width: 40ch;
+      }
+
+      .proc pre {
+        font-family: var(--mono);
+        font-size: 13px;
+        padding: 16px 20px;
+        background: rgba(18, 24, 51, 0.65);
+        border-left: 1px solid var(--amber);
+        color: var(--cream);
+        overflow-x: auto;
+      }
+
+      .proc pre .dim {
+        color: var(--cream-dim);
+      }
+      .proc pre .acc {
+        color: var(--amber);
+      }
+
+      /* ---------- chapter V : providers ---------- */
+
+      .providers {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1px;
+        background: var(--ink-line);
+      }
+
+      @media (max-width: 780px) {
+        .providers {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .provider {
+        background: var(--ink);
+        padding: 56px 40px 48px;
+        position: relative;
+      }
+
+      .provider__mark {
+        font-family: var(--serif-alt);
+        font-style: italic;
+        font-size: clamp(56px, 7vw, 88px);
+        line-height: 1;
+        color: var(--cream);
+        margin-bottom: 8px;
+      }
+
+      .provider__kind {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--amber);
+      }
+
+      .provider__copy {
+        margin-top: 24px;
+        color: var(--cream-muted);
+        max-width: 38ch;
+        font-size: 16px;
+      }
+
+      .provider__copy em {
+        color: var(--cream);
+        font-style: italic;
+      }
+
+      .provider__models {
+        margin-top: 32px;
+        list-style: none;
+      }
+
+      .provider__models li {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        padding: 12px 0;
+        border-top: 1px solid var(--ink-line);
+        font-family: var(--mono);
+        font-size: 13px;
+      }
+
+      .provider__models li:last-child {
+        border-bottom: 1px solid var(--ink-line);
+      }
+
+      .provider__models .k {
+        color: var(--cream);
+      }
+      .provider__models .v {
+        color: var(--cream-muted);
+        font-size: 10.5px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+
+      /* ---------- controls ---------- */
+
+      .keys {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1px;
+        background: var(--ink-line);
+        border-top: 1px solid var(--ink-line);
+        border-bottom: 1px solid var(--ink-line);
+      }
+
+      @media (max-width: 720px) {
+        .keys {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .key {
+        background: var(--ink);
+        padding: 20px 28px;
+        display: grid;
+        grid-template-columns: 160px 1fr;
+        align-items: center;
+        gap: 20px;
+      }
+
+      .kbd {
+        display: inline-block;
+        font-family: var(--mono);
+        font-size: 11.5px;
+        letter-spacing: 0.1em;
+        padding: 8px 12px;
+        border: 1px solid var(--gold-line);
+        color: var(--amber);
+        background: rgba(18, 24, 51, 0.55);
+        width: fit-content;
+      }
+
+      .key__desc {
+        color: var(--cream);
+        font-size: 16px;
+      }
+
+      .key__desc em {
+        color: var(--amber);
+        font-style: italic;
+      }
+
+      /* ---------- closing ---------- */
+
+      .closing {
+        padding: 140px 0 120px;
+        text-align: center;
+        position: relative;
+      }
+
+      @media (max-width: 780px) {
+        .closing {
+          padding: 80px 0 64px;
+        }
+      }
+
+      .closing__orb {
+        width: 80px;
+        height: 80px;
+        margin: 0 auto 32px;
+        border-radius: 50%;
+        background: radial-gradient(
+          circle at 35% 30%,
+          #f8e5a3 0%,
+          #e8b44c 25%,
+          #b8733a 60%,
+          #1a1030 100%
+        );
+        box-shadow:
+          0 0 60px rgba(232, 180, 76, 0.5),
+          0 0 140px rgba(211, 90, 74, 0.25);
+        animation: float 7s ease-in-out infinite;
+      }
+
+      .closing__line {
+        font-family: var(--serif-alt);
+        font-style: italic;
+        font-size: clamp(48px, 8vw, 112px);
+        line-height: 1;
+        color: var(--cream);
+        letter-spacing: -0.02em;
+        max-width: 14ch;
+        margin: 0 auto 48px;
+      }
+
+      .closing__line em {
+        color: var(--amber);
+        font-style: italic;
+      }
+
+      .buttons {
+        display: inline-flex;
+        gap: 16px;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+
+      .btn {
+        font-family: var(--mono);
+        font-size: 12px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        padding: 18px 30px;
+        color: var(--ink);
+        background: var(--amber);
+        border: 1px solid var(--amber);
+        transition: all 220ms ease-out;
+        position: relative;
+      }
+
+      .btn:hover {
+        background: transparent;
+        color: var(--amber);
+        box-shadow: 0 0 24px rgba(232, 180, 76, 0.3);
+      }
+
+      .btn--ghost {
+        background: transparent;
+        color: var(--cream);
+        border-color: var(--cream-muted);
+      }
+
+      .btn--ghost:hover {
+        color: var(--amber);
+        border-color: var(--amber);
+        box-shadow: none;
+      }
+
+      /* ---------- footer ---------- */
+
+      footer {
+        padding: 48px 0 40px;
+        border-top: 1px solid var(--ink-line);
+        font-family: var(--mono);
+        font-size: 10.5px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--cream-muted);
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        gap: 32px;
+        align-items: center;
+      }
+
+      @media (max-width: 780px) {
+        footer {
+          grid-template-columns: 1fr;
+          text-align: center;
+          gap: 14px;
+        }
+      }
+
+      footer .center {
+        font-family: var(--serif-alt);
+        font-style: italic;
+        font-size: 22px;
+        color: var(--amber);
+        letter-spacing: 0;
+        text-transform: none;
+      }
+
+      footer .right {
+        text-align: right;
+      }
+
+      @media (max-width: 780px) {
+        footer .right {
+          text-align: center;
+        }
+      }
+
+      footer a:hover {
+        color: var(--amber);
+      }
+
+      /* ---------- entry animation ---------- */
+
+      [data-reveal] {
+        opacity: 0;
+        transform: translateY(18px);
+        animation: reveal 1100ms cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+      }
+      [data-reveal='1'] {
+        animation-delay: 120ms;
+      }
+      [data-reveal='2'] {
+        animation-delay: 260ms;
+      }
+      [data-reveal='3'] {
+        animation-delay: 420ms;
+      }
+      [data-reveal='4'] {
+        animation-delay: 600ms;
+      }
+      [data-reveal='5'] {
+        animation-delay: 780ms;
+      }
+
+      @keyframes reveal {
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <main class="page">
+      <div class="bearings" data-reveal="1">
+        <span>LAT 37°46&prime;N &middot; LONG 122°25&prime;W</span>
+        <div class="bearings__center">
+          <span class="bearings__dot"></span>
+          <span>CELESTIAL OBSERVATION LOG &middot; ENTRY 0.2.0</span>
+        </div>
+        <span>
+          <a href="#calibration">CALIBRATE</a>
+          &nbsp;&nbsp;/&nbsp;&nbsp;
+          <a href="https://github.com/andypai/orb">GITHUB &nearr;</a>
+        </span>
+      </div>
+
+      <!-- ═══════════════════════════════════════ HERO ═══════════════════════════════════════ -->
+
+      <section class="hero">
+        <div>
+          <div class="eyebrow" data-reveal="2">A VOICE IN THE DARK</div>
+          <h1 class="hero__title" data-reveal="3">Orb<span class="amp">.</span></h1>
+          <p class="hero__lede" data-reveal="4">
+            A voice-driven code explorer that lives in your terminal. Ask your codebase anything,
+            watch it <em>think aloud</em>, and listen as it answers back.
+          </p>
+          <a class="hero__install" href="https://github.com/andypai/orb" data-reveal="5">
+            <span class="dollar">$</span>
+            <span>bun install -g @andypai/orb</span>
+            <span class="copy">COPY</span>
+          </a>
+        </div>
+
+        <div class="orb-stage">
+          <div class="crosshair"></div>
+          <div class="ring ring--3"></div>
+          <div class="ring ring--2"></div>
+          <div class="ring ring--1"></div>
+          <div class="orb"></div>
+          <span class="tick tick--n"
+            ><span class="tick__line"></span>N<span class="tick__line"></span
+          ></span>
+          <span class="tick tick--e">E</span>
+          <span class="tick tick--s"
+            ><span class="tick__line"></span>S<span class="tick__line"></span
+          ></span>
+          <span class="tick tick--w">W</span>
+        </div>
+      </section>
+
+      <div class="rule">
+        <span class="rule__star">&#10039;</span>
+      </div>
+
+      <!-- ═══════════════════════════════════════ I. THE INSTRUMENT ═══════════════════════════════════════ -->
+
+      <section class="chapter">
+        <div class="chapter__head">
+          <div class="chapter__num">
+            <span class="chapter__roman">I.</span>
+            <span class="chapter__meta">THE INSTRUMENT</span>
+          </div>
+          <h2 class="chapter__title">A small, honest tool <em>for reading code aloud.</em></h2>
+        </div>
+
+        <div class="instrument">
+          <blockquote class="instrument__quote">
+            <span class="mark">&ldquo;</span>Orb is an instrument panel for your codebase &mdash;
+            not a chatbot, not an editor. A place to ask a question, see the search happen, and hear
+            the answer while it&rsquo;s still being drawn.
+          </blockquote>
+          <div class="instrument__body">
+            <p>
+              Orb is a <em>Bun-native</em> terminal application that pairs any real codebase with a
+              model of your choice &mdash; Claude, GPT, or whichever you&rsquo;re signed in to.
+            </p>
+            <p>
+              Every file it reads, every grep, every shell command it runs is surfaced on the panel
+              as it happens. There is nothing hidden behind the curtain.
+            </p>
+            <p>
+              And because the answer is often longer than you&rsquo;d like to read, Orb will, if you
+              wish, <em>speak it</em> &mdash; through a local speech gateway, or your operating
+              system&rsquo;s own voice.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════ II. OBSERVATIONS ═══════════════════════════════════════ -->
+
+      <section class="chapter">
+        <div class="chapter__head">
+          <div class="chapter__num">
+            <span class="chapter__roman">II.</span>
+            <span class="chapter__meta">OBSERVATIONS</span>
+          </div>
+          <h2 class="chapter__title">
+            Six things you&rsquo;ll notice <em>in the first minute.</em>
+          </h2>
+        </div>
+
+        <div class="observations">
+          <article class="observation observation--feature">
+            <div class="observation__num">&sect; 001 &mdash; THE LOOP</div>
+            <h3 class="observation__title">Ask. Watch. Listen. Repeat.</h3>
+            <p class="observation__body">
+              A single loop, refined. Type a question in English, or paste a MacWhisper
+              transcription. Watch the model open files and run searches. Hear the answer while
+              it&rsquo;s streaming, first syllable in under two hundred milliseconds.
+            </p>
+          </article>
+
+          <article class="observation observation--narrow">
+            <div class="observation__num">&sect; 002</div>
+            <h3 class="observation__title plain">Live tool activity</h3>
+            <p class="observation__body">
+              Every read, grep, and shell command rises to the surface the instant it happens.
+              Nothing runs behind a curtain.
+            </p>
+          </article>
+
+          <article class="observation">
+            <div class="observation__num">&sect; 003</div>
+            <h3 class="observation__title plain">Streaming speech</h3>
+            <p class="observation__body">
+              Kokoro via <code>tts-gateway</code>, or macOS <em>say</em> as a graceful fallback.
+              Either one, hands stay on the keyboard.
+            </p>
+          </article>
+
+          <article class="observation">
+            <div class="observation__num">&sect; 004</div>
+            <h3 class="observation__title plain">Session memory</h3>
+            <p class="observation__body">
+              One session per project, resumed automatically. Close the tab and come back tomorrow
+              &mdash; the thread is still there.
+            </p>
+          </article>
+
+          <article class="observation">
+            <div class="observation__num">&sect; 005</div>
+            <h3 class="observation__title plain">Model cycling</h3>
+            <p class="observation__body">
+              Shift+Tab rotates Claude models mid-conversation. Haiku for speed, Opus when the
+              question gets interesting.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════ III. TRANSMISSION ═══════════════════════════════════════ -->
+
+      <section class="chapter" id="transmission">
+        <div class="chapter__head">
+          <div class="chapter__num">
+            <span class="chapter__roman">III.</span>
+            <span class="chapter__meta">A LIVE TRANSMISSION</span>
+          </div>
+          <h2 class="chapter__title">What the panel <em>actually looks like.</em></h2>
+        </div>
+
+        <div class="transmission">
+          <div class="transmission__corners"></div>
+          <div class="transmission__head">
+            <span><strong>ORB</strong> &middot; ~/PROJECTS/ORB</span>
+            <span>ANTHROPIC &middot; SONNET &middot; VOICE=ALBA</span>
+          </div>
+          <pre
+            class="transmission__body"
+          ><span class="dim">┌─────────────────────────────────────────────────────────────────┐
+│</span>  <span class="ok">●</span>  <span class="em">orb</span>  &mdash; voice-driven code explorer      <span class="tool">CONNECTED</span>   <span class="dim">│
+└─────────────────────────────────────────────────────────────────┘</span>
+
+<span class="you">you ›</span> how does the streaming tts pipeline work?
+
+<span class="tool">[ read ]</span>   src/tts/stream.ts                           <span class="ok">✓</span>
+<span class="tool">[ read ]</span>   src/tts/gateway.ts                          <span class="ok">✓</span>
+<span class="tool">[ grep ]</span>   "/tts/stream"  &mdash;  4 matches                 <span class="ok">✓</span>
+<span class="tool">[ bash ]</span>   curl http://localhost:8000/health           <span class="ok">✓</span>
+
+<span class="you">orb ›</span> <span class="orb-r">Orb opens a long-lived POST to <span class="em">/tts/stream</span> on
+      tts-gateway, forwards model deltas sentence-by-sentence,
+      and pipes PCM audio into <span class="em">mpv</span> as it arrives &mdash; first
+      syllable lands in under <span class="em">180&thinsp;ms</span> on local kokoro.</span>
+
+<span class="dim">&middot; speaking now</span><span class="caret"></span></pre>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════ IV. CALIBRATION ═══════════════════════════════════════ -->
+
+      <section class="chapter" id="calibration">
+        <div class="chapter__head">
+          <div class="chapter__num">
+            <span class="chapter__roman">IV.</span>
+            <span class="chapter__meta">CALIBRATION &middot; 60 SECONDS</span>
+          </div>
+          <h2 class="chapter__title">From zero to a <em>speaking codebase.</em></h2>
+        </div>
+
+        <div class="procedure">
+          <article class="proc">
+            <div class="proc__n">i</div>
+            <div>
+              <div class="proc__label">STEP ONE &middot; INSTALL</div>
+              <h3 class="proc__title">Pull the binary</h3>
+              <p class="proc__body">
+                Bun is required at runtime. Install globally, or run one-off with bunx when
+                you&rsquo;re only visiting.
+              </p>
+            </div>
+            <pre><span class="dim">$</span> bun install -g <span class="acc">@andypai/orb</span></pre>
+          </article>
+
+          <article class="proc">
+            <div class="proc__n">ii</div>
+            <div>
+              <div class="proc__label">STEP TWO &middot; AUTHENTICATE</div>
+              <h3 class="proc__title">Point at a model</h3>
+              <p class="proc__body">
+                Reuse your Claude Code or Max session, or export an API key. Orb auto-selects in a
+                sensible order.
+              </p>
+            </div>
+            <pre><span class="dim">$</span> export ANTHROPIC_API_KEY=<span class="acc">sk-ant-&hellip;</span>
+<span class="dim">$</span> <span class="dim"># or, for OpenAI</span>
+<span class="dim">$</span> export OPENAI_API_KEY=<span class="acc">sk-&hellip;</span></pre>
+          </article>
+
+          <article class="proc">
+            <div class="proc__n">iii</div>
+            <div>
+              <div class="proc__label">STEP THREE &middot; VOICE &middot; OPTIONAL</div>
+              <h3 class="proc__title">Choose the voice path</h3>
+              <p class="proc__body">
+                Local macOS <em style="color: var(--amber)">say</em> works out of the box. For
+                streaming Kokoro, install the gateway.
+              </p>
+            </div>
+            <pre><span class="dim">$</span> uv tool install <span class="acc">tts-gateway[kokoro]</span>
+<span class="dim">$</span> tts serve --provider kokoro --port 8000</pre>
+          </article>
+
+          <article class="proc">
+            <div class="proc__n">iv</div>
+            <div>
+              <div class="proc__label">STEP FOUR &middot; OBSERVE</div>
+              <h3 class="proc__title">Ask it something</h3>
+              <p class="proc__body">
+                Launch Orb in the repository you want to understand. That is the entire ceremony.
+              </p>
+            </div>
+            <pre><span class="dim">$</span> <span class="acc">orb</span>
+<span class="dim">$</span> <span class="dim"># or somewhere else entirely</span>
+<span class="dim">$</span> <span class="acc">orb</span> /path/to/project</pre>
+          </article>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════ V. PROVIDERS ═══════════════════════════════════════ -->
+
+      <section class="chapter">
+        <div class="chapter__head">
+          <div class="chapter__num">
+            <span class="chapter__roman">V.</span>
+            <span class="chapter__meta">THE TWO LIGHTS</span>
+          </div>
+          <h2 class="chapter__title">Bring <em>whichever model</em> you already trust.</h2>
+        </div>
+
+        <div class="providers">
+          <div class="provider">
+            <div class="provider__mark">Claude</div>
+            <div class="provider__kind">ANTHROPIC &middot; AGENT SDK</div>
+            <p class="provider__copy">
+              Reuses a local Claude Code or Max session when it finds one; otherwise falls back to
+              <em>ANTHROPIC_API_KEY</em>. Rotate models live without restarting the conversation.
+            </p>
+            <ul class="provider__models">
+              <li><span class="k">haiku</span><span class="v">default &middot; fast</span></li>
+              <li><span class="k">sonnet</span><span class="v">balanced</span></li>
+              <li><span class="k">opus</span><span class="v">deepest</span></li>
+            </ul>
+          </div>
+
+          <div class="provider">
+            <div class="provider__mark">GPT</div>
+            <div class="provider__kind">OPENAI &middot; RESPONSES API</div>
+            <p class="provider__copy">
+              Runs through Orb&rsquo;s own <em>bash</em>, <em>readFile</em>, and
+              <em>writeFile</em> tools, backed by a local subprocess sandbox scoped to your project
+              root.
+            </p>
+            <ul class="provider__models">
+              <li><span class="k">gpt-5.4</span><span class="v">default</span></li>
+              <li><span class="k">gpt-5</span><span class="v">flagship</span></li>
+              <li><span class="k">gpt-5.4-mini</span><span class="v">light</span></li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════ VI. CONTROLS ═══════════════════════════════════════ -->
+
+      <section class="chapter">
+        <div class="chapter__head">
+          <div class="chapter__num">
+            <span class="chapter__roman">VI.</span>
+            <span class="chapter__meta">THE CONSOLE</span>
+          </div>
+          <h2 class="chapter__title">One key, <em>one honest thing.</em></h2>
+        </div>
+
+        <div class="keys">
+          <div class="key">
+            <span class="kbd">ENTER</span><span class="key__desc">Submit the current question</span>
+          </div>
+          <div class="key">
+            <span class="kbd">CTRL+J</span><span class="key__desc">Insert a newline</span>
+          </div>
+          <div class="key">
+            <span class="kbd">CMD+V</span
+            ><span class="key__desc">Paste a <em>MacWhisper</em> transcription</span>
+          </div>
+          <div class="key">
+            <span class="kbd">ESC / CTRL+S</span><span class="key__desc">Stop speech playback</span>
+          </div>
+          <div class="key">
+            <span class="kbd">SHIFT+TAB</span
+            ><span class="key__desc">Cycle Claude models mid-flight</span>
+          </div>
+          <div class="key">
+            <span class="kbd">CTRL+O</span
+            ><span class="key__desc">Toggle live tool-call details</span>
+          </div>
+          <div class="key">
+            <span class="kbd">CTRL+C</span><span class="key__desc">Close the instrument</span>
+          </div>
+          <div class="key">
+            <span class="kbd">orb --new</span
+            ><span class="key__desc">Begin a <em>fresh conversation</em></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════════════════════════════════ CLOSING ═══════════════════════════════════════ -->
+
+      <section class="closing">
+        <div class="closing__orb"></div>
+        <h2 class="closing__line">
+          Stop reading the repo.<br />
+          <em>Ask it instead.</em>
+        </h2>
+        <div class="buttons">
+          <a class="btn" href="https://github.com/andypai/orb">GET ORB &nearr;</a>
+          <a class="btn btn--ghost" href="https://github.com/andypai/orb#readme">READ THE MANUAL</a>
+        </div>
+      </section>
+
+      <footer>
+        <div class="left">MIT &middot; 2026 &middot; ANDY PAI</div>
+        <div class="center">&#10039;</div>
+        <div class="right">
+          <a href="https://github.com/andypai/orb">GITHUB.COM / ANDYPAI / ORB &nearr;</a>
+        </div>
+      </footer>
+    </main>
+
+    <script>
+      // Tiny enhancement: click-to-copy on the hero install pill
+      const install = document.querySelector('.hero__install')
+      if (install) {
+        install.addEventListener('click', (e) => {
+          e.preventDefault()
+          navigator.clipboard?.writeText('bun install -g @andypai/orb')
+          const label = install.querySelector('.copy')
+          if (label) {
+            const prev = label.textContent
+            label.textContent = 'COPIED'
+            setTimeout(() => (label.textContent = prev), 1400)
+          }
+        })
+      }
+    </script>
+  </body>
+</html>
