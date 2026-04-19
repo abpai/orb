@@ -25,7 +25,7 @@
   "engines": {
     "bun": ">=1.1.0"
   },
-  "packageManager": "bun@1.3.3",
+  "packageManager": "bun@1.3.12",
   "publishConfig": {
     "access": "public"
   },
@@ -55,22 +55,22 @@
     "scratch:check": "for f in scratch/0*.ts scratch/99-*.ts; do echo \"→ $f\" && bun run \"$f\" >/dev/null || { echo \"FAIL: $f\"; exit 1; }; done && echo 'all scratch scripts ran'"
   },
   "dependencies": {
-    "@clack/prompts": "^1.1.0",
-    "@ai-sdk/openai": "3.0.47",
-    "@anthropic-ai/claude-agent-sdk": "0.2.80",
+    "@clack/prompts": "^1.2.0",
+    "@ai-sdk/openai": "3.0.53",
+    "@anthropic-ai/claude-agent-sdk": "0.2.114",
     "@inkjs/ui": "2.0.0",
     "@iarna/toml": "^2.2.5",
-    "ai": "6.0.134",
+    "ai": "6.0.168",
     "commander": "^14.0.3",
-    "ink": "6.6.0",
-    "react": "19.2.3",
-    "zod": "4.1.8"
+    "ink": "7.0.1",
+    "react": "19.2.5",
+    "zod": "4.3.6"
   },
   "devDependencies": {
-    "@types/bun": "^1.1.22",
-    "@types/react": "19.2.9",
+    "@types/bun": "^1.3.12",
+    "@types/react": "19.2.14",
     "ink-testing-library": "4.0.0",
-    "prettier": "^3.7.4",
-    "typescript": "^5.7.2"
+    "prettier": "^3.8.3",
+    "typescript": "^6.0.3"
   }
 }
