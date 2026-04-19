@@ -4,6 +4,10 @@
  * Shows Orb's project-memory layer:
  *   stable path derivation, migration, normalization, and save rewriting.
  *
+ * ENTRY: src/services/session.ts:35  getSessionPath()
+ *        src/services/session.ts:136 loadSession()
+ *        src/services/session.ts:185 saveSession()
+ *
  * Run:
  *   bun run scratch/06-session-persistence.ts
  */

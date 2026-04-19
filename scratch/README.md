@@ -19,6 +19,12 @@ bun run scratch/07-sandbox-tools.ts
 bun run scratch/99-compose.ts
 ```
 
+Or run all of them at once (fails on the first non-zero exit):
+
+```bash
+bun run scratch:check
+```
+
 ## Primitive Map
 
 | Script | ARCHITECTURE primitive | What it demonstrates |
@@ -106,7 +112,7 @@ Non-obvious things these scripts surface that are hard to see from static readin
 - **`cancel` frame type is vestigial.** It exists in the `Frame` union but cancellation is driven directly through `task.cancel()` — nothing pipes cancel frames through the transport today. (`05`)
 - **The completion handle is deliberately internal.** TTS completion is handed off from the processor into `PipelineTask` via `runControl.setCompletion(...)` and never leaves the orchestrator as a frame. (`05`)
 - **Stale-run protection is a counter, not a lock.** Starting a new run mid-flight invalidates the older run's late frames via an incrementing `runCounter`; the older generator keeps yielding but its output is dropped. (`05`)
-- **Orphan tool results are silently accepted.** The Anthropic adapter attaches unmatched `tool_result` blocks to a synthetic `toolIndex` rather than dropping them, which is how `03` sees an "extra" result frame. (`03`)
+- **Provider adapters treat orphan tool results differently.** In `03`, Anthropic drops unmatched `tool_result` blocks, while OpenAI synthesizes a placeholder tool-call start/result pair for orphaned tool results so the UI still has a consistent frame sequence. (`03`)
 - **`readFile` is NOT path-clamped.** Only `writeFile` is clamped to `rootDir`. The sandbox intentionally allows reads outside the project root. (`07`)
 - **Path-clamping survives symlink tricks.** `writeFile` uses `realpath` on the deepest existing ancestor before joining the unresolved suffix, so a symlink pointing outside the root still triggers `PathEscapeError`. (`07`)
 - **`loadSession()` has a hidden side effect.** Every load triggers `cleanupOldSessions()` against `~/.orb/sessions/`, pruning files older than 30 days. (`06`)
@@ -127,4 +133,3 @@ If you had to explain Orb in two minutes:
 > so tools don't know or care whether execution is local, remote, or
 > virtualized. TTS is a sidecar that observes text deltas without mutating the
 > frame contract.
-

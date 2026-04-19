@@ -4,6 +4,10 @@
  * Shows the shared protocol boundary Orb actually depends on:
  *   vendor-specific streams -> canonical Frame objects
  *
+ * ENTRY: src/pipeline/adapters/anthropic.ts:22 createAnthropicAdapter()
+ *        src/pipeline/adapters/openai.ts:23    createOpenAiAdapter()
+ *        src/pipeline/frames.ts                Frame union
+ *
  * Run:
  *   bun run scratch/03-adapter-normalization.ts
  */

@@ -51,7 +51,8 @@
     "format": "bunx prettier --write .",
     "typecheck": "bunx tsc --noEmit",
     "check": "bunx prettier --check . && bun run typecheck && bun run test",
-    "test": "bun test"
+    "test": "bun test",
+    "scratch:check": "for f in scratch/0*.ts scratch/99-*.ts; do echo \"→ $f\" && bun run \"$f\" >/dev/null || { echo \"FAIL: $f\"; exit 1; }; done && echo 'all scratch scripts ran'"
   },
   "dependencies": {
     "@clack/prompts": "^1.1.0",

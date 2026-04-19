@@ -8,6 +8,11 @@
  * depend only on the `Sandbox` contract, so swapping LocalSubprocessSandbox
  * for a remote or virtualized backend is a factory-level change.
  *
+ * ENTRY: src/pipeline/sandbox/interface.ts      Sandbox contract
+ *        src/pipeline/sandbox/factory.ts:4      createSandbox()
+ *        src/pipeline/tools/{bash,read,write}.ts owned ai-sdk tools
+ *        src/pipeline/adapters/openai.ts:35-37  wiring via experimental_context
+ *
  * Run:
  *   bun run scratch/07-sandbox-tools.ts
  */
@@ -17,18 +22,19 @@ import path from 'node:path'
 import { createSandbox } from '../src/pipeline/sandbox/factory'
 import { PathEscapeError } from '../src/pipeline/sandbox/interface'
 import { bash, readFile, writeFile } from '../src/pipeline/tools'
+import type { ToolCtx } from '../src/pipeline/tools/context'
 
 type ToolDef = {
   execute: (
     input: Record<string, unknown>,
-    options: { experimental_context: unknown },
+    options: { experimental_context: ToolCtx },
   ) => Promise<unknown>
 }
 
 async function invoke(
   toolDef: unknown,
   input: Record<string, unknown>,
-  experimental_context: unknown,
+  experimental_context: ToolCtx,
 ): Promise<unknown> {
   return await (toolDef as ToolDef).execute(input, { experimental_context })
 }
@@ -57,8 +63,7 @@ try {
   console.log('  dispose()                 : release sandbox resources\n')
 
   const sandbox = createSandbox({ rootDir: projectPath })
-  const signal = new AbortController().signal
-  const ctx = { sandbox, signal }
+  const ctx: ToolCtx = { sandbox, signal: new AbortController().signal }
 
   try {
     console.log('─── bash tool ───\n')

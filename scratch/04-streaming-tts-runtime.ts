@@ -4,6 +4,8 @@
  * Shows how streaming TTS sits beside the main frame flow:
  * it consumes text progressively and manages its own timing state.
  *
+ * ENTRY: src/services/streaming-tts.ts:89 createStreamingSpeechController()
+ *
  * Run:
  *   bun run scratch/04-streaming-tts-runtime.ts
  */
@@ -27,6 +29,18 @@ function sleep(ms: number): Promise<void> {
 
 mock.module('../src/services/tts', () => ({
   cleanTextForSpeech,
+  DEFAULT_SERVER_URL: 'http://localhost:8000',
+  detectPlayer: () => ({ binary: 'mpv', buildArgs: () => [] }),
+  resetDetectedPlayer() {},
+  createStreamSession: () => ({
+    done: Promise.resolve(),
+    kill() {},
+    get wasKilled() {
+      return false
+    },
+  }),
+  getTempAudioExtension: () => 'wav',
+  createTempAudioPath: (_mode: string, name: string) => `/tmp/${name}.wav`,
   async generateAudio(text: string, _config: AppConfig, outputPath: string) {
     generatedChunks.push({ text, atMs: nowMs() })
     await Bun.write(outputPath, text)
@@ -43,6 +57,7 @@ mock.module('../src/services/tts', () => ({
   resetPlaybackStoppedFlag() {
     playbackStopped = false
   },
+  async speak() {},
 }))
 
 const { createStreamingSpeechController } = await import('../src/services/streaming-tts')
@@ -61,6 +76,7 @@ async function runCase(
     ...DEFAULT_CONFIG,
     ttsEnabled: true,
     ttsStreamingEnabled: true,
+    ttsMode: 'generate',
     ttsBufferSentences: 1,
     ...overrides,
   }
