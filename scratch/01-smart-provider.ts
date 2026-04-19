@@ -5,6 +5,8 @@
  *   CLI args + global config + smart-provider detection + session lookup
  *   -> one App config
  *
+ * ENTRY: src/index.ts:45 run()
+ *
  * Run:
  *   bun run scratch/01-smart-provider.ts
  */

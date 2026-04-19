@@ -1,4 +1,3 @@
-import { createBashTool } from 'bash-tool'
 import { ToolLoopAgent, stepCountIs, type ToolSet, type StepResult } from 'ai'
 import { buildProviderPrompt } from '../../services/prompts'
 import type { Frame } from '../frames'
@@ -6,6 +5,8 @@ import { createFrame } from '../frames'
 import type { AgentAdapter, AgentAdapterConfig } from './types'
 import { normalizeToolInput, isToolError, formatToolResult } from './utils'
 import { resolveOpenAiProvider } from '../../services/openai-auth'
+import { createSandbox } from '../sandbox/factory'
+import { bash, readFile, writeFile } from '../tools'
 
 interface OaiToolCall {
   toolCallId: string
@@ -31,15 +32,7 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
         ttsEnabled: appConfig.ttsEnabled,
       })
 
-      const { tools, sandbox } = await createBashTool({
-        uploadDirectory: {
-          source: appConfig.projectPath,
-          include: '**/*',
-        },
-        maxFiles: 5000,
-      })
-
-      const { bash, readFile, writeFile } = tools
+      const sandbox = createSandbox({ rootDir: appConfig.projectPath })
       const allowedTools: ToolSet = { bash, readFile, writeFile }
 
       let accumulatedText = ''
@@ -127,8 +120,9 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
           },
         })
 
-        const agentStream = await agent.stream({
+        const streamArgs = {
           prompt,
+          experimental_context: { sandbox, signal: abortController.signal },
           onStepFinish: (stepResult: StepResult<ToolSet>) => {
             for (const call of stepResult.toolCalls) {
               registerToolCall(call)
@@ -138,7 +132,9 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
             }
           },
           abortSignal: abortController.signal,
-        })
+        } as Parameters<typeof agent.stream>[0]
+
+        const agentStream = await agent.stream(streamArgs)
 
         for await (const chunk of agentStream.textStream) {
           // Drain any tool frames that arrived via onStepFinish
@@ -193,9 +189,9 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
           })
         }
       } finally {
-        if ('stop' in sandbox && typeof sandbox.stop === 'function') {
-          await (sandbox.stop as () => Promise<void>)().catch(() => {})
-        }
+        await sandbox.dispose().catch((err) => {
+          console.warn('sandbox.dispose() failed', err)
+        })
       }
     },
   }

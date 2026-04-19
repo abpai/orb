@@ -51,7 +51,8 @@
     "format": "bunx prettier --write .",
     "typecheck": "bunx tsc --noEmit",
     "check": "bunx prettier --check . && bun run typecheck && bun run test",
-    "test": "bun test"
+    "test": "bun test",
+    "scratch:check": "for f in scratch/0*.ts scratch/99-*.ts; do echo \"→ $f\" && bun run \"$f\" >/dev/null || { echo \"FAIL: $f\"; exit 1; }; done && echo 'all scratch scripts ran'"
   },
   "dependencies": {
     "@clack/prompts": "^1.1.0",
@@ -60,10 +61,8 @@
     "@inkjs/ui": "2.0.0",
     "@iarna/toml": "^2.2.5",
     "ai": "6.0.134",
-    "bash-tool": "^1.3.9",
     "commander": "^14.0.3",
     "ink": "6.6.0",
-    "just-bash": "^2.7.0",
     "react": "19.2.3",
     "zod": "4.1.8"
   },

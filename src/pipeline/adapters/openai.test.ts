@@ -9,17 +9,7 @@ afterEach(() => {
 describe('createOpenAiAdapter', () => {
   it('moves resume instructions into provider options when continuing a response', async () => {
     const constructorArgs: Array<Record<string, unknown>> = []
-
-    mock.module('bash-tool', () => ({
-      createBashTool: async () => ({
-        tools: {
-          bash: {},
-          readFile: {},
-          writeFile: {},
-        },
-        sandbox: {},
-      }),
-    }))
+    let streamArgs: Record<string, unknown> | undefined
 
     mock.module('../../services/openai-auth', () => ({
       resolveOpenAiProvider: async () => ({
@@ -34,13 +24,15 @@ describe('createOpenAiAdapter', () => {
     }))
 
     mock.module('ai', () => ({
+      tool: (def: unknown) => def,
       stepCountIs: (count: number) => count,
       ToolLoopAgent: class {
         constructor(args: Record<string, unknown>) {
           constructorArgs.push(args)
         }
 
-        async stream() {
+        async stream(args: Record<string, unknown>) {
+          streamArgs = args
           return {
             textStream: (async function* () {})(),
             response: Promise.resolve({ id: 'resp_next' }),
@@ -83,5 +75,15 @@ describe('createOpenAiAdapter', () => {
         session: { provider: 'openai', previousResponseId: 'resp_next' },
       }),
     )
+
+    expect(streamArgs?.experimental_context).toBeDefined()
+    const ctx = streamArgs?.experimental_context as { sandbox?: unknown; signal?: unknown }
+    expect(ctx.sandbox).toBeDefined()
+    expect(typeof (ctx.sandbox as { dispose?: unknown }).dispose).toBe('function')
+    expect(typeof (ctx.sandbox as { exec?: unknown }).exec).toBe('function')
+    expect(typeof (ctx.sandbox as { readFile?: unknown }).readFile).toBe('function')
+    expect(typeof (ctx.sandbox as { writeFile?: unknown }).writeFile).toBe('function')
+    expect(typeof (ctx.sandbox as { rootDir?: unknown }).rootDir).toBe('string')
+    expect(ctx.signal).toBeInstanceOf(AbortSignal)
   })
 })

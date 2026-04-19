@@ -103,6 +103,7 @@ Examples:
 
 Controls:
   - Type your question and press Enter
+  - Use Ctrl+J or Alt+Enter for a newline
   - Paste MacWhisper transcription with Cmd+V
   - Shift+Tab to cycle models
   - Ctrl+C to exit

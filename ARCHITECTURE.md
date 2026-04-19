@@ -85,7 +85,8 @@ The `scratch/` demos mirror that reconstruction order.
 │                              │   │                          │
 │ anthropic -> Claude SDK      │   │ streaming ->             │
 │ openai -> AI SDK ToolLoop    │   │ createStreamingSpeech... │
-│ + bash/readFile/writeFile    │   │ batch -> speak()         │
+│ + owned tools + local        │   │ batch -> speak()         │
+│   subprocess sandbox         │   │                          │
 └──────────────────────────────┘   └──────────────────────────┘
                  │                               │
                  └──────────────┬────────────────┘
@@ -117,9 +118,18 @@ src/
 │   │   └── metrics.ts        # Metrics observer (mainly test-facing today)
 │   ├── adapters/
 │   │   ├── anthropic.ts      # Claude Agent SDK adapter
-│   │   ├── openai.ts         # OpenAI AI SDK + bash-tool adapter
+│   │   ├── openai.ts         # OpenAI AI SDK adapter + owned tool wiring
 │   │   ├── types.ts          # AgentAdapter contract
 │   │   └── utils.ts          # Tool/result parsing helpers
+│   ├── sandbox/
+│   │   ├── factory.ts        # Sandbox construction for providers/tools
+│   │   ├── interface.ts      # Narrow exec/read/write sandbox contract
+│   │   └── local-subprocess.ts # Bun.spawn-based local sandbox
+│   ├── tools/
+│   │   ├── bash.ts           # `bash -lc` tool exposed to OpenAI
+│   │   ├── context.ts        # experimental_context -> ToolCtx bridge
+│   │   ├── read.ts           # UTF-8 file reads for OpenAI
+│   │   └── write.ts          # Project-root-clamped file writes for OpenAI
 │   ├── processors/
 │   │   ├── agent.ts          # Provider dispatch into adapters
 │   │   └── tts.ts            # Streaming/batch TTS frame handling
@@ -143,9 +153,14 @@ src/
     │   ├── usePipeline.ts
     │   ├── useTerminalSize.ts
     │   └── useAnimationFrame.ts
+    ├── input/
+    │   ├── TextBuffer.ts     # Multiline editor state + editing ops
+    │   ├── keymap.ts         # Ink key normalization into editor actions
+    │   └── paste.ts          # Bracketed-paste cleanup for terminal input
     ├── components/
     │   ├── ConversationRail.tsx
     │   ├── Footer.tsx
+    │   ├── InputPrompt.tsx
     │   ├── WelcomeSplash.tsx
     │   ├── TTSErrorBanner.tsx
     │   ├── TurnRow.tsx
@@ -283,14 +298,23 @@ The prompt layer interpolates the current project name and path into those templ
 
 ### OpenAI
 
-`createOpenAiAdapter()` wraps the AI SDK plus `bash-tool`:
+`createOpenAiAdapter()` wraps the AI SDK plus Orb's owned tools/sandbox:
 
 - resolves auth through `resolveOpenAiProvider()`
 - currently supports direct API-key access via `OPENAI_API_KEY` or `config.openaiApiKey`
-- creates a tool sandbox exposing `bash`, `readFile`, and `writeFile`
+- creates a `LocalSubprocessSandbox` rooted at the current project path
+- injects `{ sandbox, signal }` through `experimental_context`
+- exposes `bash`, `readFile`, and `writeFile` from `src/pipeline/tools/`
 - uses `ToolLoopAgent` against the OpenAI Responses API
 - persists `previousResponseId` for continuation
 - retries once without continuation state when the stored `previousResponseId` is invalid
+
+Important sandbox behavior today:
+
+- `bash` runs via `bash -lc` and defaults to the project root, with optional relative `cwd`
+- `readFile` allows absolute paths or project-relative paths
+- `writeFile` is clamped to the project root and rejects path escapes or symlink escapes
+- writes go to the real working tree; there is no overlay filesystem layer
 
 ## TTS Architecture
 
@@ -318,6 +342,7 @@ When streaming is disabled:
 ### Audio backends
 
 - `serve` mode posts to `POST /v1/speech` on a `tts-gateway`-compatible HTTP server, defaulting to `http://localhost:8000`
+- streaming serve-mode playback uses `POST /tts/stream`
 - `generate` mode uses local macOS generation/playback helpers
 - `src/setup.ts` is the source of truth for the interactive setup flow and Kokoro gateway guidance
 
@@ -360,6 +385,7 @@ These are intentional or notable aspects of the implementation today:
 - The terminal transport is outbound-only in production. The UI does not send inbound frames through it.
 - Observer support exists in `PipelineTask` and `createPipeline()`, but the app does not wire observers in normal runtime usage.
 - Anthropic model cycling is a UI feature only for the Anthropic provider.
+- The input box is a real multiline buffer: Enter submits, while `Ctrl+J` and `Alt+Enter` insert newlines.
 - The `cancel` frame type exists in the shared frame union, but cancellation is currently handled directly through `task.cancel()` rather than by piping cancel frames through the transport.
 
 ## Extension Points

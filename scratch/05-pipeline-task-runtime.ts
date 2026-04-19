@@ -4,6 +4,8 @@
  * Shows the central runtime primitive:
  *   one task orchestrates processors, state transitions, and outbound transport.
  *
+ * ENTRY: src/pipeline/task.ts:51 createPipelineTask()
+ *
  * Run:
  *   bun run scratch/05-pipeline-task-runtime.ts
  */

@@ -4,8 +4,9 @@
 
 - `src/cli.ts` is the Bun CLI entry point.
 - `src/index.ts` wires CLI config into the Ink app runtime.
-- `src/ui/` contains the Ink/React UI. Components live in `src/ui/components/` and shared UI pieces in `src/ui/components/shared/`.
-- `src/services/` holds integration logic (Claude agent and TTS helpers).
+- `src/ui/` contains the Ink/React UI. Components live in `src/ui/components/`, hooks in `src/ui/hooks/`, and the multiline editor/input logic in `src/ui/input/`.
+- `src/pipeline/` holds the runtime frame pipeline, provider adapters, OpenAI tools, and sandbox implementations.
+- `src/services/` holds supporting integration logic such as auth, prompts, sessions, config, and TTS helpers.
 - `src/types/` contains shared TypeScript types.
 - `src/config.ts` centralizes runtime configuration.
 
@@ -39,5 +40,6 @@
 
 ## Security & Configuration Tips
 
-- Copy `.env.example` to `.env` for local config; never commit secrets.
+- Configure secrets via shell environment variables like `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `CLAUDE_API_KEY`; never commit secrets.
+- Persistent user defaults live in `~/.orb/config.toml` and can be created with `orb setup`.
 - Target Bun `>= 1.1.0` as specified in `package.json`.

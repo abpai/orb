@@ -4,6 +4,8 @@
  * Shows how useConversation() projects outbound frames into:
  *   liveTurn + completedTurns + ttsError + persisted session state
  *
+ * ENTRY: src/ui/hooks/useConversation.ts:24 useConversation()
+ *
  * Run:
  *   bun run scratch/02-config-resolution.ts
  */
