@@ -38,6 +38,25 @@ function installTTSMocks() {
   }) as unknown as typeof Bun.spawn
 }
 
+async function waitFor(predicate: () => boolean, timeoutMs = 500): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (!predicate()) {
+    if (Date.now() > deadline) {
+      throw new Error('waitFor: timed out')
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+}
+
+function emptyStreamResponse(): Response {
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.close()
+    },
+  })
+  return new Response(stream, { status: 200 })
+}
+
 function createTestConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
     ...DEFAULT_CONFIG,
@@ -186,6 +205,77 @@ describe('createStreamingSpeechController', () => {
       controller.finalize()
 
       expect(controller.isActive()).toBe(false)
+    })
+  })
+
+  describe('prefetch race', () => {
+    // Regression: when the prefetch for sentence N+1 had not yet resolved by
+    // the time sentence N finished playing, streamOrFallback would fall back
+    // to a fresh fetch — but leave the in-flight prefetch dangling. The stale
+    // prefetch would later populate `prefetchedStream`, and sentence N+2
+    // would play it instead of its own audio, sounding like "last sentence
+    // repeats." The fix cancels the in-flight prefetch before starting the
+    // fresh fetch; this test pins that behavior.
+    it('aborts an in-flight prefetch when it has to fall back to a fresh fetch', async () => {
+      const signals: AbortSignal[] = []
+      const deferreds: Array<{
+        resolve: (r: Response) => void
+        text: string
+      }> = []
+
+      globalThis.fetch = mock(
+        (_url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+          if (init?.signal) signals.push(init.signal)
+          const body = typeof init?.body === 'string' ? init.body : ''
+          const text = body ? (JSON.parse(body).text as string) : ''
+          const { promise, resolve } = Promise.withResolvers<Response>()
+          deferreds.push({ resolve, text })
+          return promise
+        },
+      ) as unknown as typeof globalThis.fetch
+
+      Bun.which = mock(() => '/usr/local/bin/mpv') as unknown as typeof Bun.which
+
+      // Spawned "player" drains its stdin stream immediately.
+      Bun.spawn = mock(
+        () =>
+          ({
+            stdin: { write() {}, end() {} },
+            exited: Promise.resolve(0),
+            kill() {},
+          }) as unknown as Bun.Subprocess,
+      ) as unknown as typeof Bun.spawn
+
+      const config = createTestConfig({
+        ttsMinChunkLength: 0,
+        ttsMaxWaitMs: 0,
+        ttsBufferSentences: 1,
+      })
+      const controller = createStreamingSpeechController(config)
+
+      controller.feedText('Alpha. ')
+      controller.feedText('Beta. ')
+      controller.feedText('Gamma. ')
+      controller.finalize()
+
+      // Wait for Alpha's fetch to fire.
+      await waitFor(() => deferreds.length >= 1)
+      expect(deferreds[0]!.text).toContain('Alpha')
+      // Resolve Alpha with an empty stream so its playback completes quickly.
+      // Alpha's streamOrFallback will schedule a prefetch for Beta, then
+      // session.done resolves; the controller recurses, sees Beta's prefetch
+      // has not yet resolved, and must start a fresh fetch for Beta. The fix
+      // aborts the dangling prefetch along the way.
+      deferreds[0]!.resolve(emptyStreamResponse())
+
+      await waitFor(() => deferreds.length >= 3)
+
+      // deferreds[1] is Beta's prefetch; deferreds[2] is Beta's fresh fetch.
+      expect(deferreds[1]!.text).toContain('Beta')
+      expect(deferreds[2]!.text).toContain('Beta')
+      expect(signals[1]!.aborted).toBe(true)
+
+      controller.stop()
     })
   })
 })
