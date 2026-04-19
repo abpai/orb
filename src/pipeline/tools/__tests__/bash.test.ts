@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { bash } from '../bash.ts'
 import { isToolError } from '../../adapters/utils.ts'
-import type {
-  ExecOpts,
-  ExecResult,
-  ReadOpts,
-  Sandbox,
-  WriteOpts,
-} from '../../sandbox/interface.ts'
+import type { ExecOpts, ExecResult, ReadOpts, Sandbox, WriteOpts } from '../../sandbox/interface.ts'
 
 class FakeSandbox implements Sandbox {
   readonly rootDir = '/tmp/fake'
@@ -42,11 +36,7 @@ class FakeSandbox implements Sandbox {
   async [Symbol.asyncDispose](): Promise<void> {}
 }
 
-function callExecute(
-  input: unknown,
-  sandbox: Sandbox,
-  signal: AbortSignal,
-): Promise<unknown> {
+function callExecute(input: unknown, sandbox: Sandbox, signal: AbortSignal): Promise<unknown> {
   if (typeof bash.execute !== 'function') {
     throw new Error('bash.execute is not defined')
   }
@@ -122,16 +112,11 @@ describe('bash tool', () => {
       const sandbox = new FakeSandbox()
       sandbox.execImpl = (_cmd, _args, opts) =>
         new Promise<ExecResult>((resolve, reject) => {
-          opts?.signal?.addEventListener(
-            'abort',
-            () => reject(new Error('aborted')),
-            { once: true },
-          )
+          opts?.signal?.addEventListener('abort', () => reject(new Error('aborted')), {
+            once: true,
+          })
           // Long-running fake — only resolves if the signal does not fire.
-          setTimeout(
-            () => resolve({ stdout: 'late', stderr: '', exitCode: 0 }),
-            5_000,
-          )
+          setTimeout(() => resolve({ stdout: 'late', stderr: '', exitCode: 0 }), 5_000)
         })
 
       const controller = new AbortController()

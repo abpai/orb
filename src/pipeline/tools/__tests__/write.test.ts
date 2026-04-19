@@ -42,11 +42,7 @@ class FakeSandbox implements Sandbox {
   async [Symbol.asyncDispose](): Promise<void> {}
 }
 
-function callExecute(
-  input: unknown,
-  sandbox: Sandbox,
-  signal: AbortSignal,
-): Promise<unknown> {
+function callExecute(input: unknown, sandbox: Sandbox, signal: AbortSignal): Promise<unknown> {
   if (typeof writeFile.execute !== 'function') {
     throw new Error('writeFile.execute is not defined')
   }

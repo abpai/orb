@@ -39,11 +39,7 @@ class FakeSandbox implements Sandbox {
   async [Symbol.asyncDispose](): Promise<void> {}
 }
 
-function callExecute(
-  input: unknown,
-  sandbox: Sandbox,
-  signal: AbortSignal,
-): Promise<unknown> {
+function callExecute(input: unknown, sandbox: Sandbox, signal: AbortSignal): Promise<unknown> {
   if (typeof readFile.execute !== 'function') {
     throw new Error('readFile.execute is not defined')
   }
@@ -62,11 +58,9 @@ describe('readFile tool', () => {
     sandbox.readFileImpl = async () => 'hello world'
     const controller = new AbortController()
 
-    const result = (await callExecute(
-      { path: 'README.md' },
-      sandbox,
-      controller.signal,
-    )) as { content: string }
+    const result = (await callExecute({ path: 'README.md' }, sandbox, controller.signal)) as {
+      content: string
+    }
 
     expect(result).toEqual({ content: 'hello world' })
     expect(sandbox.lastReadPath).toBe('README.md')
@@ -81,11 +75,10 @@ describe('readFile tool', () => {
     }
     const controller = new AbortController()
 
-    const result = (await callExecute(
-      { path: '../etc/passwd' },
-      sandbox,
-      controller.signal,
-    )) as { error: string; isError: true }
+    const result = (await callExecute({ path: '../etc/passwd' }, sandbox, controller.signal)) as {
+      error: string
+      isError: true
+    }
 
     expect(result.isError).toBe(true)
     expect(result.error).toBe('refused to read ../etc/passwd')
@@ -99,11 +92,10 @@ describe('readFile tool', () => {
     }
     const controller = new AbortController()
 
-    const result = (await callExecute(
-      { path: 'missing.txt' },
-      sandbox,
-      controller.signal,
-    )) as { error: string; isError: true }
+    const result = (await callExecute({ path: 'missing.txt' }, sandbox, controller.signal)) as {
+      error: string
+      isError: true
+    }
 
     expect(result.isError).toBe(true)
     expect(result.error).toBe('ENOENT')

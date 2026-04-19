@@ -32,8 +32,8 @@ has a TOCTOU race — if the signal aborts during the await, the listener
 never fires and the downstream operation is not cancelled.
 
 **Rule for next time:** when wiring an AbortSignal to a long-lived handle
-through an async path, re-check `signal.aborted` *after* every `await` and
-*immediately before* the side effect the listener is meant to protect.
+through an async path, re-check `signal.aborted` _after_ every `await` and
+_immediately before_ the side effect the listener is meant to protect.
 Prefer native signal support on the underlying API (e.g.,
 `Bun.spawn({ signal })`) over a manual `addEventListener` pattern when the
 option exists. Write at least one test that combines the signal with every
@@ -67,6 +67,7 @@ blocks the serial reader.
 
 **Rule for next time:** always drain stdout, stderr, and `proc.exited` via
 `Promise.all`:
+
 ```ts
 const [stdout, stderr, exitCode] = await Promise.all([
   new Response(proc.stdout).text(),
@@ -74,13 +75,14 @@ const [stdout, stderr, exitCode] = await Promise.all([
   proc.exited,
 ])
 ```
+
 Write a test that emits >64KB to each stream so the regression fails loudly.
 
 ### Verify what a dependency actually runs before trusting a threat-model claim
 
 The original plan for this run and its R2 risk note both framed the refactor
 as moving OpenAI execution from "remote Firecracker microVM" (`@vercel/sandbox`)
-to a local subprocess — a meaningful *loss* of isolation that would need to
+to a local subprocess — a meaningful _loss_ of isolation that would need to
 land in the PR description. After the code was merged-ready, a direct
 inspection of `node_modules/bash-tool` showed the framing was wrong:
 
@@ -88,18 +90,18 @@ inspection of `node_modules/bash-tool` showed the framing was wrong:
   with no `options.sandbox`.
 - `bash-tool/dist/tool.js` line ~99 falls through to
   `// No external sandbox - use just-bash` when no sandbox instance is passed.
-- `@vercel/sandbox` is an *optional peer dep* that this project never
+- `@vercel/sandbox` is an _optional peer dep_ that this project never
   installed (not in `package.json`, not in `bun.lock`).
 
 So the pre-refactor code was already running locally via `just-bash` against
 `process.cwd()` with full env inheritance and no path clamp. The new
-`LocalSubprocessSandbox` is *more* restrictive (adds a cwd clamp + symlink
+`LocalSubprocessSandbox` is _more_ restrictive (adds a cwd clamp + symlink
 escape rejection). The PR body had to be rewritten to frame this as a
 tightening, not a regression.
 
 **Rule for next time:** before a plan's threat-model claim goes into a brief
 (or a PR body), verify what the relevant dependency actually does at runtime
-in *this* repo:
+in _this_ repo:
 
 1. Does the direct dep graph (`package.json` + `bun.lock`) include the
    package implementing the claimed behavior, or is it an optional peer?
