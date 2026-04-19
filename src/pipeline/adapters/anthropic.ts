@@ -1,4 +1,12 @@
-import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk'
+import { promises as fsp, realpathSync } from 'node:fs'
+import * as path from 'node:path'
+
+import {
+  query,
+  type CanUseTool,
+  type PermissionResult,
+  type SDKMessage,
+} from '@anthropic-ai/claude-agent-sdk'
 import { buildProviderPrompt } from '../../services/prompts'
 import type { Frame } from '../frames'
 import { createFrame } from '../frames'
@@ -33,6 +41,7 @@ export function createAnthropicAdapter(config: AgentAdapterConfig): AgentAdapter
           maxTurns: 10,
           resume: activeSessionId,
           permissionMode: 'default',
+          canUseTool: createCanUseTool(appConfig.projectPath),
           abortController,
           systemPrompt,
         },
@@ -107,5 +116,62 @@ export function createAnthropicAdapter(config: AgentAdapterConfig): AgentAdapter
         }
       }
     },
+  }
+}
+
+// Tools whose `file_path` (or `notebook_path`) input we clamp to projectPath.
+// Reads, search, and bash stay unrestricted — bash can already do whatever the
+// host shell allows, so trying to filter it would only create a false sense of
+// safety. For writes we resolve the deepest existing ancestor through realpath
+// so symlink escapes are denied for both existing files and new descendants.
+const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
+const ALLOW: PermissionResult = { behavior: 'allow' }
+
+export function createCanUseTool(projectRoot: string): CanUseTool {
+  const root = realpathSync(path.resolve(projectRoot))
+  return async (toolName, input) => {
+    if (!WRITE_TOOLS.has(toolName)) return ALLOW
+
+    const target = (input.file_path ?? input.notebook_path) as string | undefined
+    if (typeof target !== 'string' || target.length === 0) return ALLOW
+
+    try {
+      const resolved = await resolvePathForWrite(root, target)
+      if (resolved === root || resolved.startsWith(root + path.sep)) return ALLOW
+
+      return {
+        behavior: 'deny',
+        message: `${toolName} blocked: ${resolved} is outside project root ${root}. Writes are limited to the project directory; reads from anywhere are fine.`,
+      }
+    } catch (err) {
+      return {
+        behavior: 'deny',
+        message: `${toolName} blocked: failed to validate ${target} against project root ${root}: ${(err as Error).message}`,
+      }
+    }
+  }
+}
+
+async function resolvePathForWrite(root: string, target: string): Promise<string> {
+  const candidate = path.resolve(root, target)
+  try {
+    return await fsp.realpath(candidate)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+
+    let cur = path.dirname(candidate)
+    const tail = [path.basename(candidate)]
+    while (true) {
+      try {
+        const realCur = await fsp.realpath(cur)
+        return path.join(realCur, ...tail)
+      } catch (innerErr) {
+        if ((innerErr as NodeJS.ErrnoException).code !== 'ENOENT') throw innerErr
+        const parent = path.dirname(cur)
+        if (parent === cur) throw err
+        tail.unshift(path.basename(cur))
+        cur = parent
+      }
+    }
   }
 }
