@@ -2,9 +2,9 @@
   "name": "@andypai/orb",
   "version": "0.2.0",
   "description": "Voice-driven code explorer for your terminal",
-  "homepage": "https://github.com/andypai/orb#readme",
+  "homepage": "https://github.com/abpai/orb#readme",
   "bugs": {
-    "url": "https://github.com/andypai/orb/issues"
+    "url": "https://github.com/abpai/orb/issues"
   },
   "type": "module",
   "bin": {
@@ -31,7 +31,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/andypai/orb.git"
+    "url": "https://github.com/abpai/orb.git"
   },
   "keywords": [
     "ai",

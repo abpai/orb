@@ -337,7 +337,7 @@ Prompt files are read fresh for each run, so edits apply to the next question wi
 ## Development
 
 ```bash
-git clone https://github.com/andypai/orb.git
+git clone https://github.com/abpai/orb.git
 cd orb
 bun install
 
