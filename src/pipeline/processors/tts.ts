@@ -7,11 +7,13 @@ import {
   createStreamingSpeechController,
   type StreamingSpeechController,
 } from '../../services/streaming-tts'
-import { speak, stopSpeaking } from '../../services/tts'
+import { pauseSpeaking, resumeSpeaking, speak, stopSpeaking } from '../../services/tts'
 
 export interface TTSCompletionHandle {
   waitForCompletion(): Promise<void>
   stop(): void
+  pause(): void
+  resume(): void
 }
 
 export interface TTSRunControl {
@@ -93,6 +95,8 @@ export function createTTSProcessor(appConfig: AppConfig, runControl?: TTSRunCont
               runControl?.setCompletion({
                 waitForCompletion: () => ctrl.waitForCompletion(),
                 stop: () => ctrl.stop(),
+                pause: () => ctrl.pause(),
+                resume: () => ctrl.resume(),
               })
             }
             continue
@@ -103,6 +107,8 @@ export function createTTSProcessor(appConfig: AppConfig, runControl?: TTSRunCont
           runControl?.setCompletion({
             waitForCompletion: () => speak(completedText, appConfig),
             stop: () => stopSpeaking(),
+            pause: () => pauseSpeaking(),
+            resume: () => resumeSpeaking(),
           })
           continue
         }

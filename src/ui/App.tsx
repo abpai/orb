@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { basename } from 'node:path'
 import { Box } from 'ink'
 
@@ -36,6 +36,7 @@ const FIXED_UI_OVERHEAD = 8
 export function App({ config, initialSession }: AppProps) {
   const [detailMode, setDetailMode] = useState<DetailMode>('compact')
   const [state, setState] = useState<AppState>('idle')
+  const [isPaused, setIsPaused] = useState(false)
   const [splashDismissed, setSplashDismissed] = useState(false)
 
   const conversation = useConversation({
@@ -44,14 +45,20 @@ export function App({ config, initialSession }: AppProps) {
     taskState: state,
   })
 
-  const { cancel, submit } = usePipeline({
+  const handleStateChange = useCallback((next: AppState) => {
+    setState(next)
+    // Clear pause indicator when playback ends (state returns to idle/processing).
+    if (next === 'idle' || next === 'processing') setIsPaused(false)
+  }, [])
+
+  const { cancel, pause, repeat, resume, submit } = usePipeline({
     config,
     activeModel: conversation.activeModel,
     initialModel: conversation.initialModel,
     initialSession: conversation.initialAgentSession,
     onFrame: conversation.handleFrame,
     onRunComplete: conversation.handleRunComplete,
-    onStateChange: setState,
+    onStateChange: handleStateChange,
     startEntry: conversation.startEntry,
   })
 
@@ -66,12 +73,39 @@ export function App({ config, initialSession }: AppProps) {
   )
 
   const canCycleModel = state === 'idle' && config.llmProvider === 'anthropic'
+  const isSpeakingState = state === 'speaking' || state === 'processing_speaking'
+  const lastCompletedAnswer =
+    conversation.completedTurns[conversation.completedTurns.length - 1]?.answer ?? ''
+  const canTogglePause = config.ttsEnabled && isSpeakingState
+  const canRepeat = config.ttsEnabled && state === 'idle' && lastCompletedAnswer.length > 0
+
+  const handleCancel = useCallback(() => {
+    setIsPaused(false)
+    cancel()
+  }, [cancel])
+
+  const handleTogglePause = useCallback(() => {
+    setIsPaused((prev) => {
+      if (prev) resume()
+      else pause()
+      return !prev
+    })
+  }, [pause, resume])
+
+  const handleRepeat = useCallback(() => {
+    if (!lastCompletedAnswer) return
+    void repeat(lastCompletedAnswer)
+  }, [lastCompletedAnswer, repeat])
 
   useKeyboardShortcuts({
     canCycleModel,
-    onCancel: cancel,
+    canRepeat,
+    canTogglePause,
+    onCancel: handleCancel,
     onCycleModel: conversation.cycleModel,
+    onRepeat: handleRepeat,
     onToggleDetailMode: () => setDetailMode((m) => (m === 'compact' ? 'expanded' : 'compact')),
+    onTogglePause: handleTogglePause,
     state,
   })
 
@@ -129,6 +163,9 @@ export function App({ config, initialSession }: AppProps) {
           model={conversation.activeModel}
           provider={config.llmProvider}
           canCycleModel={canCycleModel}
+          canTogglePause={canTogglePause}
+          canRepeat={canRepeat}
+          isPaused={isPaused}
         />
       )}
     </Box>

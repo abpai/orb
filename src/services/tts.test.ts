@@ -15,6 +15,18 @@ async function importGenerateAudio() {
   return module.generateAudio
 }
 
+async function resetAudioState() {
+  const { stopSpeaking, resetDetectedPlayer } = await import('./tts')
+  stopSpeaking()
+  resetDetectedPlayer()
+}
+
+// Yields one event-loop tick so any pending microtasks settle. Lets us assert
+// "spawn has not been called" without racing a wall-clock timeout.
+function flushMicrotasks(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve))
+}
+
 describe('generateAudio', () => {
   const originalFetch = globalThis.fetch
   const originalSpawn = Bun.spawn
@@ -211,9 +223,10 @@ describe('generateAudio', () => {
 describe('detectPlayer', () => {
   const originalWhich = Bun.which
 
-  afterEach(() => {
+  afterEach(async () => {
     mock.restore()
     Bun.which = originalWhich
+    await resetAudioState()
   })
 
   it('returns mpv config when mpv is available', async () => {
@@ -272,14 +285,50 @@ describe('detectPlayer', () => {
   })
 })
 
+describe('playAudio', () => {
+  const originalSpawn = Bun.spawn
+
+  afterEach(async () => {
+    mock.restore()
+    Bun.spawn = originalSpawn
+    await resetAudioState()
+  })
+
+  it('waits for resume before starting playback when paused first', async () => {
+    const { pauseSpeaking, playAudio, resumeSpeaking } = await importModule()
+    const spawnCalls: string[][] = []
+
+    Bun.spawn = mock((cmd: string[]) => {
+      spawnCalls.push(cmd)
+      return {
+        exited: Promise.resolve(0),
+        kill() {},
+      } as unknown as Bun.Subprocess
+    }) as unknown as typeof Bun.spawn
+
+    pauseSpeaking()
+    const playPromise = playAudio('/tmp/orb-test.aiff', 1)
+
+    await flushMicrotasks()
+    expect(spawnCalls).toHaveLength(0)
+
+    resumeSpeaking()
+    await playPromise
+
+    expect(spawnCalls).toHaveLength(1)
+    expect(spawnCalls[0]).toEqual(['afplay', '/tmp/orb-test.aiff', '-r', '1'])
+  })
+})
+
 describe('createStreamSession', () => {
   const originalSpawn = Bun.spawn
   const originalWhich = Bun.which
 
-  afterEach(() => {
+  afterEach(async () => {
     mock.restore()
     Bun.spawn = originalSpawn
     Bun.which = originalWhich
+    await resetAudioState()
   })
 
   function mockPlayerAvailable() {
@@ -434,6 +483,40 @@ describe('createStreamSession', () => {
     await session.done
     expect(killed).toBe(true)
     expect(session.wasKilled).toBe(true)
+  })
+
+  it('waits for resume before starting the player when paused first', async () => {
+    const { createStreamSession, pauseSpeaking, resetDetectedPlayer, resumeSpeaking } =
+      await importModule()
+    resetDetectedPlayer()
+    mockPlayerAvailable()
+
+    const spawnCalls: string[][] = []
+    Bun.spawn = mock((cmd: string[]) => {
+      spawnCalls.push(cmd)
+      return {
+        stdin: { write() {}, end() {} },
+        exited: Promise.resolve(0),
+        kill() {},
+      } as unknown as Bun.Subprocess
+    }) as unknown as typeof Bun.spawn
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.close()
+      },
+    })
+
+    pauseSpeaking()
+    const session = createStreamSession(stream, 1)
+
+    await flushMicrotasks()
+    expect(spawnCalls).toHaveLength(0)
+
+    resumeSpeaking()
+    await session.done
+
+    expect(spawnCalls).toHaveLength(1)
   })
 
   it('passes speed to player args', async () => {

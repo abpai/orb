@@ -4,17 +4,25 @@ import type { AppState } from '../../types'
 
 interface UseKeyboardShortcutsConfig {
   canCycleModel: boolean
+  canRepeat: boolean
+  canTogglePause: boolean
   onCancel(): void
   onCycleModel(): void
+  onRepeat(): void
   onToggleDetailMode(): void
+  onTogglePause(): void
   state: AppState
 }
 
 export function useKeyboardShortcuts({
   canCycleModel,
+  canRepeat,
+  canTogglePause,
   onCancel,
   onCycleModel,
+  onRepeat,
   onToggleDetailMode,
+  onTogglePause,
   state,
 }: UseKeyboardShortcutsConfig) {
   useInput(
@@ -33,6 +41,24 @@ export function useKeyboardShortcuts({
       }
     },
     { isActive: true },
+  )
+
+  useInput(
+    (input, key) => {
+      if (key.ctrl && input === 'p') {
+        onTogglePause()
+      }
+    },
+    { isActive: canTogglePause },
+  )
+
+  useInput(
+    (input, key) => {
+      if (key.ctrl && input === 'r') {
+        onRepeat()
+      }
+    },
+    { isActive: canRepeat },
   )
 
   useInput(

@@ -20,6 +20,9 @@ describe('Footer', () => {
     model: 'claude-haiku-4-5-20251001',
     provider: 'anthropic' as const,
     canCycleModel: true,
+    canTogglePause: false,
+    canRepeat: false,
+    isPaused: false,
   }
 
   it('renders micro orb and input prompt', () => {
@@ -60,5 +63,18 @@ describe('Footer', () => {
     )
     const frame = normalizeFrame(lastFrame())
     expect(frame).toContain('[gpt-5.4]')
+  })
+
+  it('shows pause and repeat hints when playback controls are available', () => {
+    const { lastFrame } = render(<Footer {...defaultProps} canTogglePause canRepeat />)
+    const frame = normalizeFrame(lastFrame())
+    expect(frame).toContain('^P pause')
+    expect(frame).toContain('^R repeat')
+  })
+
+  it('shows resume hint while playback is paused', () => {
+    const { lastFrame } = render(<Footer {...defaultProps} canTogglePause isPaused />)
+    const frame = normalizeFrame(lastFrame())
+    expect(frame).toContain('^P resume')
   })
 })

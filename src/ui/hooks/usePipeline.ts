@@ -68,6 +68,21 @@ export function usePipeline({
     task.cancel()
   }, [task])
 
+  const pause = useCallback(() => {
+    task.pause()
+  }, [task])
+
+  const resume = useCallback(() => {
+    task.resume()
+  }, [task])
+
+  const repeat = useCallback(
+    (text: string) => {
+      return task.repeatTts(text)
+    },
+    [task],
+  )
+
   const submit = useCallback(
     async (query: string) => {
       const pendingRun = startEntry(query)
@@ -79,5 +94,5 @@ export function usePipeline({
     [onRunComplete, startEntry, task],
   )
 
-  return { cancel, state, submit }
+  return { cancel, pause, resume, repeat, state, submit }
 }

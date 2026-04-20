@@ -6,6 +6,7 @@ import { createPipeline } from './pipeline'
 import type { PipelineObserver } from './observer'
 import { createAgentProcessor } from './processors/agent'
 import { createTTSProcessor, type TTSCompletionHandle } from './processors/tts'
+import { pauseSpeaking, resumeSpeaking, speak, stopSpeaking } from '../services/tts'
 import type { Transport, OutboundFrame } from './transports/types'
 import { isAbortError } from './adapters/utils'
 
@@ -33,6 +34,9 @@ export interface PipelineTask {
   onStateChange(listener: StateListener): () => void
   run(query: string, entryId: string): Promise<RunResult>
   cancel(): void
+  pause(): void
+  resume(): void
+  repeatTts(text: string): Promise<void>
   updateConfig(config: AppConfig): void
 }
 
@@ -228,6 +232,51 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
       currentTtsCompletion?.stop()
       currentTtsCompletion = null
       setState('idle')
+    },
+
+    pause(): void {
+      currentTtsCompletion?.pause()
+    },
+
+    resume(): void {
+      currentTtsCompletion?.resume()
+    },
+
+    async repeatTts(text: string): Promise<void> {
+      if (!config.ttsEnabled) return
+      if (state !== 'idle') return
+      const trimmed = text.trim()
+      if (!trimmed) return
+
+      const runId = ++runCounter
+      const completion: TTSCompletionHandle = {
+        waitForCompletion: () => speak(trimmed, config),
+        stop: () => stopSpeaking(),
+        pause: () => pauseSpeaking(),
+        resume: () => resumeSpeaking(),
+      }
+      currentTtsCompletion = completion
+      setState('speaking')
+
+      try {
+        await completion.waitForCompletion()
+      } catch (err) {
+        if (runId === runCounter && err instanceof TTSError) {
+          transport.sendOutbound(
+            createFrame('tts-error', {
+              errorType: err.type,
+              message: err.message,
+            }) as OutboundFrame,
+          )
+        }
+      } finally {
+        if (currentTtsCompletion === completion) {
+          currentTtsCompletion = null
+        }
+        if (runId === runCounter) {
+          setState('idle')
+        }
+      }
     },
 
     updateConfig(newConfig: AppConfig): void {

@@ -12,6 +12,9 @@ interface FooterProps {
   model: LlmModelId
   provider: LlmProvider
   canCycleModel: boolean
+  canTogglePause: boolean
+  canRepeat: boolean
+  isPaused: boolean
 }
 
 export const Footer = memo(function Footer({
@@ -20,6 +23,9 @@ export const Footer = memo(function Footer({
   model,
   provider,
   canCycleModel,
+  canTogglePause,
+  canRepeat,
+  isPaused,
 }: FooterProps) {
   const { columns } = useTerminalSize()
   const modelLabel = formatModelLabel(provider, model)
@@ -44,6 +50,16 @@ export const Footer = memo(function Footer({
         {showAllHints && (
           <Text color="gray" dimColor>
             ^O detail
+          </Text>
+        )}
+        {canTogglePause && (
+          <Text color="gray" dimColor>
+            {isPaused ? '^P resume' : '^P pause'}
+          </Text>
+        )}
+        {showAllHints && canRepeat && (
+          <Text color="gray" dimColor>
+            ^R repeat
           </Text>
         )}
         <Text color="gray" dimColor>

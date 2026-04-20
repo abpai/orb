@@ -6,7 +6,9 @@ import {
   createStreamSession,
   detectPlayer,
   generateAudio,
+  pauseSpeaking,
   playAudio,
+  resumeSpeaking,
   stopSpeaking,
   wasPlaybackStopped,
   resetPlaybackStoppedFlag,
@@ -25,6 +27,8 @@ export interface StreamingSpeechController {
   feedText(chunk: string): void
   finalize(): void
   stop(): void
+  pause(): void
+  resume(): void
   waitForCompletion(): Promise<void>
   isActive(): boolean
 }
@@ -95,6 +99,7 @@ export function createStreamingSpeechController(
   let lastCleanedText = ''
   let finalized = false
   let stopped = false
+  let paused = false
   let speakingStarted = false
   let completed = false
   let lastFlushAt = Date.now()
@@ -374,7 +379,7 @@ export function createStreamingSpeechController(
   }
 
   async function processNextSentence(): Promise<void> {
-    if (isProcessing || stopped) return
+    if (isProcessing || stopped || paused) return
 
     const sentence = sentenceQueue.shift()
     if (!sentence) {
@@ -440,7 +445,7 @@ export function createStreamingSpeechController(
   }
 
   function maybeStartProcessing(): void {
-    if (stopped || isProcessing) return
+    if (stopped || isProcessing || paused) return
     if (sentenceQueue.length >= config.ttsBufferSentences || finalized) {
       processNextSentence()
     }
@@ -473,6 +478,7 @@ export function createStreamingSpeechController(
 
     stop(): void {
       stopped = true
+      paused = false
       completed = true
       clearTimers()
       sentenceQueue.length = 0
@@ -490,6 +496,24 @@ export function createStreamingSpeechController(
 
       // Resolve completion promise
       completionResolve?.()
+    },
+
+    pause(): void {
+      if (stopped || completed || paused) return
+      paused = true
+      currentSession?.pause()
+      pauseSpeaking()
+    },
+
+    resume(): void {
+      if (stopped || completed || !paused) return
+      paused = false
+      currentSession?.resume()
+      resumeSpeaking()
+      // Kick the queue back into motion if an audio session isn't already running
+      if (!currentSession && !isProcessing) {
+        processNextSentence()
+      }
     },
 
     waitForCompletion(): Promise<void> {

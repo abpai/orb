@@ -1,6 +1,8 @@
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { unlink } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { createConnection } from 'node:net'
 import { TTSError, type AppConfig, type TTSErrorType, type Voice } from '../types'
 import { cleanTextForSpeech } from '../ui/utils/markdown'
 import { createGatewayClient, DEFAULT_SERVER_URL } from './gateway-client'
@@ -11,21 +13,35 @@ export { DEFAULT_SERVER_URL }
 export interface StreamSession {
   done: Promise<void>
   kill: () => void
+  pause: () => void
+  resume: () => void
   readonly wasKilled: boolean
+}
+
+function sendSignal(pid: number | undefined, signal: NodeJS.Signals): void {
+  if (!pid) return
+  try {
+    process.kill(pid, signal)
+  } catch {
+    /* process already exited */
+  }
 }
 
 type PlayerBinary = 'mpv' | 'ffplay'
 
 interface PlayerConfig {
   binary: PlayerBinary
-  buildArgs: (speed: number) => string[]
+  supportsIpc: boolean
+  buildArgs: (speed: number, ipcSocket?: string) => string[]
 }
 
 const PLAYERS: PlayerConfig[] = [
   {
     binary: 'mpv',
-    buildArgs: (speed: number) => {
+    supportsIpc: true,
+    buildArgs: (speed: number, ipcSocket?: string) => {
       const args = ['--no-video', '--no-terminal', '--msg-level=all=error']
+      if (ipcSocket) args.push(`--input-ipc-server=${ipcSocket}`)
       if (speed !== 1) args.push(`--speed=${speed}`)
       args.push('-')
       return args
@@ -33,6 +49,7 @@ const PLAYERS: PlayerConfig[] = [
   },
   {
     binary: 'ffplay',
+    supportsIpc: false,
     buildArgs: (speed: number) => {
       const args = ['-nodisp', '-autoexit', '-loglevel', 'error']
       if (speed !== 1) {
@@ -44,6 +61,27 @@ const PLAYERS: PlayerConfig[] = [
     },
   },
 ]
+
+function sendMpvCommand(socketPath: string, command: unknown[]): Promise<void> {
+  return new Promise((resolve) => {
+    if (!existsSync(socketPath)) {
+      resolve()
+      return
+    }
+    try {
+      const socket = createConnection(socketPath)
+      socket.on('error', () => resolve())
+      socket.on('connect', () => {
+        socket.write(JSON.stringify({ command }) + '\n', () => {
+          socket.end()
+          resolve()
+        })
+      })
+    } catch {
+      resolve()
+    }
+  })
+}
 
 let detectedPlayer: PlayerConfig | null | undefined = undefined
 
@@ -81,9 +119,20 @@ export function createStreamSession(
   let activeReader: ReturnType<ReadableStream<Uint8Array>['getReader']> | null = null
 
   const player = detectPlayer()
-  const args = player.buildArgs(speed)
+  const ipcSocket = player.supportsIpc
+    ? join(
+        tmpdir(),
+        `orb-${player.binary}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.sock`,
+      )
+    : null
+  const args = player.buildArgs(speed, ipcSocket ?? undefined)
 
   const done = (async () => {
+    const controlVersion = playbackControlVersion
+    if (!(await waitForPlaybackReady(controlVersion)) || killed) {
+      return
+    }
+
     proc = Bun.spawn([player.binary, ...args], {
       stdin: 'pipe',
       stdout: 'ignore',
@@ -124,6 +173,8 @@ export function createStreamSession(
     const exitCode = await proc.exited
     proc = null
 
+    if (ipcSocket) await unlink(ipcSocket).catch(() => {})
+
     if (exitCode !== 0 && !killed) {
       throw new TTSError(`Player exited with code ${exitCode}`, 'audio_playback')
     }
@@ -134,7 +185,28 @@ export function createStreamSession(
     kill() {
       killed = true
       activeReader?.cancel().catch(() => {})
+      // SIGCONT first: SIGTERM is queued behind SIGSTOP, so a paused process
+      // needs to be resumed before it can receive the kill signal.
+      if (proc) sendSignal(proc.pid, 'SIGCONT')
       proc?.kill()
+    },
+    pause() {
+      if (killed || !proc) return
+      if (ipcSocket) {
+        // mpv flushes its audio buffer cleanly on IPC pause; SIGSTOP leaves
+        // CoreAudio looping the last buffered chunk until it drains.
+        void sendMpvCommand(ipcSocket, ['set_property', 'pause', true])
+      } else {
+        sendSignal(proc.pid, 'SIGSTOP')
+      }
+    },
+    resume() {
+      if (killed || !proc) return
+      if (ipcSocket) {
+        void sendMpvCommand(ipcSocket, ['set_property', 'pause', false])
+      } else {
+        sendSignal(proc.pid, 'SIGCONT')
+      }
     },
     get wasKilled() {
       return killed
@@ -166,6 +238,29 @@ function categorizeTTSError(err: unknown, context: 'generate' | 'playback'): TTS
 
 let currentPlayProcess: Bun.Subprocess | null = null
 let playbackStoppedManually = false
+let playbackPaused = false
+let playbackControlVersion = 0
+const playbackResumeWaiters = new Set<() => void>()
+
+function flushPlaybackResumeWaiters(): void {
+  for (const resolve of playbackResumeWaiters) {
+    resolve()
+  }
+  playbackResumeWaiters.clear()
+}
+
+async function waitForPlaybackReady(controlVersion: number): Promise<boolean> {
+  while (playbackPaused) {
+    await new Promise<void>((resolve) => {
+      playbackResumeWaiters.add(resolve)
+    })
+    if (controlVersion !== playbackControlVersion) {
+      return false
+    }
+  }
+
+  return controlVersion === playbackControlVersion
+}
 
 export function wasPlaybackStopped(): boolean {
   return playbackStoppedManually
@@ -289,6 +384,11 @@ export async function generateAudio(
 
 export async function playAudio(path: string, speed?: number): Promise<void> {
   const args = isValidSpeed(speed) ? [path, '-r', String(speed)] : [path]
+  const controlVersion = playbackControlVersion
+
+  if (!(await waitForPlaybackReady(controlVersion))) {
+    return
+  }
 
   try {
     currentPlayProcess = Bun.spawn(['afplay', ...args], { stdout: 'ignore', stderr: 'ignore' })
@@ -316,10 +416,30 @@ export async function playAudio(path: string, speed?: number): Promise<void> {
 }
 
 export function stopSpeaking(): void {
+  playbackPaused = false
+  playbackControlVersion += 1
+  flushPlaybackResumeWaiters()
+
   if (currentPlayProcess) {
     playbackStoppedManually = true
+    sendSignal(currentPlayProcess.pid, 'SIGCONT')
     currentPlayProcess.kill()
     currentPlayProcess = null
+  }
+}
+
+export function pauseSpeaking(): void {
+  playbackPaused = true
+  if (currentPlayProcess) {
+    sendSignal(currentPlayProcess.pid, 'SIGSTOP')
+  }
+}
+
+export function resumeSpeaking(): void {
+  playbackPaused = false
+  flushPlaybackResumeWaiters()
+  if (currentPlayProcess) {
+    sendSignal(currentPlayProcess.pid, 'SIGCONT')
   }
 }
 

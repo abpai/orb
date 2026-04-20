@@ -20,6 +20,9 @@ describe('Footer (narrow terminal < 60 cols)', () => {
     model: 'claude-haiku-4-5-20251001',
     provider: 'anthropic' as const,
     canCycleModel: true,
+    canTogglePause: false,
+    canRepeat: false,
+    isPaused: false,
   }
 
   it('always shows ^C hint', () => {
@@ -45,5 +48,12 @@ describe('Footer (narrow terminal < 60 cols)', () => {
     const { lastFrame } = render(<Footer {...defaultProps} state="processing" />)
     const frame = normalizeFrame(lastFrame())
     expect(frame).toContain('⣾ ❯')
+  })
+
+  it('still shows the pause hint when space is tight', () => {
+    const { lastFrame } = render(<Footer {...defaultProps} canTogglePause isPaused />)
+    const frame = normalizeFrame(lastFrame())
+    expect(frame).toContain('^P resume')
+    expect(frame).not.toContain('^R repeat')
   })
 })
