@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useSyncExternalStore } from 'react'
 
 interface TerminalSize {
   columns: number
@@ -6,8 +6,11 @@ interface TerminalSize {
 }
 
 const DEFAULT_SIZE: TerminalSize = { columns: 80, rows: 24 }
+const subscribers = new Set<() => void>()
+let isListeningForResize = false
+let currentSize = DEFAULT_SIZE
 
-function getCurrentSize(): TerminalSize {
+function readCurrentSize(): TerminalSize {
   if (!process.stdout.isTTY) {
     return DEFAULT_SIZE
   }
@@ -17,21 +20,53 @@ function getCurrentSize(): TerminalSize {
   }
 }
 
+function getCurrentSize(): TerminalSize {
+  const nextSize = readCurrentSize()
+  if (nextSize.columns === currentSize.columns && nextSize.rows === currentSize.rows) {
+    return currentSize
+  }
+  currentSize = nextSize
+  return currentSize
+}
+
+function notifySubscribers() {
+  for (const subscriber of subscribers) {
+    subscriber()
+  }
+}
+
+function handleResize() {
+  const nextSize = readCurrentSize()
+  if (nextSize.columns === currentSize.columns && nextSize.rows === currentSize.rows) {
+    return
+  }
+  currentSize = nextSize
+  notifySubscribers()
+}
+
+function attachResizeListener() {
+  if (isListeningForResize || !process.stdout.isTTY) return
+  currentSize = getCurrentSize()
+  process.stdout.on('resize', handleResize)
+  isListeningForResize = true
+}
+
+function detachResizeListener() {
+  if (!isListeningForResize || subscribers.size > 0) return
+  process.stdout.off('resize', handleResize)
+  isListeningForResize = false
+}
+
+function subscribe(onStoreChange: () => void) {
+  subscribers.add(onStoreChange)
+  attachResizeListener()
+
+  return () => {
+    subscribers.delete(onStoreChange)
+    detachResizeListener()
+  }
+}
+
 export function useTerminalSize(): TerminalSize {
-  const [size, setSize] = useState<TerminalSize>(getCurrentSize)
-
-  useEffect(() => {
-    if (!process.stdout.isTTY) return
-
-    const handleResize = () => {
-      setSize(getCurrentSize())
-    }
-
-    process.stdout.on('resize', handleResize)
-    return () => {
-      process.stdout.off('resize', handleResize)
-    }
-  }, [])
-
-  return size
+  return useSyncExternalStore(subscribe, getCurrentSize, () => DEFAULT_SIZE)
 }
