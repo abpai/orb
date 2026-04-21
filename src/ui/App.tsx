@@ -59,6 +59,7 @@ export function App({ config, initialSession }: AppProps) {
     onFrame: conversation.handleFrame,
     onRunComplete: conversation.handleRunComplete,
     onStateChange: handleStateChange,
+    onSubmitError: conversation.recordLocalError,
     startEntry: conversation.startEntry,
   })
 

@@ -211,6 +211,22 @@ export function useConversation({ config, initialSession, taskState }: UseConver
     void persistSession(nextModel, getHistorySnapshot())
   }, [activeModel, config.llmProvider, getHistorySnapshot, persistSession])
 
+  const recordLocalError = useCallback((question: string, message: string) => {
+    const trimmedQuestion = question.trim()
+    if (!trimmedQuestion || !message.trim()) return
+
+    const entry: HistoryEntry = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      question: trimmedQuestion,
+      toolCalls: [],
+      answer: '',
+      error: message,
+    }
+
+    setCompletedTurns((prev) => [...prev, entry])
+    pendingSaveRef.current = true
+  }, [])
+
   return {
     liveTurn,
     activeModel,
@@ -220,6 +236,7 @@ export function useConversation({ config, initialSession, taskState }: UseConver
     initialAgentSession,
     initialModel,
     startEntry,
+    recordLocalError,
     ttsError,
     cycleModel,
   }

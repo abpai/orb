@@ -23,6 +23,7 @@ Orb is a Bun-native terminal app for exploring real codebases with Anthropic or 
 - **Provider selection** - Choose Anthropic (Claude) or OpenAI via CLI flags
 - **Model switching (Claude)** - Cycle Anthropic models during a conversation with Shift+Tab
 - **Session persistence** - Automatically resume the last session per project
+- **Slash command prompts** - Expand `/explain`-style shortcuts from project or global Markdown files
 - **Focused terminal UI** - Ink-based interface with conversation history, tool activity, and the Orb intro
 
 ## Installation
@@ -149,6 +150,32 @@ orb --skip-intro
 - Press **Shift+Tab** to cycle Claude models (Anthropic only)
 - Press **Ctrl+O** to toggle live tool-call details
 - Press **Ctrl+C** to exit
+
+### Slash Commands
+
+Orb can expand slash-command prompts from Markdown files:
+
+- Project-local commands: `<project>/.orb/commands/*.md`
+- Global commands: `~/.orb/commands/*.md`
+- If both exist, the project-local command wins
+
+Example:
+
+```bash
+mkdir -p ~/.orb/commands
+cat > ~/.orb/commands/explain.md <<'EOF'
+Explain the relevant code clearly, call out the important moving parts, and keep the answer concise.
+EOF
+```
+
+Then in Orb:
+
+```text
+/explain
+/explain why is this failing?
+```
+
+Orb will load `explain.md`, and if you include trailing text it appends that text after a blank line. If a slash command is missing, Orb shows a turn-level error with the paths it checked.
 
 ## TTS Setup
 
