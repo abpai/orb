@@ -6,6 +6,11 @@ import {
   writeGlobalConfig,
   type OrbGlobalConfig,
 } from './services/global-config'
+import {
+  installDefaultCommands,
+  listBundledDefaultCommands,
+  type InstallDefaultCommandsResult,
+} from './services/default-commands'
 import { DEFAULT_MODEL_BY_PROVIDER } from './config'
 import { VOICES, type LlmProvider, type Voice } from './types'
 
@@ -15,6 +20,8 @@ const KOKORO_SPACY_INSTALL =
 
 interface RunSetupOptions {
   configPath?: string
+  commandsSourceDir?: string
+  commandsTargetDir?: string
 }
 
 function ensureInteractiveTerminal(): void {
@@ -214,6 +221,58 @@ export async function runSetup(options: RunSetupOptions = {}): Promise<void> {
   await writeGlobalConfig(nextConfig, configPath)
   outro(`Saved config to ${configPath}`)
   printTtsSetupNextSteps(nextConfig)
+  await promptInstallDefaultCommands({
+    sourceDir: options.commandsSourceDir,
+    targetDir: options.commandsTargetDir,
+  })
+}
+
+async function promptInstallDefaultCommands(options: {
+  sourceDir?: string
+  targetDir?: string
+}): Promise<void> {
+  const defaults = await listBundledDefaultCommands(options.sourceDir)
+  if (defaults.length === 0) return
+
+  const commandList = defaults.map((command) => `/${command.name}`).join(', ')
+  const installChoice = await confirm({
+    message: `Install ${defaults.length} default slash command${
+      defaults.length === 1 ? '' : 's'
+    } (${commandList}) to your global commands directory?`,
+    initialValue: true,
+  })
+  if (isCancel(installChoice)) return
+
+  const shouldInstall = installChoice as boolean
+
+  if (!shouldInstall) return
+
+  const result = await installDefaultCommands({
+    sourceDir: options.sourceDir,
+    targetDir: options.targetDir,
+  })
+  printInstallResult(result)
+}
+
+function printInstallResult(result: InstallDefaultCommandsResult): void {
+  console.info('')
+  if (result.installed.length > 0) {
+    console.info(
+      `Installed ${result.installed.length} command${
+        result.installed.length === 1 ? '' : 's'
+      } to ${result.targetDir}: ${result.installed.map((name) => `/${name}`).join(', ')}`,
+    )
+  }
+  if (result.skipped.length > 0) {
+    console.info(
+      `Skipped ${result.skipped.length} existing command${
+        result.skipped.length === 1 ? '' : 's'
+      }: ${result.skipped.map((name) => `/${name}`).join(', ')}`,
+    )
+  }
+  if (result.installed.length === 0 && result.skipped.length === 0) {
+    console.info('No default commands to install.')
+  }
 }
 
 export async function runSetupCommand(

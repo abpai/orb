@@ -319,5 +319,33 @@ describe('useConversation', () => {
 
       app.unmount()
     })
+
+    it('records a local built-in answer as a completed turn', async () => {
+      let controls!: ReturnType<typeof useConversation>
+
+      function Harness() {
+        controls = useConversation({
+          config: makeConfig('/tmp/local-answer-test'),
+          initialSession: null,
+          taskState: 'idle',
+        })
+        return null
+      }
+
+      const app = render(<Harness />)
+
+      controls.recordLocalAnswer('/commands', 'Available slash commands')
+      await flush()
+
+      expect(controls.liveTurn).toBeNull()
+      expect(controls.completedTurns).toHaveLength(1)
+      expect(controls.completedTurns[0]).toMatchObject({
+        question: '/commands',
+        answer: 'Available slash commands',
+        error: null,
+      })
+
+      app.unmount()
+    })
   })
 })

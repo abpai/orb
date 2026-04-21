@@ -8,6 +8,7 @@ import {
   expandSlashCommandInput,
   getGlobalCommandsDir,
   getProjectCommandsDir,
+  listAvailableSlashCommands,
 } from './commands'
 
 const cleanupPaths = new Set<string>()
@@ -30,7 +31,7 @@ describe('expandSlashCommandInput', () => {
       homeDir: '/tmp/orb-home',
     })
 
-    expect(result).toEqual({ prompt: 'Explain this file' })
+    expect(result).toEqual({ kind: 'prompt', prompt: 'Explain this file' })
   })
 
   it('resolves a global slash command', async () => {
@@ -45,6 +46,8 @@ describe('expandSlashCommandInput', () => {
       homeDir,
     })
 
+    expect(result.kind).toBe('prompt')
+    if (result.kind !== 'prompt') throw new Error('expected prompt result')
     expect(result.prompt).toBe('Explain the selected code.')
     expect(result.sourcePath).toBe(path.join(getGlobalCommandsDir(homeDir), 'explain.md'))
   })
@@ -64,6 +67,8 @@ describe('expandSlashCommandInput', () => {
       homeDir,
     })
 
+    expect(result.kind).toBe('prompt')
+    if (result.kind !== 'prompt') throw new Error('expected prompt result')
     expect(result.prompt).toBe('Local explain prompt.')
     expect(result.sourcePath).toBe(path.join(getProjectCommandsDir(projectDir), 'explain.md'))
   })
@@ -80,6 +85,8 @@ describe('expandSlashCommandInput', () => {
       homeDir,
     })
 
+    expect(result.kind).toBe('prompt')
+    if (result.kind !== 'prompt') throw new Error('expected prompt result')
     expect(result.prompt).toBe('Explain the selected code.\n\nwhy is this failing?')
   })
 
@@ -106,5 +113,115 @@ describe('expandSlashCommandInput', () => {
         homeDir,
       }),
     ).rejects.toThrow(SlashCommandError)
+  })
+
+  it('handles /help as a built-in local command', async () => {
+    const result = await expandSlashCommandInput({
+      input: '/help',
+      projectPath: '/tmp/orb-project',
+      homeDir: '/tmp/orb-home',
+    })
+
+    expect(result.kind).toBe('builtin')
+    if (result.kind !== 'builtin') throw new Error('expected builtin result')
+    expect(result.commandName).toBe('help')
+    expect(result.answer).toContain('Slash commands')
+    expect(result.answer).toContain('/commands')
+  })
+
+  it('prefers markdown command files over built-in names', async () => {
+    const homeDir = await mkdtemp(path.join(tmpdir(), 'orb-command-home-'))
+    const projectDir = await mkdtemp(path.join(tmpdir(), 'orb-command-project-'))
+    cleanupPaths.add(homeDir)
+    cleanupPaths.add(projectDir)
+
+    await writeCommand(getGlobalCommandsDir(homeDir), 'help', 'Global help prompt.')
+    await writeCommand(getProjectCommandsDir(projectDir), 'help', 'Project help prompt.')
+
+    const result = await expandSlashCommandInput({
+      input: '/help',
+      projectPath: projectDir,
+      homeDir,
+    })
+
+    expect(result.kind).toBe('prompt')
+    if (result.kind !== 'prompt') throw new Error('expected prompt result')
+    expect(result.prompt).toBe('Project help prompt.')
+    expect(result.sourcePath).toBe(path.join(getProjectCommandsDir(projectDir), 'help.md'))
+  })
+
+  it('lists built-ins and markdown commands for /commands', async () => {
+    const homeDir = await mkdtemp(path.join(tmpdir(), 'orb-command-home-'))
+    const projectDir = await mkdtemp(path.join(tmpdir(), 'orb-command-project-'))
+    cleanupPaths.add(homeDir)
+    cleanupPaths.add(projectDir)
+
+    await writeCommand(getGlobalCommandsDir(homeDir), 'alpha', 'Global alpha')
+    await writeCommand(getGlobalCommandsDir(homeDir), 'shared', 'Global shared')
+    await writeCommand(getProjectCommandsDir(projectDir), 'beta', 'Project beta')
+    await writeCommand(getProjectCommandsDir(projectDir), 'shared', 'Project shared')
+
+    const result = await expandSlashCommandInput({
+      input: '/commands',
+      projectPath: projectDir,
+      homeDir,
+    })
+
+    expect(result.kind).toBe('builtin')
+    if (result.kind !== 'builtin') throw new Error('expected builtin result')
+    expect(result.answer).toContain('- /help (built-in)')
+    expect(result.answer).toContain('- /commands (built-in)')
+    expect(result.answer).toContain('- /alpha (global)')
+    expect(result.answer).toContain('- /beta (project)')
+    expect(result.answer).toContain('- /shared (project, overrides global)')
+  })
+})
+
+describe('listAvailableSlashCommands', () => {
+  it('merges project, global, and built-in commands with project precedence', async () => {
+    const homeDir = await mkdtemp(path.join(tmpdir(), 'orb-command-home-'))
+    const projectDir = await mkdtemp(path.join(tmpdir(), 'orb-command-project-'))
+    cleanupPaths.add(homeDir)
+    cleanupPaths.add(projectDir)
+
+    await writeCommand(getGlobalCommandsDir(homeDir), 'shared', 'Global shared')
+    await writeCommand(getProjectCommandsDir(projectDir), 'shared', 'Project shared')
+    await writeCommand(getProjectCommandsDir(projectDir), 'local', 'Project local')
+
+    const commands = await listAvailableSlashCommands({
+      projectPath: projectDir,
+      homeDir,
+    })
+
+    expect(
+      commands.map((command) => [command.name, command.source, command.shadowedSources ?? []]),
+    ).toEqual([
+      ['commands', 'builtin', []],
+      ['help', 'builtin', []],
+      ['local', 'project', []],
+      ['shared', 'project', ['global']],
+    ])
+  })
+
+  it('shows builtin names as overridden when files reuse them', async () => {
+    const homeDir = await mkdtemp(path.join(tmpdir(), 'orb-command-home-'))
+    const projectDir = await mkdtemp(path.join(tmpdir(), 'orb-command-project-'))
+    cleanupPaths.add(homeDir)
+    cleanupPaths.add(projectDir)
+
+    await writeCommand(getGlobalCommandsDir(homeDir), 'help', 'Global help')
+    await writeCommand(getProjectCommandsDir(projectDir), 'help', 'Project help')
+
+    const commands = await listAvailableSlashCommands({
+      projectPath: projectDir,
+      homeDir,
+    })
+
+    expect(commands.find((command) => command.name === 'help')).toEqual({
+      name: 'help',
+      source: 'project',
+      path: path.join(getProjectCommandsDir(projectDir), 'help.md'),
+      shadowedSources: ['global', 'builtin'],
+    })
   })
 })

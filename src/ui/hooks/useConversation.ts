@@ -21,6 +21,19 @@ interface UseConversationConfig {
   taskState: AppState
 }
 
+function createLocalEntry(
+  question: string,
+  options: { answer?: string; error?: string | null } = {},
+): HistoryEntry {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    question,
+    toolCalls: [],
+    answer: options.answer ?? '',
+    error: options.error ?? null,
+  }
+}
+
 export function useConversation({ config, initialSession, taskState }: UseConversationConfig) {
   const sessionMatchesProvider = initialSession?.llmProvider === config.llmProvider
   const initialHistory = initialSession?.history ?? []
@@ -110,14 +123,8 @@ export function useConversation({ config, initialSession, taskState }: UseConver
       setCompletedTurns((prev) => [...prev, existingLiveTurn])
     }
 
-    const entryId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    const newTurn: HistoryEntry = {
-      id: entryId,
-      question: trimmed,
-      toolCalls: [],
-      answer: '',
-      error: null,
-    }
+    const newTurn = createLocalEntry(trimmed)
+    const entryId = newTurn.id
 
     activeEntryIdRef.current = entryId
     updateLiveTurn(newTurn)
@@ -215,13 +222,18 @@ export function useConversation({ config, initialSession, taskState }: UseConver
     const trimmedQuestion = question.trim()
     if (!trimmedQuestion || !message.trim()) return
 
-    const entry: HistoryEntry = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      question: trimmedQuestion,
-      toolCalls: [],
-      answer: '',
-      error: message,
-    }
+    const entry = createLocalEntry(trimmedQuestion, { error: message })
+
+    setCompletedTurns((prev) => [...prev, entry])
+    pendingSaveRef.current = true
+  }, [])
+
+  const recordLocalAnswer = useCallback((question: string, answer: string) => {
+    const trimmedQuestion = question.trim()
+    const trimmedAnswer = answer.trim()
+    if (!trimmedQuestion || !trimmedAnswer) return
+
+    const entry = createLocalEntry(trimmedQuestion, { answer: trimmedAnswer })
 
     setCompletedTurns((prev) => [...prev, entry])
     pendingSaveRef.current = true
@@ -236,6 +248,7 @@ export function useConversation({ config, initialSession, taskState }: UseConver
     initialAgentSession,
     initialModel,
     startEntry,
+    recordLocalAnswer,
     recordLocalError,
     ttsError,
     cycleModel,

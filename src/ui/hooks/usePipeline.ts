@@ -18,6 +18,7 @@ interface UsePipelineConfig {
   initialModel: string
   initialSession?: AgentSession
   onFrame(frame: OutboundFrame): void
+  onSubmitBuiltin(query: string, answer: string): void
   onRunComplete(result: RunResult): void
   onStateChange(state: TaskState): void
   onSubmitError(query: string, message: string): void
@@ -30,6 +31,7 @@ export function usePipeline({
   initialModel,
   initialSession,
   onFrame,
+  onSubmitBuiltin,
   onRunComplete,
   onStateChange,
   onSubmitError,
@@ -94,6 +96,10 @@ export function usePipeline({
           input: query,
           projectPath: config.projectPath,
         })
+        if (expanded.kind === 'builtin') {
+          onSubmitBuiltin(query, expanded.answer)
+          return
+        }
         prompt = expanded.prompt
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
@@ -107,7 +113,7 @@ export function usePipeline({
       const result = await task.run(pendingRun.query, pendingRun.entryId)
       onRunComplete(result)
     },
-    [config.projectPath, onRunComplete, onSubmitError, startEntry, task],
+    [config.projectPath, onRunComplete, onSubmitBuiltin, onSubmitError, startEntry, task],
   )
 
   return { cancel, pause, resume, repeat, state, submit }

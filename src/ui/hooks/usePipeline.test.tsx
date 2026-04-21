@@ -28,7 +28,10 @@ describe('usePipeline submit', () => {
     }))
 
     mock.module('../../services/commands', () => ({
-      expandSlashCommandInput: async () => ({ prompt: 'Expanded explain prompt' }),
+      expandSlashCommandInput: async () => ({
+        kind: 'prompt',
+        prompt: 'Expanded explain prompt',
+      }),
     }))
 
     const { usePipeline } = await importUsePipeline()
@@ -42,6 +45,7 @@ describe('usePipeline submit', () => {
         activeModel: DEFAULT_CONFIG.llmModel,
         initialModel: DEFAULT_CONFIG.llmModel,
         onFrame: () => {},
+        onSubmitBuiltin: () => {},
         onRunComplete: () => {},
         onStateChange: () => {},
         onSubmitError: () => {},
@@ -96,6 +100,7 @@ describe('usePipeline submit', () => {
         activeModel: DEFAULT_CONFIG.llmModel,
         initialModel: DEFAULT_CONFIG.llmModel,
         onFrame: () => {},
+        onSubmitBuiltin: () => {},
         onRunComplete: () => {},
         onStateChange: () => {},
         onSubmitError: (query, message) => submitErrors.push({ query, message }),
@@ -111,6 +116,61 @@ describe('usePipeline submit', () => {
     expect(submitErrors).toEqual([
       { query: '/explain', message: 'Slash command "/explain" not found.' },
     ])
+    expect(startEntry).not.toHaveBeenCalled()
+    expect(taskRun).not.toHaveBeenCalled()
+
+    app.unmount()
+  })
+
+  it('routes built-in slash commands to the local built-in handler', async () => {
+    const taskRun = mock(async () => ({ entryId: 'entry-1', text: '', cancelled: false }))
+
+    mock.module('../../pipeline/task', () => ({
+      createPipelineTask: () => ({
+        updateConfig: () => {},
+        onStateChange: () => () => {},
+        cancel: () => {},
+        pause: () => {},
+        resume: () => {},
+        repeatTts: async () => {},
+        run: taskRun,
+      }),
+    }))
+
+    mock.module('../../services/commands', () => ({
+      expandSlashCommandInput: async () => ({
+        kind: 'builtin',
+        commandName: 'commands',
+        answer: 'Available slash commands',
+      }),
+    }))
+
+    const { usePipeline } = await importUsePipeline()
+
+    const builtins: Array<{ query: string; answer: string }> = []
+    const startEntry = mock(() => ({ entryId: 'entry-1', query: 'should-not-run' }))
+    let controls!: ReturnType<typeof usePipeline>
+
+    function Harness() {
+      controls = usePipeline({
+        config: DEFAULT_CONFIG,
+        activeModel: DEFAULT_CONFIG.llmModel,
+        initialModel: DEFAULT_CONFIG.llmModel,
+        onFrame: () => {},
+        onSubmitBuiltin: (query, answer) => builtins.push({ query, answer }),
+        onRunComplete: () => {},
+        onStateChange: () => {},
+        onSubmitError: () => {},
+        startEntry,
+      })
+      return null
+    }
+
+    const app = render(<Harness />)
+
+    await controls.submit('/commands')
+
+    expect(builtins).toEqual([{ query: '/commands', answer: 'Available slash commands' }])
     expect(startEntry).not.toHaveBeenCalled()
     expect(taskRun).not.toHaveBeenCalled()
 

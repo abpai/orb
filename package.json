@@ -12,6 +12,7 @@
   },
   "files": [
     "assets/**/*",
+    "commands/**/*.md",
     "prompts/**/*.md",
     "src/**/*.ts",
     "src/**/*.tsx",

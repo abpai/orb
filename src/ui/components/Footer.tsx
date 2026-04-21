@@ -15,6 +15,7 @@ interface FooterProps {
   canTogglePause: boolean
   canRepeat: boolean
   isPaused: boolean
+  projectPath?: string
 }
 
 export const Footer = memo(function Footer({
@@ -26,6 +27,7 @@ export const Footer = memo(function Footer({
   canTogglePause,
   canRepeat,
   isPaused,
+  projectPath,
 }: FooterProps) {
   const { columns } = useTerminalSize()
   const modelLabel = formatModelLabel(provider, model)
@@ -35,7 +37,7 @@ export const Footer = memo(function Footer({
 
   return (
     <Box flexDirection="column">
-      <InputPrompt onSubmit={onSubmit} state={state} />
+      <InputPrompt onSubmit={onSubmit} state={state} projectPath={projectPath} />
       <Box gap={2}>
         {showModel && (
           <Text color="gray" dimColor>

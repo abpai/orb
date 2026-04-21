@@ -1,6 +1,7 @@
-import React, { memo, useCallback, useRef, useState } from 'react'
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 
+import { listAvailableSlashCommands } from '../../services/commands'
 import type { AppState } from '../../types'
 import { keyToAction } from '../input/keymap'
 import { sanitizePaste } from '../input/paste'
@@ -28,9 +29,39 @@ import { MicroOrb } from './MicroOrb'
 interface InputPromptProps {
   onSubmit: (value: string) => void
   state: AppState
+  projectPath?: string
+  homeDir?: string
 }
 
-export const InputPrompt = memo(function InputPrompt({ onSubmit, state }: InputPromptProps) {
+interface CycleState {
+  matches: string[]
+  index: number
+}
+
+const COMMAND_NAME_PATTERN = /^\/(\S*)/
+
+function applyCompletion(buffer: TextBufferState, newCommand: string): TextBufferState {
+  const line = buffer.lines[0] ?? ''
+  const match = COMMAND_NAME_PATTERN.exec(line)
+  const currentName = match?.[1] ?? ''
+  const rest = line.slice(1 + currentName.length)
+  const hadTrailing = rest.length > 0
+  const tail = hadTrailing ? rest : ' '
+  const newLine = `/${newCommand}${tail}`
+  const newCol = 1 + newCommand.length + (hadTrailing ? 0 : 1)
+  return {
+    lines: [newLine, ...buffer.lines.slice(1)],
+    row: 0,
+    col: newCol,
+  }
+}
+
+export const InputPrompt = memo(function InputPrompt({
+  onSubmit,
+  state,
+  projectPath,
+  homeDir,
+}: InputPromptProps) {
   const [buffer, setBuffer] = useState<TextBufferState>(() => empty())
   // Mirror of `buffer` for the useInput callback. Ink can fire stdin events
   // multiple times per tick (chunked paste), so the closure's `buffer` goes
@@ -38,6 +69,28 @@ export const InputPrompt = memo(function InputPrompt({ onSubmit, state }: InputP
   // setState updater can't provide without doing side effects in the updater.
   const bufferRef = useRef(buffer)
   const desiredColRef = useRef(0)
+  const commandNamesRef = useRef<string[]>([])
+  const cycleRef = useRef<CycleState | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    commandNamesRef.current = []
+    cycleRef.current = null
+
+    if (!projectPath) return
+
+    void listAvailableSlashCommands({ projectPath, homeDir })
+      .then((commands) => {
+        if (cancelled) return
+        commandNamesRef.current = commands.map((command) => command.name)
+      })
+      .catch(() => {
+        /* tab-complete is best-effort; ignore load failures */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectPath, homeDir])
 
   const apply = useCallback(
     (update: (current: TextBufferState) => TextBufferState, resetDesiredCol = true) => {
@@ -50,8 +103,39 @@ export const InputPrompt = memo(function InputPrompt({ onSubmit, state }: InputP
     [],
   )
 
+  const handleComplete = useCallback(() => {
+    const buf = bufferRef.current
+    if (buf.row !== 0) return
+
+    // Cycling replaces the whole command name, so the cursor can sit anywhere —
+    // skip the cursor-position guard used for the initial completion below.
+    const cycle = cycleRef.current
+    if (cycle && cycle.matches.length > 1) {
+      const nextIndex = (cycle.index + 1) % cycle.matches.length
+      cycleRef.current = { ...cycle, index: nextIndex }
+      apply((current) => applyCompletion(current, cycle.matches[nextIndex]!))
+      return
+    }
+
+    const line = buf.lines[0] ?? ''
+    const match = COMMAND_NAME_PATTERN.exec(line)
+    if (!match) return
+    const currentName = match[1] ?? ''
+    const commandEnd = 1 + currentName.length
+    if (buf.col > commandEnd) return
+
+    const prefix = currentName.toLowerCase()
+    const matches = commandNamesRef.current.filter((name) => name.toLowerCase().startsWith(prefix))
+    if (matches.length === 0) return
+
+    apply((current) => applyCompletion(current, matches[0]!))
+    cycleRef.current = matches.length > 1 ? { matches, index: 0 } : null
+  }, [apply])
+
   useInput((input, key) => {
     const action = keyToAction(input, key)
+    if (action.kind !== 'complete') cycleRef.current = null
+
     switch (action.kind) {
       case 'submit': {
         const text = toString(bufferRef.current).trim()
@@ -86,6 +170,8 @@ export const InputPrompt = memo(function InputPrompt({ onSubmit, state }: InputP
         return apply(killToLineEnd)
       case 'kill-line':
         return apply(killLine)
+      case 'complete':
+        return handleComplete()
       case 'insert': {
         const text = action.text.length > 1 ? sanitizePaste(action.text) : action.text
         if (text.length === 0) return

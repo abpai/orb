@@ -7,6 +7,15 @@ mock.module('../../hooks/useAnimationFrame', () => ({
   useAnimationFrame: () => 0,
 }))
 
+mock.module('../../../services/commands', () => ({
+  listAvailableSlashCommands: async () => [
+    { name: 'commands', source: 'builtin' },
+    { name: 'explain', source: 'project' },
+    { name: 'explore', source: 'project' },
+    { name: 'help', source: 'builtin' },
+  ],
+}))
+
 import { InputPrompt } from '../InputPrompt'
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
@@ -37,6 +46,73 @@ describe('InputPrompt', () => {
     expect(normalizeFrame(app.lastFrame())).toContain('hello world')
     expect(normalizeFrame(app.lastFrame())).not.toContain('[200~')
     expect(normalizeFrame(app.lastFrame())).not.toContain('[201~')
+
+    app.unmount()
+  })
+
+  it('completes a slash-command prefix on Tab and submits the expanded name', async () => {
+    const submitted: string[] = []
+    const app = render(
+      <InputPrompt
+        state="idle"
+        onSubmit={(value) => submitted.push(value)}
+        projectPath="/tmp/tab-complete-project"
+        homeDir="/tmp/tab-complete-home"
+      />,
+    )
+    await flush()
+
+    app.stdin.write('/he')
+    app.stdin.write('\t')
+    app.stdin.write('\r')
+    await flush()
+
+    expect(submitted).toEqual(['/help'])
+
+    app.unmount()
+  })
+
+  it('cycles through matches on repeated Tab for an ambiguous prefix', async () => {
+    const submitted: string[] = []
+    const app = render(
+      <InputPrompt
+        state="idle"
+        onSubmit={(value) => submitted.push(value)}
+        projectPath="/tmp/tab-complete-project"
+        homeDir="/tmp/tab-complete-home"
+      />,
+    )
+    await flush()
+
+    app.stdin.write('/exp')
+    app.stdin.write('\t')
+    app.stdin.write('\t')
+    app.stdin.write('\r')
+    await flush()
+
+    expect(submitted).toEqual(['/explore'])
+
+    app.unmount()
+  })
+
+  it('is a no-op when Tab is pressed on non-slash input', async () => {
+    const submitted: string[] = []
+    const app = render(
+      <InputPrompt
+        state="idle"
+        onSubmit={(value) => submitted.push(value)}
+        projectPath="/tmp/tab-complete-project"
+        homeDir="/tmp/tab-complete-home"
+      />,
+    )
+    await flush()
+
+    app.stdin.write('hello')
+    app.stdin.write('\t')
+    app.stdin.write('\r')
+    await flush()
+
+    expect(submitted).toEqual(['hello'])
 
     app.unmount()
   })

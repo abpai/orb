@@ -59,6 +59,7 @@ export function App({ config, initialSession }: AppProps) {
     onFrame: conversation.handleFrame,
     onRunComplete: conversation.handleRunComplete,
     onStateChange: handleStateChange,
+    onSubmitBuiltin: conversation.recordLocalAnswer,
     onSubmitError: conversation.recordLocalError,
     startEntry: conversation.startEntry,
   })
@@ -167,6 +168,7 @@ export function App({ config, initialSession }: AppProps) {
           canTogglePause={canTogglePause}
           canRepeat={canRepeat}
           isPaused={isPaused}
+          projectPath={config.projectPath}
         />
       )}
     </Box>

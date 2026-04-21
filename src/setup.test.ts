@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, mock } from 'bun:test'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -55,7 +55,11 @@ describe('runSetup', () => {
 
       const { runSetup } = await importSetupModule()
 
-      await runSetup({ configPath })
+      await runSetup({
+        configPath,
+        commandsSourceDir: join(tempDir, 'no-commands'),
+        commandsTargetDir: join(tempDir, 'commands-target'),
+      })
 
       const written = await readFile(configPath, 'utf8')
       expect(written).toContain('provider = "openai"')
@@ -154,7 +158,11 @@ describe('runSetup', () => {
     }))
 
     const { runSetupCommand } = await importSetupModule()
-    await runSetupCommand([], { configPath })
+    await runSetupCommand([], {
+      configPath,
+      commandsSourceDir: join(tempDir, 'no-commands'),
+      commandsTargetDir: join(tempDir, 'commands-target'),
+    })
 
     const written = await readFile(configPath, 'utf8')
     expect(written).toContain('provider = "anthropic"')
@@ -192,11 +200,145 @@ describe('runSetup', () => {
 
       const { runSetup } = await importSetupModule()
 
-      await runSetup({ configPath })
+      await runSetup({
+        configPath,
+        commandsSourceDir: join(tempDir, 'no-commands'),
+        commandsTargetDir: join(tempDir, 'commands-target'),
+      })
 
       expect(infoMessages.join('\n')).toContain('Generate mode uses macOS `say` and `afplay`')
     } finally {
       console.info = originalConsoleInfo
     }
+  })
+
+  it('installs bundled default commands into the target directory', async () => {
+    setTTY(true)
+    const tempDir = await mkdtemp(join(tmpdir(), 'orb-setup-'))
+    tempDirs.push(tempDir)
+    const configPath = join(tempDir, 'config.toml')
+    const commandsSourceDir = join(tempDir, 'source-commands')
+    const commandsTargetDir = join(tempDir, 'target-commands')
+    await mkdir(commandsSourceDir, { recursive: true })
+    await writeFile(join(commandsSourceDir, 'tour.md'), 'Bundled tour')
+    await writeFile(join(commandsSourceDir, 'quiz.md'), 'Bundled quiz')
+
+    const infoMessages: string[] = []
+    const originalConsoleInfo = console.info
+    console.info = (...args: unknown[]) => {
+      infoMessages.push(args.join(' '))
+    }
+
+    try {
+      const setupCalls = { select: 0, text: 0 }
+
+      mock.module('@clack/prompts', () => ({
+        intro: () => {},
+        outro: () => {},
+        cancel: () => {},
+        isCancel: () => false,
+        select: async () => {
+          const call = setupCalls.select++
+          return call === 0 ? 'anthropic' : call === 1 ? 'generate' : 'alba'
+        },
+        confirm: async () => true,
+        text: async () => {
+          const call = setupCalls.text++
+          return call === 0 ? 'claude-haiku-4-5-20251001' : '1.5'
+        },
+      }))
+
+      const { runSetup } = await importSetupModule()
+
+      await runSetup({ configPath, commandsSourceDir, commandsTargetDir })
+
+      expect(await readFile(join(commandsTargetDir, 'tour.md'), 'utf8')).toBe('Bundled tour')
+      expect(await readFile(join(commandsTargetDir, 'quiz.md'), 'utf8')).toBe('Bundled quiz')
+      const info = infoMessages.join('\n')
+      expect(info).toContain('Installed 2 commands')
+      expect(info).toContain('/tour')
+      expect(info).toContain('/quiz')
+    } finally {
+      console.info = originalConsoleInfo
+    }
+  })
+
+  it('skips installing defaults when the user declines', async () => {
+    setTTY(true)
+    const tempDir = await mkdtemp(join(tmpdir(), 'orb-setup-'))
+    tempDirs.push(tempDir)
+    const configPath = join(tempDir, 'config.toml')
+    const commandsSourceDir = join(tempDir, 'source-commands')
+    const commandsTargetDir = join(tempDir, 'target-commands')
+    await mkdir(commandsSourceDir, { recursive: true })
+    await writeFile(join(commandsSourceDir, 'tour.md'), 'Bundled tour')
+
+    const setupCalls = { select: 0, text: 0, confirm: 0 }
+
+    mock.module('@clack/prompts', () => ({
+      intro: () => {},
+      outro: () => {},
+      cancel: () => {},
+      isCancel: () => false,
+      select: async () => {
+        const call = setupCalls.select++
+        return call === 0 ? 'anthropic' : call === 1 ? 'generate' : 'alba'
+      },
+      confirm: async () => {
+        const call = setupCalls.confirm++
+        return call < 3
+      },
+      text: async () => {
+        const call = setupCalls.text++
+        return call === 0 ? 'claude-haiku-4-5-20251001' : '1.5'
+      },
+    }))
+
+    const { runSetup } = await importSetupModule()
+
+    await runSetup({ configPath, commandsSourceDir, commandsTargetDir })
+
+    await expect(readFile(join(commandsTargetDir, 'tour.md'), 'utf8')).rejects.toThrow()
+  })
+
+  it('treats canceling the default-command prompt as a non-fatal skip after save', async () => {
+    setTTY(true)
+    const tempDir = await mkdtemp(join(tmpdir(), 'orb-setup-'))
+    tempDirs.push(tempDir)
+    const configPath = join(tempDir, 'config.toml')
+    const commandsSourceDir = join(tempDir, 'source-commands')
+    const commandsTargetDir = join(tempDir, 'target-commands')
+    const canceled = Symbol('cancel')
+    await mkdir(commandsSourceDir, { recursive: true })
+    await writeFile(join(commandsSourceDir, 'tour.md'), 'Bundled tour')
+
+    const setupCalls = { select: 0, text: 0, confirm: 0 }
+
+    mock.module('@clack/prompts', () => ({
+      intro: () => {},
+      outro: () => {},
+      cancel: () => {},
+      isCancel: (value: unknown) => value === canceled,
+      select: async () => {
+        const call = setupCalls.select++
+        return call === 0 ? 'anthropic' : call === 1 ? 'generate' : 'alba'
+      },
+      confirm: async () => {
+        const call = setupCalls.confirm++
+        return call < 3 ? true : canceled
+      },
+      text: async () => {
+        const call = setupCalls.text++
+        return call === 0 ? 'claude-haiku-4-5-20251001' : '1.5'
+      },
+    }))
+
+    const { runSetup } = await importSetupModule()
+
+    await expect(runSetup({ configPath, commandsSourceDir, commandsTargetDir })).resolves.toBe(
+      undefined,
+    )
+    expect(await readFile(configPath, 'utf8')).toContain('provider = "anthropic"')
+    await expect(readFile(join(commandsTargetDir, 'tour.md'), 'utf8')).rejects.toThrow()
   })
 })

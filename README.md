@@ -158,6 +158,7 @@ Orb can expand slash-command prompts from Markdown files:
 - Project-local commands: `<project>/.orb/commands/*.md`
 - Global commands: `~/.orb/commands/*.md`
 - If both exist, the project-local command wins
+- Built-ins: `/help` explains slash commands and `/commands` lists everything available
 
 Example:
 
@@ -176,6 +177,13 @@ Then in Orb:
 ```
 
 Orb will load `explain.md`, and if you include trailing text it appends that text after a blank line. If a slash command is missing, Orb shows a turn-level error with the paths it checked.
+
+Built-in commands:
+
+```text
+/help
+/commands
+```
 
 ## TTS Setup
 
