@@ -4,6 +4,7 @@ import { createPipelineTask } from '../../pipeline/task'
 import type { RunResult, TaskState } from '../../pipeline/task'
 import { createTerminalTextTransport } from '../../pipeline/transports/terminal-text'
 import type { OutboundFrame, Transport } from '../../pipeline/transports/types'
+import { expandSlashCommandInput } from '../../services/commands'
 import type { AgentSession, AppConfig } from '../../types'
 
 interface PendingRun {
@@ -19,6 +20,7 @@ interface UsePipelineConfig {
   onFrame(frame: OutboundFrame): void
   onRunComplete(result: RunResult): void
   onStateChange(state: TaskState): void
+  onSubmitError(query: string, message: string): void
   startEntry(query: string): PendingRun | null
 }
 
@@ -30,6 +32,7 @@ export function usePipeline({
   onFrame,
   onRunComplete,
   onStateChange,
+  onSubmitError,
   startEntry,
 }: UsePipelineConfig) {
   const [state, setState] = useState<TaskState>('idle')
@@ -85,13 +88,26 @@ export function usePipeline({
 
   const submit = useCallback(
     async (query: string) => {
-      const pendingRun = startEntry(query)
+      let prompt = query
+      try {
+        const expanded = await expandSlashCommandInput({
+          input: query,
+          projectPath: config.projectPath,
+        })
+        prompt = expanded.prompt
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        onSubmitError(query, message)
+        return
+      }
+
+      const pendingRun = startEntry(prompt)
       if (!pendingRun) return
 
       const result = await task.run(pendingRun.query, pendingRun.entryId)
       onRunComplete(result)
     },
-    [onRunComplete, startEntry, task],
+    [config.projectPath, onRunComplete, onSubmitError, startEntry, task],
   )
 
   return { cancel, pause, resume, repeat, state, submit }

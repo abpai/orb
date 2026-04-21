@@ -290,4 +290,34 @@ describe('useConversation', () => {
       app.unmount()
     })
   })
+
+  describe('local submit errors', () => {
+    it('records a local error as a completed turn', async () => {
+      let controls!: ReturnType<typeof useConversation>
+
+      function Harness() {
+        controls = useConversation({
+          config: makeConfig('/tmp/local-error-test'),
+          initialSession: null,
+          taskState: 'idle',
+        })
+        return null
+      }
+
+      const app = render(<Harness />)
+
+      controls.recordLocalError('/explain', 'Slash command "/explain" not found.')
+      await flush()
+
+      expect(controls.liveTurn).toBeNull()
+      expect(controls.completedTurns).toHaveLength(1)
+      expect(controls.completedTurns[0]).toMatchObject({
+        question: '/explain',
+        answer: '',
+        error: 'Slash command "/explain" not found.',
+      })
+
+      app.unmount()
+    })
+  })
 })
