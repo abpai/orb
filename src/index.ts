@@ -42,10 +42,23 @@ function applyOpenAiStreamingDefaults(config: AppConfig, explicit: ExplicitFlags
   }
 }
 
+function shouldHandleMetaFlag(args: string[]): boolean {
+  return (
+    args.includes('--help') ||
+    args.includes('-h') ||
+    args.includes('--version') ||
+    args.includes('-V')
+  )
+}
+
 export async function run(args: string[]): Promise<void> {
   const command = args[0]
   if (command === 'setup') {
     await runSetupCommand(args.slice(1))
+    return
+  }
+  if (shouldHandleMetaFlag(args)) {
+    parseCliArgs(args)
     return
   }
 

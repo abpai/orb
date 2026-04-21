@@ -1,4 +1,5 @@
 import { Command } from 'commander'
+import packageJson from '../package.json' with { type: 'json' }
 import type { AnthropicModel, AppConfig, LlmModelId, LlmProvider, Voice } from './types'
 import { ANTHROPIC_MODELS, DEFAULT_CONFIG, VOICES } from './types'
 
@@ -19,6 +20,7 @@ const DEFAULT_MODEL_BY_PROVIDER: Record<LlmProvider, LlmModelId> = {
   anthropic: 'claude-haiku-4-5-20251001',
   openai: 'gpt-5.4',
 }
+export const ORB_VERSION = packageJson.version
 
 function normalizeProvider(value: string): LlmProvider | undefined {
   return PROVIDER_ALIASES[value.trim().toLowerCase()]
@@ -122,6 +124,7 @@ function createProgram({ config: defaults }: ProgramDefaults): Command {
   const program = new Command()
     .name('orb')
     .description('Voice-Driven Code Explorer')
+    .version(ORB_VERSION)
     .argument('[projectPath]', 'Project directory path')
     .option('--provider <provider>', 'LLM provider: anthropic|claude, openai|gpt')
     .option('--llm-provider <provider>', 'LLM provider (alias for --provider)')

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 
-import { parseCliArgs } from './config'
+import { ORB_VERSION, parseCliArgs } from './config'
 import { DEFAULT_CONFIG } from './types'
 
 describe('parseCliArgs', () => {
@@ -75,5 +75,29 @@ describe('parseCliArgs', () => {
 
   it('rejects removed advanced tuning flags', () => {
     expect(() => parseCliArgs(['--tts-max-wait-ms=250'])).toThrow()
+  })
+
+  it('prints the current package version for --version', () => {
+    let stdout = ''
+    const originalWrite = process.stdout.write
+
+    Object.defineProperty(process.stdout, 'write', {
+      value: ((chunk: string | Uint8Array) => {
+        stdout += String(chunk)
+        return true
+      }) as typeof process.stdout.write,
+      configurable: true,
+    })
+
+    try {
+      expect(() => parseCliArgs(['--version'])).toThrow()
+    } finally {
+      Object.defineProperty(process.stdout, 'write', {
+        value: originalWrite,
+        configurable: true,
+      })
+    }
+
+    expect(stdout.trim()).toBe(ORB_VERSION)
   })
 })
