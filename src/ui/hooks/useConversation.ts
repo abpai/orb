@@ -138,6 +138,12 @@ export function useConversation({ config, initialSession, taskState }: UseConver
       if (!liveTurnRef.current) return
       const cur = liveTurnRef.current
 
+      // Any non-delta frame supersedes a coalesced delta; only agent-text-delta
+      // re-arms the pending ref below.
+      if (frame.kind !== 'agent-text-delta' && frame.kind !== 'tts-error') {
+        pendingRenderTurnRef.current = null
+      }
+
       switch (frame.kind) {
         case 'agent-text-delta': {
           const next = { ...cur, answer: frame.accumulatedText }
@@ -147,19 +153,15 @@ export function useConversation({ config, initialSession, taskState }: UseConver
           break
         }
 
-        case 'agent-text-complete': {
-          pendingRenderTurnRef.current = null
+        case 'agent-text-complete':
           updateLiveTurn({ ...cur, answer: frame.text })
           break
-        }
 
         case 'tool-call-start':
-          pendingRenderTurnRef.current = null
           updateLiveTurn({ ...cur, toolCalls: [...cur.toolCalls, frame.toolCall] })
           break
 
         case 'tool-call-result':
-          pendingRenderTurnRef.current = null
           updateLiveTurn({
             ...cur,
             toolCalls: cur.toolCalls.map((tc) =>
@@ -171,7 +173,6 @@ export function useConversation({ config, initialSession, taskState }: UseConver
           break
 
         case 'agent-error':
-          pendingRenderTurnRef.current = null
           updateLiveTurn({ ...cur, error: frame.error.message })
           break
 

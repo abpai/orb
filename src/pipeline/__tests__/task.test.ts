@@ -7,6 +7,10 @@ import { DEFAULT_CONFIG, TTSError } from '../../types'
 let stopCalls = 0
 let releaseWait: (() => void) | null = null
 
+async function importTaskModule() {
+  return await import(`../task?task-test=${Date.now()}-${Math.random()}`)
+}
+
 function createTransport(): Transport {
   return {
     onOutbound: () => () => {},
@@ -54,14 +58,14 @@ describe('createPipelineTask', () => {
         },
     }))
 
-    const { createPipelineTask } = await import('../task')
+    const { createPipelineTask } = await importTaskModule()
     const task = createPipelineTask({
       appConfig: DEFAULT_CONFIG,
       transport: createTransport(),
     })
 
     const states: string[] = []
-    task.onStateChange((state) => {
+    task.onStateChange((state: string) => {
       states.push(state)
     })
 
@@ -75,6 +79,58 @@ describe('createPipelineTask', () => {
     expect(result.cancelled).toBe(true)
     expect(states).toContain('processing')
     expect(states).toContain('speaking')
+    expect(task.state).toBe('idle')
+  })
+
+  it('can stop active playback without cancelling the run', async () => {
+    stopCalls = 0
+    releaseWait = null
+
+    mock.module('../processors/agent', () => ({
+      createAgentProcessor: () =>
+        async function* () {
+          yield createFrame('agent-text-complete', { text: 'done' })
+        },
+    }))
+
+    mock.module('../processors/tts', () => ({
+      createTTSProcessor: (
+        _config: unknown,
+        runControl?: { setCompletion?: (handle: unknown) => void },
+      ) =>
+        async function* (upstream: AsyncIterable<Frame>) {
+          for await (const frame of upstream) {
+            yield frame
+            if (frame.kind === 'agent-text-complete') {
+              runControl?.setCompletion?.({
+                waitForCompletion: () =>
+                  new Promise<void>((resolve) => {
+                    releaseWait = resolve
+                  }),
+                stop: () => {
+                  stopCalls += 1
+                  releaseWait?.()
+                },
+              })
+            }
+          }
+        },
+    }))
+
+    const { createPipelineTask } = await importTaskModule()
+    const task = createPipelineTask({
+      appConfig: DEFAULT_CONFIG,
+      transport: createTransport(),
+    })
+
+    const runPromise = task.run('hello', 'entry-1')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    task.stopPlayback()
+    const result = await runPromise
+
+    expect(stopCalls).toBe(1)
+    expect(result.cancelled).toBe(false)
     expect(task.state).toBe('idle')
   })
 
@@ -112,12 +168,12 @@ describe('createPipelineTask', () => {
         },
     }))
 
-    const { createPipelineTask } = await import('../task')
+    const { createPipelineTask } = await importTaskModule()
     const task = createPipelineTask({
       appConfig: DEFAULT_CONFIG,
       transport: {
         onOutbound: () => () => {},
-        sendOutbound: (frame) => {
+        sendOutbound: (frame: Frame) => {
           outboundFrames.push(frame)
         },
       },

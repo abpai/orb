@@ -9,6 +9,7 @@ import { InputPrompt } from './InputPrompt'
 interface FooterProps {
   state: AppState
   onSubmit: (value: string) => void
+  onEdit?: () => void
   model: LlmModelId
   provider: LlmProvider
   canCycleModel: boolean
@@ -21,6 +22,7 @@ interface FooterProps {
 export const Footer = memo(function Footer({
   state,
   onSubmit,
+  onEdit,
   model,
   provider,
   canCycleModel,
@@ -37,7 +39,7 @@ export const Footer = memo(function Footer({
 
   return (
     <Box flexDirection="column">
-      <InputPrompt onSubmit={onSubmit} state={state} projectPath={projectPath} />
+      <InputPrompt onSubmit={onSubmit} onEdit={onEdit} state={state} projectPath={projectPath} />
       <Box gap={2}>
         {showModel && (
           <Text color="gray" dimColor>

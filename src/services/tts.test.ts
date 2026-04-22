@@ -331,14 +331,16 @@ describe('createStreamSession', () => {
     await resetAudioState()
   })
 
-  function mockPlayerAvailable() {
-    Bun.which = mock(() => '/usr/local/bin/mpv') as unknown as typeof Bun.which
+  function mockPlayerAvailable(player: 'mpv' | 'ffplay') {
+    Bun.which = mock((binary: string) => {
+      return binary === player ? `/usr/local/bin/${player}` : null
+    }) as unknown as typeof Bun.which
   }
 
   it('pipes audio stream chunks to player stdin', async () => {
     const { createStreamSession, resetDetectedPlayer } = await importModule()
     resetDetectedPlayer()
-    mockPlayerAvailable()
+    mockPlayerAvailable('mpv')
 
     const chunks = [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5, 6])]
     const written: Uint8Array[] = []
@@ -382,7 +384,7 @@ describe('createStreamSession', () => {
   it('rejects on non-zero player exit', async () => {
     const { createStreamSession, resetDetectedPlayer } = await importModule()
     resetDetectedPlayer()
-    mockPlayerAvailable()
+    mockPlayerAvailable('mpv')
 
     Bun.spawn = mock(() => {
       return {
@@ -412,7 +414,7 @@ describe('createStreamSession', () => {
   it('ignores reader releaseLock failures during cleanup', async () => {
     const { createStreamSession, resetDetectedPlayer } = await importModule()
     resetDetectedPlayer()
-    mockPlayerAvailable()
+    mockPlayerAvailable('mpv')
 
     let stdinEnded = false
 
@@ -453,7 +455,7 @@ describe('createStreamSession', () => {
   it('kill() terminates without throwing', async () => {
     const { createStreamSession, resetDetectedPlayer } = await importModule()
     resetDetectedPlayer()
-    mockPlayerAvailable()
+    mockPlayerAvailable('mpv')
 
     let killed = false
     let resolveExited: (code: number) => void
@@ -489,7 +491,7 @@ describe('createStreamSession', () => {
     const { createStreamSession, pauseSpeaking, resetDetectedPlayer, resumeSpeaking } =
       await importModule()
     resetDetectedPlayer()
-    mockPlayerAvailable()
+    mockPlayerAvailable('mpv')
 
     const spawnCalls: string[][] = []
     Bun.spawn = mock((cmd: string[]) => {
@@ -522,7 +524,7 @@ describe('createStreamSession', () => {
   it('passes speed to player args', async () => {
     const { createStreamSession, resetDetectedPlayer } = await importModule()
     resetDetectedPlayer()
-    mockPlayerAvailable()
+    mockPlayerAvailable('mpv')
 
     let spawnedCmd: string[] = []
 
@@ -545,5 +547,82 @@ describe('createStreamSession', () => {
     await session.done
 
     expect(spawnedCmd).toContain('--speed=1.5')
+  })
+
+  it('uses ffplay control stdin for pause and resume', async () => {
+    const controlWrites: string[] = []
+    const audioWrites: Uint8Array[] = []
+    const spawnCalls: string[][] = []
+    const exitControl: {
+      resolve: ((code: number | null, signal: NodeJS.Signals | null) => void) | null
+    } = { resolve: null }
+
+    mock.module('node:child_process', () => ({
+      spawn: mock((_binary: string, args: string[]) => {
+        spawnCalls.push(args)
+        const exitHandlers: Array<(code: number | null, signal: NodeJS.Signals | null) => void> = []
+
+        return {
+          stdin: {
+            write(data: string) {
+              controlWrites.push(data)
+            },
+          },
+          stdio: [
+            null,
+            null,
+            null,
+            {
+              write(data: Uint8Array) {
+                audioWrites.push(new Uint8Array(data))
+              },
+              end() {
+                exitControl.resolve = (code: number | null, signal: NodeJS.Signals | null) => {
+                  for (const handler of exitHandlers) handler(code, signal)
+                }
+              },
+            },
+          ],
+          once(event: string, handler: (...args: unknown[]) => void) {
+            if (event === 'exit') {
+              exitHandlers.push(
+                handler as (code: number | null, signal: NodeJS.Signals | null) => void,
+              )
+            }
+            return this
+          },
+          kill() {},
+          pid: 123,
+        }
+      }),
+    }))
+
+    const { createStreamSession, resetDetectedPlayer } = await import(
+      `./tts?ffplay-test=${Date.now()}-${Math.random()}`
+    )
+    resetDetectedPlayer()
+    mockPlayerAvailable('ffplay')
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3]))
+        controller.close()
+      },
+    })
+
+    const session = createStreamSession(stream, 1)
+    await flushMicrotasks()
+
+    session.pause()
+    session.resume()
+    if (exitControl.resolve) {
+      exitControl.resolve(0, null)
+    }
+    await session.done
+
+    expect(spawnCalls).toHaveLength(1)
+    expect(spawnCalls[0]).toContain('pipe:3')
+    expect(controlWrites).toEqual(['p', 'p'])
+    expect(audioWrites).toEqual([new Uint8Array([1, 2, 3])])
   })
 })

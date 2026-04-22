@@ -7,13 +7,37 @@ afterEach(() => {
   mock.restore()
 })
 
+function createCommandsMock(
+  expandSlashCommandInput: () => Promise<
+    { kind: 'prompt'; prompt: string } | { kind: 'builtin'; commandName: string; answer: string }
+  >,
+) {
+  return {
+    expandSlashCommandInput,
+    extractSlashCommandName: (line: string) => {
+      const match = line.match(/^\/(\S*)/)
+      return match ? (match[1] ?? '') : null
+    },
+    listAvailableSlashCommands: async () => [
+      { name: 'commands', source: 'builtin' as const },
+      { name: 'explain', source: 'project' as const },
+      { name: 'explore', source: 'project' as const },
+      { name: 'help', source: 'builtin' as const },
+    ],
+  }
+}
+
 async function importUsePipeline() {
   return await import('./usePipeline')
 }
 
 describe('usePipeline submit', () => {
   it('expands slash commands before starting the run', async () => {
-    const taskRun = mock(async () => ({ entryId: 'entry-1', text: '', cancelled: false }))
+    const events: string[] = []
+    const taskRun = mock(async () => {
+      events.push('run')
+      return { entryId: 'entry-1', text: '', cancelled: false }
+    })
 
     mock.module('../../pipeline/task', () => ({
       createPipelineTask: () => ({
@@ -23,16 +47,22 @@ describe('usePipeline submit', () => {
         pause: () => {},
         resume: () => {},
         repeatTts: async () => {},
+        stopPlayback: () => {
+          events.push('stop')
+        },
         run: taskRun,
       }),
     }))
 
-    mock.module('../../services/commands', () => ({
-      expandSlashCommandInput: async () => ({
-        kind: 'prompt',
-        prompt: 'Expanded explain prompt',
+    mock.module('../../services/commands', () =>
+      createCommandsMock(async () => {
+        events.push('expand')
+        return {
+          kind: 'prompt',
+          prompt: 'Expanded explain prompt',
+        }
       }),
-    }))
+    )
 
     const { usePipeline } = await importUsePipeline()
 
@@ -63,6 +93,7 @@ describe('usePipeline submit', () => {
 
     expect(startEntryCalls).toEqual(['Expanded explain prompt'])
     expect(taskRun).toHaveBeenCalledWith('Expanded explain prompt', 'entry-1')
+    expect(events).toEqual(['stop', 'expand', 'run'])
 
     app.unmount()
   })
@@ -78,15 +109,16 @@ describe('usePipeline submit', () => {
         pause: () => {},
         resume: () => {},
         repeatTts: async () => {},
+        stopPlayback: () => {},
         run: taskRun,
       }),
     }))
 
-    mock.module('../../services/commands', () => ({
-      expandSlashCommandInput: async () => {
+    mock.module('../../services/commands', () =>
+      createCommandsMock(async () => {
         throw new Error('Slash command "/explain" not found.')
-      },
-    }))
+      }),
+    )
 
     const { usePipeline } = await importUsePipeline()
 
@@ -133,17 +165,18 @@ describe('usePipeline submit', () => {
         pause: () => {},
         resume: () => {},
         repeatTts: async () => {},
+        stopPlayback: () => {},
         run: taskRun,
       }),
     }))
 
-    mock.module('../../services/commands', () => ({
-      expandSlashCommandInput: async () => ({
+    mock.module('../../services/commands', () =>
+      createCommandsMock(async () => ({
         kind: 'builtin',
         commandName: 'commands',
         answer: 'Available slash commands',
-      }),
-    }))
+      })),
+    )
 
     const { usePipeline } = await importUsePipeline()
 

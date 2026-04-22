@@ -83,6 +83,12 @@ function parseSlashCommand(input: string): ParsedSlashCommand | null {
   }
 }
 
+/** Extract the slash-command name being typed on a line, e.g. `/foo bar` → `foo`. */
+export function extractSlashCommandName(line: string): string | null {
+  const match = line.match(/^\/(\S*)/)
+  return match ? (match[1] ?? '') : null
+}
+
 function formatMissingCommandError(commandName: string, candidatePaths: string[]): string {
   return `Slash command "/${commandName}" not found. Looked in: ${candidatePaths.join(', ')}.`
 }
@@ -154,9 +160,16 @@ function describeCommand(command: AvailableSlashCommand): string {
   return `- /${command.name} (${command.source}${shadowed})`
 }
 
+function formatCommandDirectories(projectPath: string, homeDir: string): string[] {
+  return [
+    'Command directories:',
+    `- project: ${getProjectCommandsDir(projectPath)}`,
+    `- global: ${getGlobalCommandsDir(homeDir)}`,
+  ]
+}
+
 async function buildHelpAnswer(projectPath: string, homeDir: string): Promise<string> {
   const commands = await listAvailableSlashCommands({ projectPath, homeDir })
-  const visibleCommands = commands.map(describeCommand)
 
   return [
     'Slash commands',
@@ -169,12 +182,10 @@ async function buildHelpAnswer(projectPath: string, homeDir: string): Promise<st
     '- `/help` shows this guide.',
     '- `/commands` lists every available command.',
     '',
-    'Command directories:',
-    `- project: ${getProjectCommandsDir(projectPath)}`,
-    `- global: ${getGlobalCommandsDir(homeDir)}`,
+    ...formatCommandDirectories(projectPath, homeDir),
     '',
     'Currently available:',
-    ...visibleCommands,
+    ...commands.map(describeCommand),
   ].join('\n')
 }
 
@@ -186,9 +197,7 @@ async function buildCommandsAnswer(projectPath: string, homeDir: string): Promis
     '',
     ...commands.map(describeCommand),
     '',
-    'Command directories:',
-    `- project: ${getProjectCommandsDir(projectPath)}`,
-    `- global: ${getGlobalCommandsDir(homeDir)}`,
+    ...formatCommandDirectories(projectPath, homeDir),
   ].join('\n')
 }
 

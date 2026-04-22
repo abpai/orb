@@ -37,6 +37,7 @@ export interface PipelineTask {
   pause(): void
   resume(): void
   repeatTts(text: string): Promise<void>
+  stopPlayback(): void
   updateConfig(config: AppConfig): void
 }
 
@@ -76,6 +77,21 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
     return OUTBOUND_KINDS.has(frame.kind)
   }
 
+  function stopActivePlayback(): void {
+    const hasSpeakingState = state === 'speaking' || state === 'processing_speaking'
+    if (!currentTtsCompletion && !hasSpeakingState) return
+
+    currentTtsCompletion?.stop()
+    currentTtsCompletion = null
+    stopSpeaking()
+
+    if (state === 'speaking') {
+      setState('idle')
+    } else if (state === 'processing_speaking') {
+      setState('processing')
+    }
+  }
+
   const task: PipelineTask = {
     get state() {
       return state
@@ -92,10 +108,7 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
         currentAbort.abort()
         currentAbort = null
       }
-      if (currentTtsCompletion) {
-        currentTtsCompletion.stop()
-        currentTtsCompletion = null
-      }
+      stopActivePlayback()
 
       const runId = ++runCounter
       const abortController = new AbortController()
@@ -229,8 +242,7 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
       runCounter++ // invalidate current run
       currentAbort?.abort()
       currentAbort = null
-      currentTtsCompletion?.stop()
-      currentTtsCompletion = null
+      stopActivePlayback()
       setState('idle')
     },
 
@@ -277,6 +289,10 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
           setState('idle')
         }
       }
+    },
+
+    stopPlayback(): void {
+      stopActivePlayback()
     },
 
     updateConfig(newConfig: AppConfig): void {

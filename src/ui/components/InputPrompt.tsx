@@ -1,7 +1,7 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 
-import { listAvailableSlashCommands } from '../../services/commands'
+import { extractSlashCommandName, listAvailableSlashCommands } from '../../services/commands'
 import type { AppState } from '../../types'
 import { keyToAction } from '../input/keymap'
 import { sanitizePaste } from '../input/paste'
@@ -28,6 +28,7 @@ import { MicroOrb } from './MicroOrb'
 
 interface InputPromptProps {
   onSubmit: (value: string) => void
+  onEdit?: () => void
   state: AppState
   projectPath?: string
   homeDir?: string
@@ -38,12 +39,9 @@ interface CycleState {
   index: number
 }
 
-const COMMAND_NAME_PATTERN = /^\/(\S*)/
-
 function applyCompletion(buffer: TextBufferState, newCommand: string): TextBufferState {
   const line = buffer.lines[0] ?? ''
-  const match = COMMAND_NAME_PATTERN.exec(line)
-  const currentName = match?.[1] ?? ''
+  const currentName = extractSlashCommandName(line) ?? ''
   const rest = line.slice(1 + currentName.length)
   const hadTrailing = rest.length > 0
   const tail = hadTrailing ? rest : ' '
@@ -58,6 +56,7 @@ function applyCompletion(buffer: TextBufferState, newCommand: string): TextBuffe
 
 export const InputPrompt = memo(function InputPrompt({
   onSubmit,
+  onEdit,
   state,
   projectPath,
   homeDir,
@@ -93,14 +92,19 @@ export const InputPrompt = memo(function InputPrompt({
   }, [projectPath, homeDir])
 
   const apply = useCallback(
-    (update: (current: TextBufferState) => TextBufferState, resetDesiredCol = true) => {
+    (
+      update: (current: TextBufferState) => TextBufferState,
+      options: { notifyEdit?: boolean; resetDesiredCol?: boolean } = {},
+    ) => {
       const next = update(bufferRef.current)
-      if (resetDesiredCol) desiredColRef.current = next.col
-      if (next === bufferRef.current) return
+      if (options.resetDesiredCol ?? true) desiredColRef.current = next.col
+      if (next === bufferRef.current) return false
+      if (options.notifyEdit) onEdit?.()
       bufferRef.current = next
       setBuffer(next)
+      return true
     },
-    [],
+    [onEdit],
   )
 
   const handleComplete = useCallback(() => {
@@ -113,14 +117,13 @@ export const InputPrompt = memo(function InputPrompt({
     if (cycle && cycle.matches.length > 1) {
       const nextIndex = (cycle.index + 1) % cycle.matches.length
       cycleRef.current = { ...cycle, index: nextIndex }
-      apply((current) => applyCompletion(current, cycle.matches[nextIndex]!))
+      apply((current) => applyCompletion(current, cycle.matches[nextIndex]!), { notifyEdit: true })
       return
     }
 
     const line = buf.lines[0] ?? ''
-    const match = COMMAND_NAME_PATTERN.exec(line)
-    if (!match) return
-    const currentName = match[1] ?? ''
+    const currentName = extractSlashCommandName(line)
+    if (currentName === null) return
     const commandEnd = 1 + currentName.length
     if (buf.col > commandEnd) return
 
@@ -128,7 +131,7 @@ export const InputPrompt = memo(function InputPrompt({
     const matches = commandNamesRef.current.filter((name) => name.toLowerCase().startsWith(prefix))
     if (matches.length === 0) return
 
-    apply((current) => applyCompletion(current, matches[0]!))
+    apply((current) => applyCompletion(current, matches[0]!), { notifyEdit: true })
     cycleRef.current = matches.length > 1 ? { matches, index: 0 } : null
   }, [apply])
 
@@ -145,9 +148,9 @@ export const InputPrompt = memo(function InputPrompt({
         return
       }
       case 'newline':
-        return apply(newline)
+        return apply(newline, { notifyEdit: true })
       case 'backspace':
-        return apply(backspace)
+        return apply(backspace, { notifyEdit: true })
       case 'move-left':
         return apply(moveLeft)
       case 'move-right':
@@ -157,25 +160,29 @@ export const InputPrompt = memo(function InputPrompt({
       case 'move-word-right':
         return apply(moveWordRight)
       case 'move-up':
-        return apply((current) => moveUp(current, desiredColRef.current), false)
+        return apply((current) => moveUp(current, desiredColRef.current), {
+          resetDesiredCol: false,
+        })
       case 'move-down':
-        return apply((current) => moveDown(current, desiredColRef.current), false)
+        return apply((current) => moveDown(current, desiredColRef.current), {
+          resetDesiredCol: false,
+        })
       case 'move-home':
         return apply(moveHome)
       case 'move-end':
         return apply(moveEnd)
       case 'delete-word-left':
-        return apply(deleteWordLeft)
+        return apply(deleteWordLeft, { notifyEdit: true })
       case 'kill-to-line-end':
-        return apply(killToLineEnd)
+        return apply(killToLineEnd, { notifyEdit: true })
       case 'kill-line':
-        return apply(killLine)
+        return apply(killLine, { notifyEdit: true })
       case 'complete':
         return handleComplete()
       case 'insert': {
         const text = action.text.length > 1 ? sanitizePaste(action.text) : action.text
         if (text.length === 0) return
-        return apply((current) => insert(current, text))
+        return apply((current) => insert(current, text), { notifyEdit: true })
       }
       case 'ignore':
         return

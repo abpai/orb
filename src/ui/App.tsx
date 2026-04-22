@@ -47,11 +47,10 @@ export function App({ config, initialSession }: AppProps) {
 
   const handleStateChange = useCallback((next: AppState) => {
     setState(next)
-    // Clear pause indicator when playback ends (state returns to idle/processing).
     if (next === 'idle' || next === 'processing') setIsPaused(false)
   }, [])
 
-  const { cancel, pause, repeat, resume, submit } = usePipeline({
+  const { cancel, pause, repeat, resume, stopPlayback, submit } = usePipeline({
     config,
     activeModel: conversation.activeModel,
     initialModel: conversation.initialModel,
@@ -98,6 +97,11 @@ export function App({ config, initialSession }: AppProps) {
     if (!lastCompletedAnswer) return
     void repeat(lastCompletedAnswer)
   }, [lastCompletedAnswer, repeat])
+
+  const handlePromptEdit = useCallback(() => {
+    if (!isPaused) return
+    stopPlayback()
+  }, [isPaused, stopPlayback])
 
   useKeyboardShortcuts({
     canCycleModel,
@@ -162,6 +166,7 @@ export function App({ config, initialSession }: AppProps) {
         <Footer
           state={state}
           onSubmit={submit}
+          onEdit={handlePromptEdit}
           model={conversation.activeModel}
           provider={config.llmProvider}
           canCycleModel={canCycleModel}

@@ -88,8 +88,16 @@ export function usePipeline({
     [task],
   )
 
+  const stopPlayback = useCallback(() => {
+    task.stopPlayback()
+  }, [task])
+
   const submit = useCallback(
     async (query: string) => {
+      if (!query.trim()) return
+
+      task.stopPlayback()
+
       let prompt = query
       try {
         const expanded = await expandSlashCommandInput({
@@ -116,5 +124,5 @@ export function usePipeline({
     [config.projectPath, onRunComplete, onSubmitBuiltin, onSubmitError, startEntry, task],
   )
 
-  return { cancel, pause, resume, repeat, state, submit }
+  return { cancel, pause, resume, repeat, state, stopPlayback, submit }
 }
