@@ -52,22 +52,23 @@ export async function installDefaultCommands(
 
   await mkdir(targetDir, { recursive: true })
 
-  const installed: string[] = []
-  const skipped: string[] = []
-
-  for (const command of defaults) {
-    const destination = path.join(targetDir, `${command.name}.md`)
-    try {
-      await copyFile(command.sourcePath, destination, fsConstants.COPYFILE_EXCL)
-      installed.push(command.name)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-        skipped.push(command.name)
-        continue
+  const results = await Promise.all(
+    defaults.map(async (command): Promise<{ name: string; status: 'installed' | 'skipped' }> => {
+      const destination = path.join(targetDir, `${command.name}.md`)
+      try {
+        await copyFile(command.sourcePath, destination, fsConstants.COPYFILE_EXCL)
+        return { name: command.name, status: 'installed' }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+          return { name: command.name, status: 'skipped' }
+        }
+        throw error
       }
-      throw error
-    }
-  }
+    }),
+  )
+
+  const installed = results.filter((r) => r.status === 'installed').map((r) => r.name)
+  const skipped = results.filter((r) => r.status === 'skipped').map((r) => r.name)
 
   return { targetDir, installed, skipped }
 }
