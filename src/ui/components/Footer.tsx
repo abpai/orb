@@ -17,6 +17,7 @@ interface FooterProps {
   canRepeat: boolean
   isPaused: boolean
   projectPath?: string
+  yolo?: boolean
 }
 
 export const Footer = memo(function Footer({
@@ -30,6 +31,7 @@ export const Footer = memo(function Footer({
   canRepeat,
   isPaused,
   projectPath,
+  yolo,
 }: FooterProps) {
   const { columns } = useTerminalSize()
   const modelLabel = formatModelLabel(provider, model)
@@ -46,6 +48,7 @@ export const Footer = memo(function Footer({
             [{modelLabel}]
           </Text>
         )}
+        {yolo && <Text color="red">YOLO</Text>}
         {showAllHints && canCycleModel && (
           <Text color="gray" dimColor>
             ⇧Tab model

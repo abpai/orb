@@ -12,57 +12,34 @@ import {
   type Sandbox,
   type WriteOpts,
 } from './interface'
+import { resolveWithDeepestAncestor } from './path-clamp'
 
 export class LocalSubprocessSandbox implements Sandbox {
   readonly rootDir: string
+  private readonly clampWrites: boolean
 
-  constructor(opts: { rootDir: string }) {
+  constructor(opts: { rootDir: string; clampWrites?: boolean }) {
     this.rootDir = fs.realpathSync(path.resolve(opts.rootDir))
+    this.clampWrites = opts.clampWrites ?? true
   }
 
   private async resolveInside(rel: string, opts?: { forWrite?: boolean }): Promise<string> {
-    const candidate = path.resolve(this.rootDir, rel)
-    let resolved: string
-    let realpathFailed: NodeJS.ErrnoException | null = null
-    try {
-      resolved = await fsp.realpath(candidate)
-    } catch (err) {
-      realpathFailed = err as NodeJS.ErrnoException
-      // Fall back: walk up to the deepest existing ancestor, realpath it, then
-      // re-join the remaining (non-existent) suffix. This lets us still apply
-      // the clamp on paths whose leaf (or several segments) don't exist yet —
-      // both for legitimate writeFile new-file creation AND for catching escape
-      // attempts that point at non-existent paths outside the root.
-      let cur = path.dirname(candidate)
-      const tail: string[] = [path.basename(candidate)]
-      // Stop if we hit the filesystem root (cur stops shrinking).
-      while (true) {
-        try {
-          const realCur = await fsp.realpath(cur)
-          resolved = path.join(realCur, ...tail)
-          break
-        } catch (innerErr) {
-          if ((innerErr as NodeJS.ErrnoException).code !== 'ENOENT') {
-            throw new SandboxIoError(`realpath failed for ${rel}: ${(innerErr as Error).message}`)
-          }
-          const parent = path.dirname(cur)
-          if (parent === cur) {
-            // Reached filesystem root without finding an existing ancestor.
-            throw new SandboxIoError(`realpath failed for ${rel}: ${realpathFailed.message}`)
-          }
-          tail.unshift(path.basename(cur))
-          cur = parent
-        }
-      }
+    if (opts?.forWrite && !this.clampWrites) {
+      return path.resolve(this.rootDir, rel)
     }
-    const ok = resolved === this.rootDir || resolved.startsWith(this.rootDir + path.sep)
-    if (!ok) {
+
+    let result: Awaited<ReturnType<typeof resolveWithDeepestAncestor>>
+    try {
+      result = await resolveWithDeepestAncestor(this.rootDir, rel)
+    } catch (err) {
+      throw new SandboxIoError(`realpath failed for ${rel}: ${(err as Error).message}`)
+    }
+    const { resolved, leafExists } = result
+    if (resolved !== this.rootDir && !resolved.startsWith(this.rootDir + path.sep)) {
       throw new PathEscapeError(`path ${rel} escapes rootDir`)
     }
-    // If realpath failed for the original candidate and we're not in write mode,
-    // the path is inside the root but the file doesn't exist — surface as IO error.
-    if (realpathFailed && !opts?.forWrite) {
-      throw new SandboxIoError(`realpath failed for ${rel}: ${realpathFailed.message}`)
+    if (!leafExists && !opts?.forWrite) {
+      throw new SandboxIoError(`realpath failed for ${rel}: path does not exist`)
     }
     return resolved
   }

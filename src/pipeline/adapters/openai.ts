@@ -32,7 +32,7 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
         ttsEnabled: appConfig.ttsEnabled,
       })
 
-      const sandbox = createSandbox({ rootDir: appConfig.projectPath })
+      const sandbox = createSandbox({ rootDir: appConfig.projectPath, yolo: appConfig.yolo })
       const allowedTools: ToolSet = { bash, readFile, writeFile }
 
       let accumulatedText = ''

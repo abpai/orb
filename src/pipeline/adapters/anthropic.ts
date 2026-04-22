@@ -1,4 +1,4 @@
-import { promises as fsp, realpathSync } from 'node:fs'
+import { realpathSync } from 'node:fs'
 import * as path from 'node:path'
 
 import {
@@ -10,6 +10,7 @@ import {
 import { buildProviderPrompt } from '../../services/prompts'
 import type { Frame } from '../frames'
 import { createFrame } from '../frames'
+import { resolveWithDeepestAncestor } from '../sandbox/path-clamp'
 import type { AgentAdapter, AgentAdapterConfig } from './types'
 import {
   getContentBlocks,
@@ -40,8 +41,13 @@ export function createAnthropicAdapter(config: AgentAdapterConfig): AgentAdapter
           model: appConfig.llmModel,
           maxTurns: 10,
           resume: activeSessionId,
-          permissionMode: 'default',
-          canUseTool: createCanUseTool(appConfig.projectPath),
+          ...(appConfig.yolo
+            ? { permissionMode: 'bypassPermissions', allowDangerouslySkipPermissions: true }
+            : {
+                permissionMode: 'default',
+                allowedTools: READ_ONLY_TOOLS,
+                canUseTool: createCanUseTool(appConfig.projectPath),
+              }),
           abortController,
           systemPrompt,
         },
@@ -127,6 +133,26 @@ export function createAnthropicAdapter(config: AgentAdapterConfig): AgentAdapter
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
 const ALLOW: PermissionResult = { behavior: 'allow' }
 
+// Auto-approved without prompting so the agent can explore freely across the
+// filesystem; writes still flow through canUseTool and get clamped to projectPath.
+const READ_ONLY_TOOLS = [
+  'Bash',
+  'BashOutput',
+  'KillShell',
+  'Read',
+  'Grep',
+  'Glob',
+  'NotebookRead',
+  'WebFetch',
+  'WebSearch',
+  'Task',
+  'TodoWrite',
+  'SlashCommand',
+  'ExitPlanMode',
+  'ListMcpResources',
+  'ReadMcpResource',
+]
+
 export function createCanUseTool(projectRoot: string): CanUseTool {
   const root = realpathSync(path.resolve(projectRoot))
   return async (toolName, input) => {
@@ -136,7 +162,7 @@ export function createCanUseTool(projectRoot: string): CanUseTool {
     if (typeof target !== 'string' || target.length === 0) return ALLOW
 
     try {
-      const resolved = await resolvePathForWrite(root, target)
+      const { resolved } = await resolveWithDeepestAncestor(root, target)
       if (resolved === root || resolved.startsWith(root + path.sep)) return ALLOW
 
       return {
@@ -147,30 +173,6 @@ export function createCanUseTool(projectRoot: string): CanUseTool {
       return {
         behavior: 'deny',
         message: `${toolName} blocked: failed to validate ${target} against project root ${root}: ${(err as Error).message}`,
-      }
-    }
-  }
-}
-
-async function resolvePathForWrite(root: string, target: string): Promise<string> {
-  const candidate = path.resolve(root, target)
-  try {
-    return await fsp.realpath(candidate)
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
-
-    let cur = path.dirname(candidate)
-    const tail = [path.basename(candidate)]
-    while (true) {
-      try {
-        const realCur = await fsp.realpath(cur)
-        return path.join(realCur, ...tail)
-      } catch (innerErr) {
-        if ((innerErr as NodeJS.ErrnoException).code !== 'ENOENT') throw innerErr
-        const parent = path.dirname(cur)
-        if (parent === cur) throw err
-        tail.unshift(path.basename(cur))
-        cur = parent
       }
     }
   }

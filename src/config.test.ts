@@ -77,6 +77,16 @@ describe('parseCliArgs', () => {
     expect(() => parseCliArgs(['--tts-max-wait-ms=250'])).toThrow()
   })
 
+  it('enables yolo mode with --yolo', () => {
+    const { config } = parseCliArgs(['--yolo'])
+    expect(config.yolo).toBe(true)
+  })
+
+  it('defaults yolo to false', () => {
+    const { config } = parseCliArgs([])
+    expect(config.yolo).toBe(false)
+  })
+
   it('prints the current package version for --version', () => {
     let stdout = ''
     const originalWrite = process.stdout.write

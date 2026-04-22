@@ -148,6 +148,7 @@ function createProgram({ config: defaults }: ProgramDefaults): Command {
     .option('--no-tts', 'Disable text-to-speech')
     .option('--streaming-tts', 'Enable streaming TTS (default: true)')
     .option('--no-streaming-tts', 'Disable streaming (batch mode)')
+    .option('--yolo', 'Bypass permission prompts and write clamping (dangerous)')
     .addHelpText('after', HELP_EPILOGUE)
     .configureOutput({
       writeOut: (str) => process.stdout.write(str),
@@ -170,6 +171,7 @@ interface ParsedOpts {
   skipIntro?: boolean
   tts?: boolean
   streamingTts?: boolean
+  yolo?: boolean
 }
 
 export interface ParseResult {
@@ -215,6 +217,7 @@ export function parseCliArgs(args: string[], options: ParseCliOptions = {}): Par
       ? opts.streamingTts !== false
       : baseConfig.ttsStreamingEnabled,
     ttsSpeed: opts.ttsSpeed,
+    yolo: isUserSet(program, 'yolo') ? opts.yolo === true : baseConfig.yolo,
   }
 
   // Voice validation

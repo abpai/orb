@@ -174,6 +174,7 @@ export function App({ config, initialSession }: AppProps) {
           canRepeat={canRepeat}
           isPaused={isPaused}
           projectPath={config.projectPath}
+          yolo={config.yolo}
         />
       )}
     </Box>

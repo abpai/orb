@@ -235,6 +235,19 @@ describe('readFile / writeFile', () => {
       fs.rmSync(escapeTarget, { recursive: true, force: true })
     }
   })
+
+  it('allows writes outside rootDir when clampWrites is disabled', async () => {
+    const local = new LocalSubprocessSandbox({ rootDir: tmpRoot, clampWrites: false })
+    const outsideDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'orb-unclamped-')))
+    const outsideFile = path.join(outsideDir, 'written.txt')
+
+    try {
+      await local.writeFile(outsideFile, 'hello from yolo\n')
+      expect(fs.readFileSync(outsideFile, 'utf8')).toBe('hello from yolo\n')
+    } finally {
+      fs.rmSync(outsideDir, { recursive: true, force: true })
+    }
+  })
 })
 
 // ---- 5. abort listener cleanup --------------------------------------------

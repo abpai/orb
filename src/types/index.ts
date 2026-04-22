@@ -91,6 +91,7 @@ export interface AppConfig {
   ttsGraceWindowMs: number
   startFresh: boolean
   skipIntro: boolean
+  yolo: boolean
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -109,4 +110,5 @@ export const DEFAULT_CONFIG: AppConfig = {
   ttsGraceWindowMs: 50,
   startFresh: false,
   skipIntro: false,
+  yolo: false,
 }
