@@ -11,6 +11,7 @@ import {
   listBundledDefaultCommands,
   type InstallDefaultCommandsResult,
 } from './services/default-commands'
+import { warn } from './services/log'
 import { DEFAULT_MODEL_ALIAS_BY_PROVIDER } from './config'
 import { DEFAULT_CONFIG, VOICES, type LlmProvider, type Voice } from './types'
 
@@ -101,7 +102,7 @@ export async function runSetup(options: RunSetupOptions = {}): Promise<void> {
   const configPath = options.configPath ?? getGlobalConfigPath()
   const existing = await loadGlobalConfig(configPath)
   for (const warning of existing.warnings) {
-    console.warn(`[orb] ${warning}`)
+    warn(warning)
   }
 
   const current = existing.config

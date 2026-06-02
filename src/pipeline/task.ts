@@ -7,6 +7,7 @@ import { createAgentProcessor } from './processors/agent'
 import { createEditorMarkerProcessor } from './processors/editor-marker'
 import { createTTSProcessor, type TTSCompletionHandle } from './processors/tts'
 import { openInEditor } from '../services/editor'
+import { warn } from '../services/log'
 import { pauseSpeaking, resumeSpeaking, speak, stopSpeaking } from '../services/tts'
 import type { Transport, OutboundFrame } from './transports/types'
 import { isAbortError } from './adapters/utils'
@@ -131,7 +132,7 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
           createEditorMarkerProcessor({
             open: (refs) => {
               void openInEditor(refs, { projectPath: config.projectPath }).catch((err) => {
-                console.warn('openInEditor failed', err)
+                warn('openInEditor failed', err)
               })
             },
           }),

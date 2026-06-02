@@ -5,6 +5,7 @@ import { createFrame } from '../frames'
 import type { AgentAdapter, AgentAdapterConfig } from './types'
 import { createToolFrameTracker, normalizeToolInput, isToolError, formatToolResult } from './utils'
 import { resolveGeminiProvider } from '../../services/gemini-auth'
+import { warn } from '../../services/log'
 import { createSandbox } from '../sandbox/factory'
 import { bash, readFile, writeFile } from '../tools'
 
@@ -106,7 +107,7 @@ export function createGeminiAdapter(config: AgentAdapterConfig): AgentAdapter {
         })
       } finally {
         await sandbox.dispose().catch((err) => {
-          console.warn('sandbox.dispose() failed', err)
+          warn('sandbox.dispose() failed', err)
         })
       }
     },

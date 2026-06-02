@@ -4,6 +4,7 @@ import type { OutboundFrame } from '../../pipeline/transports/types'
 import type { RunResult } from '../../pipeline/task'
 import { FALLBACK_MODEL_CHOICES_BY_PROVIDER, modelAliasFamily } from '../../services/model-catalog'
 import { saveSession } from '../../services/session'
+import { warn } from '../../services/log'
 import {
   type AgentSession,
   type AppConfig,
@@ -117,7 +118,7 @@ export function useConversation({ config, initialSession, taskState }: UseConver
       try {
         await saveSession(payload)
       } catch (err) {
-        console.warn('Failed to save session:', err)
+        warn('Failed to save session:', err)
       }
     },
     [activeModel, config.llmProvider, config.projectPath, getHistorySnapshot],
