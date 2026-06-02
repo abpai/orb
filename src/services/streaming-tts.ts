@@ -15,7 +15,7 @@ import {
 import { cleanTextForSpeech } from '../ui/utils/markdown'
 import { createGatewayClient, DEFAULT_SERVER_URL } from './gateway-client'
 
-export interface StreamingSpeechCallbacks {
+interface StreamingSpeechCallbacks {
   onSpeakingStart?: () => void
   onSpeakingEnd?: () => void
   onError?: (error: TTSError) => void

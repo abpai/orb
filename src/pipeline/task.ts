@@ -21,7 +21,7 @@ export interface RunResult {
   cancelled: boolean
 }
 
-export interface PipelineTaskConfig {
+interface PipelineTaskConfig {
   appConfig: AppConfig
   session?: AgentSession
   transport: Transport

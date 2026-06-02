@@ -6,12 +6,12 @@ import { isFileNotFoundError } from './orb-paths'
 
 const BUNDLED_COMMANDS_DIR = path.join(import.meta.dir, '..', '..', 'commands')
 
-export interface DefaultCommand {
+interface DefaultCommand {
   name: string
   sourcePath: string
 }
 
-export interface InstallDefaultCommandsOptions {
+interface InstallDefaultCommandsOptions {
   targetDir?: string
   sourceDir?: string
   homeDir?: string

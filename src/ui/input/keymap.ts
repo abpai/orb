@@ -15,7 +15,7 @@ import type { Key } from 'ink'
  *   - Ink has no bracketed-paste state machine. Multi-char `input` with no
  *     modifier flags is treated as a paste; `paste.ts` strips the markers.
  */
-export type Action =
+type Action =
   | { kind: 'submit' }
   | { kind: 'newline' }
   | { kind: 'backspace' }

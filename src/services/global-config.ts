@@ -14,7 +14,7 @@ import {
 } from '../types'
 import { globalConfigPath, isFileNotFoundError } from './orb-paths'
 
-export interface OrbGlobalTtsConfig {
+interface OrbGlobalTtsConfig {
   enabled?: boolean
   streaming?: boolean
   mode?: AppConfig['ttsMode']
@@ -36,7 +36,7 @@ export interface OrbGlobalConfig {
   tts?: OrbGlobalTtsConfig
 }
 
-export interface LoadGlobalConfigResult {
+interface LoadGlobalConfigResult {
   config: OrbGlobalConfig
   explicit: Partial<ExplicitFlags>
   warnings: string[]

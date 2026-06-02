@@ -21,28 +21,28 @@ interface ParsedSlashCommand {
   trailingText?: string
 }
 
-export interface ExpandedPrompt {
+interface ExpandedPrompt {
   kind: 'prompt'
   prompt: string
   commandName?: string
   sourcePath?: string
 }
 
-export interface BuiltinSlashCommand {
+interface BuiltinSlashCommand {
   kind: 'builtin'
   commandName: BuiltinCommandName
   answer: string
 }
 
-export type SlashCommandResolution = ExpandedPrompt | BuiltinSlashCommand
+type SlashCommandResolution = ExpandedPrompt | BuiltinSlashCommand
 
-export interface ExpandSlashCommandOptions {
+interface ExpandSlashCommandOptions {
   input: string
   projectPath: string
   homeDir?: string
 }
 
-export interface AvailableSlashCommand {
+interface AvailableSlashCommand {
   name: string
   source: 'project' | 'global' | 'builtin'
   path?: string

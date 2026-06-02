@@ -1,7 +1,7 @@
 import { promises as fsp } from 'node:fs'
 import * as path from 'node:path'
 
-export interface ResolveResult {
+interface ResolveResult {
   resolved: string
   /** False when the candidate leaf did not exist and we fell back to the deepest ancestor. */
   leafExists: boolean
