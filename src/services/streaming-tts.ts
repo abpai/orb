@@ -318,10 +318,29 @@ export function createStreamingSpeechController(
     prefetchedStream = null
   }
 
+  function takeSpeechBatch(): string | null {
+    if (sentenceQueue.length === 0) return null
+    const targetCount = Math.max(1, config.ttsBufferSentences)
+    if (!finalized && sentenceQueue.length < targetCount) return null
+
+    const batchSize = Math.min(sentenceQueue.length, targetCount)
+    return sentenceQueue.splice(0, batchSize).join(' ')
+  }
+
+  function peekSpeechBatch(): string | null {
+    if (sentenceQueue.length === 0) return null
+    const targetCount = Math.max(1, config.ttsBufferSentences)
+    if (!finalized && sentenceQueue.length < targetCount) return null
+
+    return sentenceQueue.slice(0, Math.min(sentenceQueue.length, targetCount)).join(' ')
+  }
+
   function startPrefetch(): void {
     if (!client || prefetchAbort || stopped || sentenceQueue.length === 0) return
 
-    const nextSentence = sentenceQueue[0]!
+    const nextSentence = peekSpeechBatch()
+    if (!nextSentence) return
+
     const abort = new AbortController()
     prefetchAbort = abort
     client
@@ -381,7 +400,7 @@ export function createStreamingSpeechController(
   async function processNextSentence(): Promise<void> {
     if (isProcessing || stopped || paused) return
 
-    const sentence = sentenceQueue.shift()
+    const sentence = takeSpeechBatch()
     if (!sentence) {
       checkCompletion()
       return

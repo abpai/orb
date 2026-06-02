@@ -56,11 +56,11 @@
     "scratch:check": "for f in scratch/0*.ts scratch/99-*.ts; do echo \"→ $f\" && bun run \"$f\" >/dev/null || { echo \"FAIL: $f\"; exit 1; }; done && echo 'all scratch scripts ran'"
   },
   "dependencies": {
-    "@clack/prompts": "^1.2.0",
-    "@ai-sdk/openai": "3.0.53",
+    "@ai-sdk/google": "^3.0.65",
     "@anthropic-ai/claude-agent-sdk": "0.2.114",
-    "@inkjs/ui": "2.0.0",
+    "@clack/prompts": "^1.2.0",
     "@iarna/toml": "^2.2.5",
+    "@inkjs/ui": "2.0.0",
     "ai": "6.0.168",
     "commander": "^14.0.3",
     "ink": "7.0.1",

@@ -36,29 +36,19 @@ export interface HistoryEntry {
   error?: string | null
 }
 
-export type LlmProvider = 'anthropic' | 'openai'
-
-export const ANTHROPIC_MODELS = [
-  'claude-haiku-4-5-20251001',
-  'claude-sonnet-4-6',
-  'claude-opus-4-6',
-  'claude-opus-4-5-20251101',
-  'claude-sonnet-4-5-20250929',
-  'claude-opus-4-1-20250805',
-  'claude-opus-4-20250514',
-  'claude-sonnet-4-20250514',
-  'claude-3-haiku-20240307',
-] as const
+export type LlmProvider = 'anthropic' | 'openai' | 'gemini'
 
 export const VOICES = ['alba', 'marius', 'jean'] as const
+export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const
 
-export type AnthropicModel = (typeof ANTHROPIC_MODELS)[number]
+export type AnthropicModel = string
 export type LlmModelId = string
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number]
 export type Voice = (typeof VOICES)[number]
 
 export interface OpenAiSession {
   provider: 'openai'
-  previousResponseId: string
+  threadId: string
 }
 
 export type AgentSession = { provider: 'anthropic'; sessionId: string } | OpenAiSession
@@ -77,7 +67,10 @@ export interface AppConfig {
   projectPath: string
   llmProvider: LlmProvider
   llmModel: LlmModelId
-  openaiApiKey?: string
+  llmReasoningEffort: ReasoningEffort
+  llmModelChoices?: LlmModelId[]
+  llmModelLabels?: Record<LlmModelId, string>
+  geminiApiKey?: string
   ttsVoice: Voice
   ttsMode: 'generate' | 'serve'
   ttsServerUrl?: string
@@ -89,6 +82,7 @@ export interface AppConfig {
   ttsMinChunkLength: number
   ttsMaxWaitMs: number
   ttsGraceWindowMs: number
+  resumeSession?: AgentSession
   startFresh: boolean
   skipIntro: boolean
   yolo: boolean
@@ -96,8 +90,9 @@ export interface AppConfig {
 
 export const DEFAULT_CONFIG: AppConfig = {
   projectPath: process.cwd(),
-  llmProvider: 'anthropic',
-  llmModel: 'claude-haiku-4-5-20251001',
+  llmProvider: 'openai',
+  llmModel: 'gpt-5.5',
+  llmReasoningEffort: 'high',
   ttsVoice: 'alba',
   ttsMode: 'serve',
   ttsSpeed: 1.5,

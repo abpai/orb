@@ -11,11 +11,109 @@ describe('parseCliArgs', () => {
     expect(config.llmModel).toBe('gpt-4o')
   })
 
+  it('supports AI Gateway provider/model shorthand for OpenAI', () => {
+    const { config } = parseCliArgs(['--model=openai/gpt-5.5'])
+
+    expect(config.llmProvider).toBe('openai')
+    expect(config.llmModel).toBe('openai/gpt-5.5')
+  })
+
+  it('supports provider:model shorthand for Gemini', () => {
+    const { config } = parseCliArgs(['--model=gemini:gemini-3.1-flash-lite-preview'])
+
+    expect(config.llmProvider).toBe('gemini')
+    expect(config.llmModel).toBe('gemini-3.1-flash-lite-preview')
+  })
+
+  it('supports provider:model shorthand for Anthropic family versions', () => {
+    const { config } = parseCliArgs(['--model=anthropic:opus-4.8'])
+
+    expect(config.llmProvider).toBe('anthropic')
+    expect(config.llmModel).toBe('opus-4.8')
+  })
+
   it('falls back to the OpenAI default model when given an Anthropic alias with OpenAI', () => {
     const { config } = parseCliArgs(['--provider=openai', '--model=sonnet'])
 
     expect(config.llmProvider).toBe('openai')
-    expect(config.llmModel).toBe('gpt-5.4')
+    expect(config.llmModel).toBe('gpt-5.5')
+  })
+
+  it('parses OpenAI reasoning effort overrides', () => {
+    const { config } = parseCliArgs(['--reasoning-effort=xhigh'])
+
+    expect(config.llmReasoningEffort).toBe('xhigh')
+  })
+
+  it('parses Claude session handoff flags and selects Anthropic', () => {
+    const { config, explicit } = parseCliArgs(['--claude-session=claude-session-123'])
+
+    expect(config.llmProvider).toBe('anthropic')
+    expect(config.llmModel).toBe('haiku')
+    expect(config.resumeSession).toEqual({
+      provider: 'anthropic',
+      sessionId: 'claude-session-123',
+    })
+    expect(explicit.provider).toBe(true)
+  })
+
+  it('parses Codex thread handoff flags and selects OpenAI', () => {
+    const { config, explicit } = parseCliArgs(['--codex-thread=thread-123'], {
+      baseConfig: {
+        ...DEFAULT_CONFIG,
+        llmProvider: 'anthropic',
+        llmModel: 'sonnet',
+      },
+    })
+
+    expect(config.llmProvider).toBe('openai')
+    expect(config.llmModel).toBe('gpt-5.5')
+    expect(config.resumeSession).toEqual({
+      provider: 'openai',
+      threadId: 'thread-123',
+    })
+    expect(explicit.provider).toBe(true)
+  })
+
+  it('parses generic provider-prefixed handoff flags', () => {
+    expect(parseCliArgs(['--resume-session=claude:session-1']).config.resumeSession).toEqual({
+      provider: 'anthropic',
+      sessionId: 'session-1',
+    })
+
+    expect(parseCliArgs(['--resume-session=codex:thread-1']).config.resumeSession).toEqual({
+      provider: 'openai',
+      threadId: 'thread-1',
+    })
+  })
+
+  it('rejects provider/model conflicts with handoff sessions', () => {
+    expect(() => parseCliArgs(['--provider=openai', '--claude-session=session-1'])).toThrow(
+      /handoff session is for anthropic/,
+    )
+    expect(() => parseCliArgs(['--model=anthropic:opus', '--codex-thread=thread-1'])).toThrow(
+      /handoff session is for openai/,
+    )
+  })
+
+  it('rejects ambiguous generic handoff values', () => {
+    expect(() => parseCliArgs(['--resume-session=not-prefixed'])).toThrow(
+      /Expected --resume-session/,
+    )
+  })
+
+  it('falls back to the Gemini default model when given an Anthropic alias with Gemini', () => {
+    const { config } = parseCliArgs(['--provider=gemini', '--model=sonnet'])
+
+    expect(config.llmProvider).toBe('gemini')
+    expect(config.llmModel).toBe('pro')
+  })
+
+  it('preserves the opus alias for runtime model-catalog resolution', () => {
+    const { config } = parseCliArgs(['--provider=anthropic', '--model=opus'])
+
+    expect(config.llmProvider).toBe('anthropic')
+    expect(config.llmModel).toBe('opus')
   })
 
   it('parses common TTS flags consistently', () => {
@@ -70,7 +168,7 @@ describe('parseCliArgs', () => {
     })
 
     expect(config.llmProvider).toBe('anthropic')
-    expect(config.llmModel).toBe('claude-haiku-4-5-20251001')
+    expect(config.llmModel).toBe('haiku')
   })
 
   it('rejects removed advanced tuning flags', () => {

@@ -35,7 +35,7 @@ describe('Footer', () => {
   it('shows model label', () => {
     const { lastFrame } = render(<Footer {...defaultProps} />)
     const frame = normalizeFrame(lastFrame())
-    expect(frame).toContain('[Haiku]')
+    expect(frame).toContain('[Haiku 4.5]')
   })
 
   it('shows keyboard hints at full width', () => {
@@ -57,12 +57,12 @@ describe('Footer', () => {
     expect(frame).not.toContain('⇧Tab model')
   })
 
-  it('shows raw model name for openai provider', () => {
+  it('formats OpenAI model names', () => {
     const { lastFrame } = render(
       <Footer {...defaultProps} provider="openai" model="gpt-5.4" canCycleModel={false} />,
     )
     const frame = normalizeFrame(lastFrame())
-    expect(frame).toContain('[gpt-5.4]')
+    expect(frame).toContain('[GPT 5.4]')
   })
 
   it('shows pause and repeat hints when playback controls are available', () => {

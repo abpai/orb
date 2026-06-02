@@ -2,11 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { OutboundFrame } from '../../pipeline/transports/types'
 import type { RunResult } from '../../pipeline/task'
+import { FALLBACK_MODEL_CHOICES_BY_PROVIDER } from '../../services/model-catalog'
 import { saveSession } from '../../services/session'
 import {
-  ANTHROPIC_MODELS,
   type AgentSession,
-  type AnthropicModel,
   type AppConfig,
   type AppState,
   type HistoryEntry,
@@ -19,6 +18,48 @@ interface UseConversationConfig {
   config: AppConfig
   initialSession?: SavedSession | null
   taskState: AppState
+}
+
+function getModelChoices(config: AppConfig): LlmModelId[] {
+  return config.llmModelChoices && config.llmModelChoices.length > 0
+    ? config.llmModelChoices
+    : FALLBACK_MODEL_CHOICES_BY_PROVIDER[config.llmProvider]
+}
+
+function semanticFamily(provider: AppConfig['llmProvider'], model: LlmModelId): string | null {
+  if (provider === 'anthropic') {
+    return model.match(/^claude-(haiku|sonnet|opus)-/)?.[1] ?? null
+  }
+
+  if (provider === 'openai') {
+    if (/^gpt-\d/.test(model) && model.includes('codex')) return 'codex'
+    if (/^gpt-\d/.test(model) && model.includes('mini')) return 'mini'
+    if (/^gpt-\d/.test(model) && model.includes('nano')) return 'nano'
+    if (/^gpt-\d/.test(model) && model.includes('pro')) return 'pro'
+    if (/^gpt-\d/.test(model)) return 'gpt'
+    return null
+  }
+
+  if (provider === 'gemini') {
+    if (!model.startsWith('gemini-') || model.includes('image')) return null
+    if (model.includes('flash-lite')) return 'flash-lite'
+    if (model.includes('flash')) return 'flash'
+    if (model.includes('pro')) return 'pro'
+  }
+
+  return null
+}
+
+function shouldRestoreSessionModel(config: AppConfig, model?: LlmModelId): model is LlmModelId {
+  if (!model) return false
+
+  const modelChoices = getModelChoices(config)
+  if (modelChoices.includes(model)) return true
+
+  const family = semanticFamily(config.llmProvider, model)
+  if (!family) return true
+
+  return !modelChoices.some((choice) => semanticFamily(config.llmProvider, choice) === family)
 }
 
 function createLocalEntry(
@@ -36,9 +77,11 @@ function createLocalEntry(
 
 export function useConversation({ config, initialSession, taskState }: UseConversationConfig) {
   const sessionMatchesProvider = initialSession?.llmProvider === config.llmProvider
-  const initialHistory = initialSession?.history ?? []
-  const initialModel =
-    (sessionMatchesProvider ? initialSession?.llmModel : undefined) ?? config.llmModel
+  const initialHistory = sessionMatchesProvider ? (initialSession?.history ?? []) : []
+  const sessionModel = sessionMatchesProvider ? initialSession?.llmModel : undefined
+  const initialModel = shouldRestoreSessionModel(config, sessionModel)
+    ? sessionModel
+    : config.llmModel
   const initialAgentSession = sessionMatchesProvider ? initialSession?.agentSession : undefined
 
   const [completedTurns, setCompletedTurns] = useState<HistoryEntry[]>(initialHistory)
@@ -209,15 +252,17 @@ export function useConversation({ config, initialSession, taskState }: UseConver
   )
 
   const cycleModel = useCallback(() => {
-    if (config.llmProvider !== 'anthropic') return
+    const modelChoices = getModelChoices(config)
+    if (modelChoices.length < 2) return
 
-    const currentIndex = ANTHROPIC_MODELS.indexOf(activeModel as AnthropicModel)
-    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % ANTHROPIC_MODELS.length
-    const nextModel = ANTHROPIC_MODELS[nextIndex] ?? ANTHROPIC_MODELS[0]
+    const currentIndex = modelChoices.indexOf(activeModel)
+    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % modelChoices.length
+    const nextModel = modelChoices[nextIndex] ?? modelChoices[0]
+    if (!nextModel) return
     setActiveModel(nextModel)
 
     void persistSession(nextModel, getHistorySnapshot())
-  }, [activeModel, config.llmProvider, getHistorySnapshot, persistSession])
+  }, [activeModel, config.llmModelChoices, config.llmProvider, getHistorySnapshot, persistSession])
 
   const recordLocalError = useCallback((question: string, message: string) => {
     const trimmedQuestion = question.trim()

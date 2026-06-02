@@ -30,7 +30,7 @@ describe('session persistence', () => {
       llmModel: 'gpt-4o',
       agentSession: {
         provider: 'openai',
-        previousResponseId: 'resp_123',
+        threadId: 'thread_123',
       },
       lastModified: new Date().toISOString(),
       history: [{ id: 'entry-1', question: 'hello', toolCalls: [], answer: 'hi', error: null }],
@@ -79,7 +79,7 @@ describe('session persistence', () => {
     })
   })
 
-  it('drops invalid OpenAI sessions with blank response ids', async () => {
+  it('drops invalid OpenAI sessions with blank thread ids', async () => {
     tempProjectRoot = await mkdtemp(path.join(tmpdir(), 'orb-project-'))
     cleanupPaths.add(tempProjectRoot)
     const projectPath = path.join(tempProjectRoot, 'openai-project')
@@ -97,7 +97,7 @@ describe('session persistence', () => {
         llmModel: 'gpt-4o',
         agentSession: {
           provider: 'openai',
-          previousResponseId: '',
+          threadId: '',
         },
         lastModified: '2026-03-01T00:00:00.000Z',
         history: [],

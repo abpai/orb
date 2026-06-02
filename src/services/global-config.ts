@@ -2,8 +2,16 @@ import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { parse, stringify } from '@iarna/toml'
-import { DEFAULT_MODEL_BY_PROVIDER, type ExplicitFlags } from '../config'
-import { VOICES, type AppConfig, type LlmModelId, type LlmProvider, type Voice } from '../types'
+import { DEFAULT_MODEL_ALIAS_BY_PROVIDER, type ExplicitFlags } from '../config'
+import {
+  REASONING_EFFORTS,
+  VOICES,
+  type AppConfig,
+  type LlmModelId,
+  type LlmProvider,
+  type ReasoningEffort,
+  type Voice,
+} from '../types'
 
 const CONFIG_DIR = '.orb'
 const CONFIG_FILE = 'config.toml'
@@ -25,6 +33,7 @@ export interface OrbGlobalTtsConfig {
 export interface OrbGlobalConfig {
   provider?: LlmProvider
   model?: LlmModelId
+  reasoningEffort?: ReasoningEffort
   skipIntro?: boolean
   tts?: OrbGlobalTtsConfig
 }
@@ -111,8 +120,8 @@ function validateProvider(
   label: string,
   warnings: string[],
 ): LlmProvider | undefined {
-  if (value === 'anthropic' || value === 'openai') return value
-  warnings.push(`${label} must be "anthropic" or "openai".`)
+  if (value === 'anthropic' || value === 'openai' || value === 'gemini') return value
+  warnings.push(`${label} must be "anthropic", "openai", or "gemini".`)
   return undefined
 }
 
@@ -133,6 +142,18 @@ function validateVoice(value: unknown, label: string, warnings: string[]): Voice
   }
 
   return value as Voice
+}
+
+function validateReasoningEffort(
+  value: unknown,
+  label: string,
+  warnings: string[],
+): ReasoningEffort | undefined {
+  if (typeof value === 'string' && REASONING_EFFORTS.includes(value as ReasoningEffort)) {
+    return value as ReasoningEffort
+  }
+  warnings.push(`${label} must be one of: ${REASONING_EFFORTS.join(', ')}.`)
+  return undefined
 }
 
 export function getGlobalConfigPath(homeDir = os.homedir()): string {
@@ -176,6 +197,17 @@ export function parseGlobalConfigToml(
     if (model) {
       config.model = model
       explicit.model = true
+    }
+  }
+
+  if ('reasoning_effort' in root) {
+    const reasoningEffort = validateReasoningEffort(
+      root.reasoning_effort,
+      'reasoning_effort',
+      warnings,
+    )
+    if (reasoningEffort) {
+      config.reasoningEffort = reasoningEffort
     }
   }
 
@@ -300,11 +332,12 @@ export function applyGlobalConfig(baseConfig: AppConfig, globalConfig: OrbGlobal
   if (globalConfig.provider) {
     nextConfig.llmProvider = globalConfig.provider
     if (!globalConfig.model) {
-      nextConfig.llmModel = DEFAULT_MODEL_BY_PROVIDER[globalConfig.provider]
+      nextConfig.llmModel = DEFAULT_MODEL_ALIAS_BY_PROVIDER[globalConfig.provider]
     }
   }
 
   if (globalConfig.model) nextConfig.llmModel = globalConfig.model
+  if (globalConfig.reasoningEffort) nextConfig.llmReasoningEffort = globalConfig.reasoningEffort
   if (globalConfig.skipIntro !== undefined) nextConfig.skipIntro = globalConfig.skipIntro
 
   if (globalConfig.tts) {
@@ -330,6 +363,7 @@ export function serializeGlobalConfig(config: OrbGlobalConfig): string {
 
   if (config.provider) document.provider = config.provider
   if (config.model) document.model = config.model
+  if (config.reasoningEffort) document.reasoning_effort = config.reasoningEffort
   if (config.skipIntro !== undefined) document.skip_intro = config.skipIntro
 
   if (config.tts) {

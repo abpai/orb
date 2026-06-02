@@ -99,6 +99,41 @@ describe('createStreamingSpeechController', () => {
       expect(controller.isActive()).toBe(true)
       controller.stop()
     })
+
+    it('speaks buffered sentence groups as a single audio request', async () => {
+      const requests: string[] = []
+      globalThis.fetch = mock(
+        async (_url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+          const body = typeof init?.body === 'string' ? init.body : ''
+          requests.push(body ? (JSON.parse(body).text as string) : '')
+          return emptyStreamResponse()
+        },
+      ) as unknown as typeof globalThis.fetch
+
+      Bun.which = mock(() => '/usr/local/bin/mpv') as unknown as typeof Bun.which
+      Bun.spawn = mock(
+        () =>
+          ({
+            stdin: { write() {}, end() {} },
+            exited: Promise.resolve(0),
+            kill() {},
+          }) as unknown as Bun.Subprocess,
+      ) as unknown as typeof Bun.spawn
+
+      const controller = createStreamingSpeechController(
+        createTestConfig({
+          ttsBufferSentences: 2,
+          ttsMinChunkLength: 0,
+          ttsMaxWaitMs: 0,
+        }),
+      )
+
+      controller.feedText('First. Second. Third. Fourth.')
+      controller.finalize()
+      await controller.waitForCompletion()
+
+      expect(requests).toEqual(['First. Second.', 'Third. Fourth.'])
+    })
   })
 
   describe('long text without whitespace', () => {

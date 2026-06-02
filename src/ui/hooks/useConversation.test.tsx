@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { render } from 'ink-testing-library'
 
-import { ANTHROPIC_MODELS, DEFAULT_CONFIG } from '../../types'
+import { FALLBACK_MODEL_CHOICES_BY_PROVIDER } from '../../services/model-catalog'
+import { DEFAULT_CONFIG } from '../../types'
 import { getSessionPath, loadSession } from '../../services/session'
 import type { RunResult } from '../../pipeline/task'
 import type { OutboundFrame } from '../../pipeline/transports/types'
@@ -50,7 +51,11 @@ describe('useConversation', () => {
 
     function Harness() {
       controls = useConversation({
-        config: makeConfig(projectPath),
+        config: {
+          ...makeConfig(projectPath),
+          llmModel: FALLBACK_MODEL_CHOICES_BY_PROVIDER.openai[0]!,
+          llmModelChoices: FALLBACK_MODEL_CHOICES_BY_PROVIDER.openai,
+        },
         initialSession: null,
         taskState: 'idle',
       })
@@ -71,8 +76,70 @@ describe('useConversation', () => {
 
     const saved = await loadSession(projectPath)
     expect(saved).not.toBeNull()
-    expect(saved?.llmModel).toBe(ANTHROPIC_MODELS[1])
+    expect(saved?.llmModel).toBe(FALLBACK_MODEL_CHOICES_BY_PROVIDER.openai[1])
     expect(saved?.history).toEqual([])
+  })
+
+  it('uses the resolved current model instead of restoring a stale semantic-family model', async () => {
+    let controls!: ReturnType<typeof useConversation>
+
+    function Harness() {
+      controls = useConversation({
+        config: {
+          ...makeConfig('/tmp/stale-model-test'),
+          llmModel: 'claude-opus-4-7',
+          llmModelChoices: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6', 'claude-opus-4-7'],
+        },
+        initialSession: {
+          version: 2,
+          projectPath: '/tmp/stale-model-test',
+          llmProvider: 'anthropic',
+          llmModel: 'claude-opus-4-6',
+          lastModified: new Date().toISOString(),
+          history: [],
+        },
+        taskState: 'idle',
+      })
+
+      return null
+    }
+
+    const app = render(<Harness />)
+
+    expect(controls.activeModel).toBe('claude-opus-4-7')
+
+    app.unmount()
+  })
+
+  it('does not show saved history from a different provider', async () => {
+    let controls!: ReturnType<typeof useConversation>
+
+    function Harness() {
+      controls = useConversation({
+        config: {
+          ...makeConfig('/tmp/provider-switch-history-test'),
+          llmProvider: 'anthropic',
+          llmModel: 'claude-haiku-4-5-20251001',
+        },
+        initialSession: {
+          version: 2,
+          projectPath: '/tmp/provider-switch-history-test',
+          llmProvider: 'openai',
+          llmModel: 'gpt-5.5',
+          lastModified: new Date().toISOString(),
+          history: [{ id: 'old', question: 'q', toolCalls: [], answer: 'a', error: null }],
+        },
+        taskState: 'idle',
+      })
+
+      return null
+    }
+
+    const app = render(<Harness />)
+
+    expect(controls.completedTurns).toEqual([])
+
+    app.unmount()
   })
 
   describe('cancel handling', () => {

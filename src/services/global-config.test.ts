@@ -22,6 +22,7 @@ describe('parseGlobalConfigToml', () => {
     const result = parseGlobalConfigToml(`
 provider = "openai"
 model = "gpt-5.4"
+reasoning_effort = "high"
 skip_intro = true
 
 [tts]
@@ -42,6 +43,7 @@ grace_window_ms = 220
     expect(result.config).toEqual({
       provider: 'openai',
       model: 'gpt-5.4',
+      reasoningEffort: 'high',
       skipIntro: true,
       tts: {
         enabled: false,
@@ -77,6 +79,7 @@ grace_window_ms = 220
   it('warns on invalid values and ignores them', () => {
     const result = parseGlobalConfigToml(`
 provider = "bogus"
+reasoning_effort = "too-much"
 
 [tts]
 voice = "nope"
@@ -85,7 +88,10 @@ buffer_sentences = 0
 `)
 
     expect(result.config).toEqual({})
-    expect(result.warnings).toContain('provider must be "anthropic" or "openai".')
+    expect(result.warnings).toContain('provider must be "anthropic", "openai", or "gemini".')
+    expect(result.warnings).toContain(
+      'reasoning_effort must be one of: none, minimal, low, medium, high, xhigh.',
+    )
     expect(result.warnings).toContain('tts.voice must be one of: alba, marius, jean.')
     expect(result.warnings).toContain('tts.speed must be a positive number.')
     expect(result.warnings).toContain('tts.buffer_sentences must be a positive integer.')
@@ -113,6 +119,7 @@ describe('load/write global config', () => {
       {
         provider: 'openai',
         model: 'gpt-5.4-mini',
+        reasoningEffort: 'high',
         skipIntro: true,
         tts: {
           enabled: true,
@@ -128,6 +135,7 @@ describe('load/write global config', () => {
 
     const raw = await readFile(configPath, 'utf8')
     expect(raw).toContain('provider = "openai"')
+    expect(raw).toContain('reasoning_effort = "high"')
     expect(raw).toContain('skip_intro = true')
     expect(raw).toContain('[tts]')
 
@@ -141,6 +149,7 @@ describe('applyGlobalConfig', () => {
   it('merges global defaults onto the app config', () => {
     const result = applyGlobalConfig(DEFAULT_CONFIG, {
       provider: 'openai',
+      reasoningEffort: 'xhigh',
       skipIntro: true,
       tts: {
         serverUrl: 'http://voicebox.local:8000',
@@ -149,10 +158,20 @@ describe('applyGlobalConfig', () => {
     })
 
     expect(result.llmProvider).toBe('openai')
-    expect(result.llmModel).toBe('gpt-5.4')
+    expect(result.llmModel).toBe('gpt-5.5')
+    expect(result.llmReasoningEffort).toBe('xhigh')
     expect(result.skipIntro).toBe(true)
     expect(result.ttsServerUrl).toBe('http://voicebox.local:8000')
     expect(result.ttsSpeed).toBe(2)
+  })
+
+  it('applies the Gemini default model when no model is configured', () => {
+    const result = applyGlobalConfig(DEFAULT_CONFIG, {
+      provider: 'gemini',
+    })
+
+    expect(result.llmProvider).toBe('gemini')
+    expect(result.llmModel).toBe('pro')
   })
 
   it('serializes only defined values', () => {
