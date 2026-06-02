@@ -208,9 +208,7 @@ export function useConversation({ config, initialSession, taskState }: UseConver
           updateLiveTurn({
             ...cur,
             toolCalls: cur.toolCalls.map((tc) =>
-              tc.index === frame.toolIndex
-                ? { ...tc, status: frame.status, result: frame.result }
-                : tc,
+              tc.id === frame.toolId ? { ...tc, status: frame.status, result: frame.result } : tc,
             ),
           })
           break

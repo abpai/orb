@@ -171,7 +171,7 @@ describe('createEditorMarkerProcessor', () => {
     resetFrameIds()
     const processor = createEditorMarkerProcessor({ open: () => {} })
     const toolFrame = createFrame('tool-call-start', {
-      toolCall: { id: 't', index: 0, name: 'Read', input: {}, status: 'running' },
+      toolCall: { id: 't', name: 'Read', input: {}, status: 'running' },
     })
     const frames: Frame[] = [toolFrame, createFrame('agent-text-complete', { text: '' })]
     const kinds: string[] = []

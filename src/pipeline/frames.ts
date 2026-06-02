@@ -36,7 +36,7 @@ export interface ToolCallStartFrame extends BaseFrame {
 
 export interface ToolCallResultFrame extends BaseFrame {
   kind: 'tool-call-result'
-  toolIndex: number
+  toolId: string
   result: string
   status: 'complete' | 'error'
 }

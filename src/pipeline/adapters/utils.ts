@@ -3,6 +3,54 @@
  * Used by Anthropic and AI SDK adapters.
  */
 
+import { createFrame, type Frame } from '../frames'
+
+// ── Tool-call frame tracking ──
+
+export interface ToolStartInput {
+  id: string
+  name: string
+  input: Record<string, unknown>
+}
+
+/**
+ * Emits the canonical tool-call-start / tool-call-result frames, keyed by the
+ * provider-supplied tool id (threaded end-to-end — no separate integer index).
+ * If a result arrives for a tool whose start was never seen (some providers
+ * only surface the call at result time), a synthetic start is emitted first so
+ * the UI always has a row to update.
+ */
+export function createToolFrameTracker() {
+  const started = new Set<string>()
+
+  function start(tool: ToolStartInput): Frame {
+    started.add(tool.id)
+    return createFrame('tool-call-start', { toolCall: { ...tool, status: 'running' } })
+  }
+
+  function result(
+    toolId: string,
+    output: string,
+    isError: boolean,
+    fallbackName?: string,
+  ): Frame[] {
+    const frames: Frame[] = []
+    if (!started.has(toolId)) {
+      frames.push(start({ id: toolId, name: fallbackName ?? toolId, input: {} }))
+    }
+    frames.push(
+      createFrame('tool-call-result', {
+        toolId,
+        result: output,
+        status: isError ? 'error' : 'complete',
+      }),
+    )
+    return frames
+  }
+
+  return { start, result }
+}
+
 // ── Anthropic SDK message parsing ──
 
 export type TextBlock = { type: 'text'; text: string }

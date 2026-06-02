@@ -9,7 +9,7 @@ import {
 import type { HistoryEntry, ToolCall } from '../types'
 
 function toolCall(name: string, input: Record<string, unknown>): ToolCall {
-  return { id: name, index: 0, name, input, status: 'complete' }
+  return { id: name, name, input, status: 'complete' }
 }
 
 function turn(partial: Partial<HistoryEntry>): HistoryEntry {

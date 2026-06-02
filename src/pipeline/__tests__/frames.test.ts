@@ -42,7 +42,6 @@ describe('createFrame', () => {
     const frame = createFrame('tool-call-start', {
       toolCall: {
         id: 't1',
-        index: 0,
         name: 'bash',
         input: { command: 'ls' },
         status: 'running',
