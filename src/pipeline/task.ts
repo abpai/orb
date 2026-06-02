@@ -3,7 +3,6 @@ import type { Frame } from './frames'
 import { createFrame } from './frames'
 import { singleFrame } from './processor'
 import { createPipeline } from './pipeline'
-import type { PipelineObserver } from './observer'
 import { createAgentProcessor } from './processors/agent'
 import { createEditorMarkerProcessor } from './processors/editor-marker'
 import { createTTSProcessor, type TTSCompletionHandle } from './processors/tts'
@@ -26,7 +25,6 @@ export interface PipelineTaskConfig {
   appConfig: AppConfig
   session?: AgentSession
   transport: Transport
-  observers?: PipelineObserver[]
 }
 
 type StateListener = (state: TaskState) => void
@@ -60,7 +58,6 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
   let config = taskConfig.appConfig
   let session: AgentSession | undefined = taskConfig.session
   const transport = taskConfig.transport
-  const observers = taskConfig.observers ?? []
   const stateListeners = new Set<StateListener>()
 
   let runCounter = 0
@@ -123,11 +120,6 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
       let ttsCompletion: TTSCompletionHandle | null = null
       let error: Error | undefined
 
-      // Notify observers
-      for (const observer of observers) {
-        observer.onRunStart?.(runId)
-      }
-
       // Build pipeline: agent → tts
       const pipeline = createPipeline({
         processors: [
@@ -150,7 +142,6 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
             },
           }),
         ],
-        observers,
       })
 
       // Create frame source
@@ -216,20 +207,6 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
             currentTtsCompletion = null
           }
         }
-      }
-
-      // Notify observers of run end
-      for (const observer of observers) {
-        observer.onRunEnd?.({
-          runId,
-          startTime: 0, // observers track their own startTime via onRunStart
-          endTime: Date.now(),
-          totalTextChars: 0,
-          toolCallCount: 0,
-          toolErrorCount: 0,
-          ttsErrorCount: 0,
-          frameCounts: {},
-        })
       }
 
       // Final state transition
