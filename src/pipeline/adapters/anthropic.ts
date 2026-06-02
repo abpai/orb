@@ -13,6 +13,7 @@ import { createFrame } from '../frames'
 import { resolveWithDeepestAncestor } from '../sandbox/path-clamp'
 import type { AgentAdapter, AgentAdapterConfig } from './types'
 import {
+  createToolFrameTracker,
   getContentBlocks,
   isTextBlock,
   isToolUseBlock,
@@ -26,8 +27,8 @@ export function createAnthropicAdapter(config: AgentAdapterConfig): AgentAdapter
       const { appConfig, session, abortController } = config
       let activeSessionId = session?.provider === 'anthropic' ? session.sessionId : undefined
       let accumulatedText = ''
-      let toolIndex = 0
-      const toolIdToIndex = new Map<string, number>()
+      let toolSeq = 0
+      const tools = createToolFrameTracker()
       const systemPrompt = await buildProviderPrompt({
         provider: 'anthropic',
         projectPath: appConfig.projectPath,
@@ -79,17 +80,11 @@ export function createAnthropicAdapter(config: AgentAdapterConfig): AgentAdapter
               continue
             }
             if (isToolUseBlock(block)) {
-              const toolId = block.id ?? block.tool_use_id ?? `tool-${toolIndex}`
-              const index = toolIdToIndex.get(toolId) ?? toolIndex++
-              toolIdToIndex.set(toolId, index)
-              yield createFrame('tool-call-start', {
-                toolCall: {
-                  id: toolId,
-                  index,
-                  name: block.name,
-                  input: block.input ?? {},
-                  status: 'running',
-                },
+              const toolId = block.id ?? block.tool_use_id ?? `tool-${toolSeq++}`
+              yield tools.start({
+                id: toolId,
+                name: block.name,
+                input: block.input ?? {},
               })
             }
           }
@@ -101,14 +96,9 @@ export function createAnthropicAdapter(config: AgentAdapterConfig): AgentAdapter
           for (const block of blocks) {
             if (!isToolResultBlock(block)) continue
             const toolUseId = block.tool_use_id ?? block.id
-            const index = toolUseId ? toolIdToIndex.get(toolUseId) : undefined
-            if (index === undefined) continue
+            if (!toolUseId) continue
             const resultText = extractToolResultText(block.content)
-            yield createFrame('tool-call-result', {
-              toolIndex: index,
-              result: resultText,
-              status: block.is_error ? 'error' : 'complete',
-            })
+            yield* tools.result(toolUseId, resultText, block.is_error === true)
           }
         }
 

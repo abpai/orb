@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 import type { AppConfig, LlmModelId, LlmProvider } from '../types'
+import { modelCachePath as orbModelCachePath } from './orb-paths'
 
 export const GATEWAY_MODELS_URL = 'https://ai-gateway.vercel.sh/v1/models'
 export const MODEL_CATALOG_TTL_MS = 24 * 60 * 60 * 1000
@@ -158,7 +159,7 @@ const FALLBACK_CATALOG_MODELS: CatalogModel[] = Object.entries(
 )
 
 function modelCachePath(homeDir = os.homedir()): string {
-  return path.join(homeDir, '.orb', 'models', 'gateway.json')
+  return orbModelCachePath(homeDir)
 }
 
 function getGatewayProvider(id: string): LlmProvider | null {
@@ -365,6 +366,36 @@ function matchesAlias(provider: LlmProvider, alias: string, model: CatalogModel)
   }
 }
 
+/**
+ * Classify a native model id into its alias family (haiku/sonnet/opus,
+ * gpt/mini/nano/pro/codex, flash/flash-lite/pro). Returns null when the id has
+ * no recognizable family. Used by the UI to decide whether a saved session's
+ * model still maps onto a current choice.
+ */
+export function modelAliasFamily(provider: LlmProvider, model: LlmModelId): string | null {
+  if (provider === 'anthropic') {
+    return model.match(/^claude-(haiku|sonnet|opus)-/)?.[1] ?? null
+  }
+
+  if (provider === 'openai') {
+    if (/^gpt-\d/.test(model) && model.includes('codex')) return 'codex'
+    if (/^gpt-\d/.test(model) && model.includes('mini')) return 'mini'
+    if (/^gpt-\d/.test(model) && model.includes('nano')) return 'nano'
+    if (/^gpt-\d/.test(model) && model.includes('pro')) return 'pro'
+    if (/^gpt-\d/.test(model)) return 'gpt'
+    return null
+  }
+
+  if (provider === 'gemini') {
+    if (!model.startsWith('gemini-') || model.includes('image')) return null
+    if (model.includes('flash-lite')) return 'flash-lite'
+    if (model.includes('flash')) return 'flash'
+    if (model.includes('pro')) return 'pro'
+  }
+
+  return null
+}
+
 function anthropicComparableTokens(value: string): string[] {
   const normalized = normalizeModelToken(value)
   const withoutProvider = normalized.replace(/^anthropic\//, '')
@@ -426,7 +457,12 @@ function labelFromGatewayName(provider: LlmProvider, name?: string): string | un
   return name
 }
 
-function labelFromNativeId(provider: LlmProvider, nativeId: string): string {
+/**
+ * The single home for orb's model taxonomy: turns a native model id into its
+ * human display label. UI helpers (`formatModelLabel`) delegate here so the
+ * provider-specific naming rules live in exactly one place.
+ */
+export function labelForModel(provider: LlmProvider, nativeId: string): string {
   if (provider === 'anthropic') {
     const family = nativeId.match(/^claude-(haiku|sonnet|opus)-/)?.[1]
     if (family) {
@@ -471,7 +507,7 @@ export function buildProviderModelChoices(
     labels[nativeId] =
       labelFromGatewayName(provider, selected?.name) ??
       FALLBACK_MODEL_LABELS[provider][nativeId] ??
-      labelFromNativeId(provider, nativeId)
+      labelForModel(provider, nativeId)
   }
 
   return {
@@ -518,7 +554,7 @@ export async function resolveAppModelConfig(
   const llmModel = resolveModelForProvider(config.llmProvider, config.llmModel, catalog.models)
 
   if (!labels[llmModel]) {
-    labels[llmModel] = labelFromNativeId(config.llmProvider, llmModel)
+    labels[llmModel] = labelForModel(config.llmProvider, llmModel)
   }
 
   return {

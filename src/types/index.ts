@@ -21,7 +21,6 @@ export class TTSError extends Error {
 
 export interface ToolCall {
   id: string
-  index: number
   name: string
   input: Record<string, unknown>
   status: 'running' | 'complete' | 'error'

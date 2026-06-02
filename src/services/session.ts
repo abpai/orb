@@ -1,6 +1,5 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import os from 'node:os'
 import crypto from 'node:crypto'
 
 import type {
@@ -10,17 +9,13 @@ import type {
   OpenAiSession,
   SavedSession,
 } from '../types'
+import { isFileNotFoundError, sessionsDir } from './orb-paths'
 
 const SESSION_VERSION = 2
-const SESSION_DIR = path.join('.orb', 'sessions')
 const MAX_SESSION_AGE_DAYS = 30
 
-function isFileNotFoundError(err: unknown): boolean {
-  return (err as { code?: string })?.code === 'ENOENT'
-}
-
 function getSessionDir(): string {
-  return path.join(os.homedir(), SESSION_DIR)
+  return sessionsDir()
 }
 
 function sanitizeFilename(value: string): string {

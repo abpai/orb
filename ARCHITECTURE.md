@@ -135,6 +135,7 @@ src/
 │       ├── terminal-text.ts  # In-memory outbound transport used by the UI
 │       └── types.ts          # Transport contracts
 ├── services/
+│   ├── orb-paths.ts          # ~/.orb path accessors + ENOENT helper (single owner)
 │   ├── global-config.ts      # ~/.orb/config.toml parsing and writing
 │   ├── gemini-auth.ts        # Gemini API-key resolution
 │   ├── prompts.ts            # Prompt file composition for providers/TTS

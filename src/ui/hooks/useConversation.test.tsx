@@ -320,7 +320,6 @@ describe('useConversation', () => {
           kind: 'tool-call-start',
           toolCall: {
             id: 'tc-1',
-            index: 0,
             name: 'Read',
             input: { file_path: '/foo.ts' },
             status: 'running',

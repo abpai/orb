@@ -2,7 +2,8 @@ import { readdir, readFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
-const ORB_DIR = '.orb'
+import { globalCommandsDir, isFileNotFoundError, ORB_DIR_NAME } from './orb-paths'
+
 const COMMANDS_DIR = 'commands'
 const BUILTIN_COMMANDS = ['help', 'commands'] as const
 
@@ -60,11 +61,11 @@ function mergeCommand(
 }
 
 export function getGlobalCommandsDir(homeDir = os.homedir()): string {
-  return path.join(homeDir, ORB_DIR, COMMANDS_DIR)
+  return globalCommandsDir(homeDir)
 }
 
 export function getProjectCommandsDir(projectPath: string): string {
-  return path.join(path.resolve(projectPath), ORB_DIR, COMMANDS_DIR)
+  return path.join(path.resolve(projectPath), ORB_DIR_NAME, COMMANDS_DIR)
 }
 
 function getCommandPath(commandsDir: string, commandName: string): string {
@@ -112,8 +113,7 @@ async function readCommandsDir(
       }))
       .sort((a, b) => a.name.localeCompare(b.name))
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code
-    if (code === 'ENOENT') return []
+    if (isFileNotFoundError(error)) return []
     throw new SlashCommandError(
       `Failed to read slash commands from ${commandsDir}: ${
         error instanceof Error ? error.message : String(error)
@@ -231,8 +231,7 @@ export async function expandSlashCommandInput({
         sourcePath: candidatePath,
       }
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code
-      if (code === 'ENOENT') continue
+      if (isFileNotFoundError(error)) continue
       if (error instanceof SlashCommandError) throw error
       throw new SlashCommandError(
         `Failed to read slash command "/${parsed.name}" from ${candidatePath}: ${

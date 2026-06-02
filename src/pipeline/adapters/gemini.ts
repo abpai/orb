@@ -3,7 +3,7 @@ import { buildProviderPrompt } from '../../services/prompts'
 import type { Frame } from '../frames'
 import { createFrame } from '../frames'
 import type { AgentAdapter, AgentAdapterConfig } from './types'
-import { normalizeToolInput, isToolError, formatToolResult } from './utils'
+import { createToolFrameTracker, normalizeToolInput, isToolError, formatToolResult } from './utils'
 import { resolveGeminiProvider } from '../../services/gemini-auth'
 import { createSandbox } from '../sandbox/factory'
 import { bash, readFile, writeFile } from '../tools'
@@ -34,58 +34,27 @@ export function createGeminiAdapter(config: AgentAdapterConfig): AgentAdapter {
       const allowedTools: ToolSet = { bash, readFile, writeFile }
 
       let accumulatedText = ''
-      let toolIndex = 0
-      const toolIdToIndex = new Map<string, number>()
+      const tools = createToolFrameTracker()
       const pendingFrames: Frame[] = []
 
-      function getOrCreateIndex(toolId: string): number {
-        const existing = toolIdToIndex.get(toolId)
-        if (existing !== undefined) return existing
-        const index = toolIndex++
-        toolIdToIndex.set(toolId, index)
-        return index
-      }
-
       function registerToolCall(call: GeminiToolCall): void {
-        const index = getOrCreateIndex(call.toolCallId)
         pendingFrames.push(
-          createFrame('tool-call-start', {
-            toolCall: {
-              id: call.toolCallId,
-              index,
-              name: call.toolName,
-              input: normalizeToolInput(call.input),
-              status: 'running',
-            },
+          tools.start({
+            id: call.toolCallId,
+            name: call.toolName,
+            input: normalizeToolInput(call.input),
           }),
         )
       }
 
       function registerToolResult(result: GeminiToolResult): void {
-        const existingIndex = toolIdToIndex.get(result.toolCallId)
-        const index = getOrCreateIndex(result.toolCallId)
-
-        if (existingIndex === undefined) {
-          pendingFrames.push(
-            createFrame('tool-call-start', {
-              toolCall: {
-                id: result.toolCallId,
-                index,
-                name: result.toolName,
-                input: {},
-                status: 'running',
-              },
-            }),
-          )
-        }
-
-        const text = formatToolResult(result.output)
         pendingFrames.push(
-          createFrame('tool-call-result', {
-            toolIndex: index,
-            result: text,
-            status: isToolError(result.output) ? 'error' : 'complete',
-          }),
+          ...tools.result(
+            result.toolCallId,
+            formatToolResult(result.output),
+            isToolError(result.output),
+            result.toolName,
+          ),
         )
       }
 

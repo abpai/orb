@@ -12,9 +12,7 @@ import {
   type ReasoningEffort,
   type Voice,
 } from '../types'
-
-const CONFIG_DIR = '.orb'
-const CONFIG_FILE = 'config.toml'
+import { globalConfigPath, isFileNotFoundError } from './orb-paths'
 
 export interface OrbGlobalTtsConfig {
   enabled?: boolean
@@ -157,7 +155,7 @@ function validateReasoningEffort(
 }
 
 export function getGlobalConfigPath(homeDir = os.homedir()): string {
-  return path.join(homeDir, CONFIG_DIR, CONFIG_FILE)
+  return globalConfigPath(homeDir)
 }
 
 export function parseGlobalConfigToml(
@@ -310,7 +308,7 @@ export async function loadGlobalConfig(
     const parsed = parseGlobalConfigToml(contents, configPath)
     return { ...parsed, path: configPath, exists: true }
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+    if (isFileNotFoundError(error)) {
       return { config: {}, explicit: {}, warnings: [], path: configPath, exists: false }
     }
 

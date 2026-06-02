@@ -3,6 +3,7 @@ import { ORB_VERSION } from '../../config'
 import type { Frame } from '../frames'
 import { createFrame } from '../frames'
 import { CodexAppServerClient } from './codex-client'
+import { createToolFrameTracker } from './utils'
 import type { AgentAdapter, AgentAdapterConfig } from './types'
 
 interface ThreadItem {
@@ -219,9 +220,8 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
     async *stream(prompt: string): AsyncIterable<Frame> {
       const { appConfig, session, abortController } = config
       const client = new CodexAppServerClient()
-      const toolIdToIndex = new Map<string, number>()
+      const tools = createToolFrameTracker()
       const outputDeltas = new Map<string, string[]>()
-      let toolIndex = 0
       const agentMessages = createOpenAiAgentMessageAccumulator()
       let threadId = session?.provider === 'openai' ? session.threadId : undefined
       let turnId: string | undefined
@@ -233,14 +233,6 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
         void client.close()
       }
       abortController.signal.addEventListener('abort', onAbort, { once: true })
-
-      function getOrCreateToolIndex(itemId: string): number {
-        const existing = toolIdToIndex.get(itemId)
-        if (existing !== undefined) return existing
-        const nextIndex = toolIndex++
-        toolIdToIndex.set(itemId, nextIndex)
-        return nextIndex
-      }
 
       async function startOrResumeThread(
         params: ReturnType<typeof createOpenAiThreadParams>,
@@ -325,15 +317,10 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
             if (params.threadId !== threadId || params.turnId !== turnId || !params.item) continue
             const item = params.item
             if (!isToolItem(item)) continue
-            const index = getOrCreateToolIndex(item.id)
-            yield createFrame('tool-call-start', {
-              toolCall: {
-                id: item.id,
-                index,
-                name: getToolName(item),
-                input: getToolInput(item),
-                status: 'running',
-              },
+            yield tools.start({
+              id: item.id,
+              name: getToolName(item),
+              input: getToolInput(item),
             })
             continue
           }
@@ -364,12 +351,7 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
             if (params.threadId !== threadId || params.turnId !== turnId || !params.item) continue
             const item = params.item
             if (!isToolItem(item)) continue
-            const index = getOrCreateToolIndex(item.id)
-            yield createFrame('tool-call-result', {
-              toolIndex: index,
-              result: getToolResult(item, outputDeltas),
-              status: isFailedToolItem(item) ? 'error' : 'complete',
-            })
+            yield* tools.result(item.id, getToolResult(item, outputDeltas), isFailedToolItem(item))
             continue
           }
 

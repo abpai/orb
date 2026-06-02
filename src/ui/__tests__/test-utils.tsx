@@ -31,7 +31,6 @@ export const fixtures = {
   toolCall: {
     read: (overrides?: Partial<ToolCall>): ToolCall => ({
       id: 'tool-1',
-      index: 0,
       name: 'Read',
       input: { file_path: '/src/index.ts' },
       status: 'complete',
@@ -41,7 +40,6 @@ export const fixtures = {
 
     bash: (overrides?: Partial<ToolCall>): ToolCall => ({
       id: 'tool-2',
-      index: 1,
       name: 'Bash',
       input: { command: 'ls -la' },
       status: 'complete',
@@ -51,7 +49,6 @@ export const fixtures = {
 
     running: (overrides?: Partial<ToolCall>): ToolCall => ({
       id: 'tool-3',
-      index: 2,
       name: 'Grep',
       input: { pattern: 'TODO' },
       status: 'running',
@@ -60,7 +57,6 @@ export const fixtures = {
 
     error: (overrides?: Partial<ToolCall>): ToolCall => ({
       id: 'tool-4',
-      index: 3,
       name: 'Write',
       input: { file_path: '/readonly.txt' },
       status: 'error',
@@ -101,7 +97,7 @@ export const fixtures = {
       toolCalls: [
         fixtures.toolCall.read(),
         fixtures.toolCall.bash(),
-        fixtures.toolCall.read({ id: 'tool-5', index: 4 }),
+        fixtures.toolCall.read({ id: 'tool-5' }),
       ],
       answer: 'I found and fixed the issue.',
       ...overrides,
