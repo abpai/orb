@@ -144,6 +144,11 @@ export function createEditorMarkerProcessor(options: EditorMarkerOptions): Proce
     // Could `partial` still grow into a control opener? Strict (column 0): true
     // while it is a prefix of "```<label>", or already that followed by spaces.
     const couldBeOpenFence = (partial: string): boolean => {
+      // A control opener always starts with a backtick, so a line whose first
+      // char isn't one can never grow into one. Bail before lowercasing the
+      // whole partial line — otherwise a long backtick-free line costs O(n²)
+      // (one full-line toLowerCase per streamed char).
+      if (partial.charCodeAt(0) !== 96 /* ` */) return false
       const text = partial.toLowerCase()
       if (text.length === 0) return false
       if (openFence.startsWith(text)) return true

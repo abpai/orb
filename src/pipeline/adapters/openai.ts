@@ -109,12 +109,12 @@ function getToolInput(item: ThreadItem): Record<string, unknown> {
   }
 }
 
-function getToolResult(item: ThreadItem, outputDeltas: Map<string, string>): string {
+function getToolResult(item: ThreadItem, outputDeltas: Map<string, string[]>): string {
   switch (item.type) {
     case 'commandExecution':
-      return getString(item.aggregatedOutput) ?? outputDeltas.get(item.id) ?? ''
+      return getString(item.aggregatedOutput) ?? outputDeltas.get(item.id)?.join('') ?? ''
     case 'fileChange':
-      return outputDeltas.get(item.id) ?? formatJson(item.changes ?? [])
+      return outputDeltas.get(item.id)?.join('') ?? formatJson(item.changes ?? [])
     case 'mcpToolCall':
       return formatJson(item.error ?? item.result ?? null)
     case 'dynamicToolCall':
@@ -136,7 +136,8 @@ function isToolItem(item: ThreadItem): boolean {
 }
 
 function isFailedToolItem(item: ThreadItem): boolean {
-  if (item.type === 'commandExecution') return item.status === 'failed' || item.exitCode !== 0
+  if (item.type === 'commandExecution')
+    return item.status === 'failed' || (typeof item.exitCode === 'number' && item.exitCode !== 0)
   if (item.type === 'mcpToolCall' || item.type === 'dynamicToolCall')
     return item.status === 'failed'
   if (item.type === 'fileChange') return item.status === 'failed'
@@ -219,7 +220,7 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
       const { appConfig, session, abortController } = config
       const client = new CodexAppServerClient()
       const toolIdToIndex = new Map<string, number>()
-      const outputDeltas = new Map<string, string>()
+      const outputDeltas = new Map<string, string[]>()
       let toolIndex = 0
       const agentMessages = createOpenAiAgentMessageAccumulator()
       let threadId = session?.provider === 'openai' ? session.threadId : undefined
@@ -299,6 +300,7 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
           ),
         )
 
+        let turnCompleted = false
         for await (const message of client.notifications()) {
           if (message.method === 'item/agentMessage/delta') {
             const params = message.params as {
@@ -347,10 +349,9 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
               delta?: string
             }
             if (params.threadId !== threadId || params.turnId !== turnId || !params.itemId) continue
-            outputDeltas.set(
-              params.itemId,
-              `${outputDeltas.get(params.itemId) ?? ''}${params.delta ?? ''}`,
-            )
+            const chunks = outputDeltas.get(params.itemId)
+            if (chunks) chunks.push(params.delta ?? '')
+            else outputDeltas.set(params.itemId, [params.delta ?? ''])
             continue
           }
 
@@ -394,6 +395,7 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
             if (params.turn.status === 'failed') {
               throw new Error(formatJson(params.turn.error ?? 'Codex turn failed.'))
             }
+            turnCompleted = true
             yield createFrame('agent-text-complete', {
               text: agentMessages.text,
               session: { provider: 'openai', threadId },
@@ -404,6 +406,20 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
           if (message.method === 'error') {
             throw new Error(formatJson(message.params ?? 'Codex app-server error.'))
           }
+        }
+
+        // The notification stream can end without a `turn/completed` if the
+        // `codex app-server` subprocess dies mid-turn (crash, killed, EOF, or an
+        // unparseable line). Without this, the turn would silently finish with no
+        // completion frame and no error. Surface it (with any captured stderr) so
+        // the agent processor reports a real failure instead of a blank answer.
+        if (!turnCompleted && !abortController.signal.aborted) {
+          const stderr = client.getStderrText()
+          throw new Error(
+            stderr
+              ? `Codex app-server exited before completing the turn: ${stderr}`
+              : 'Codex app-server exited before completing the turn.',
+          )
         }
       } finally {
         abortController.signal.removeEventListener('abort', onAbort)
