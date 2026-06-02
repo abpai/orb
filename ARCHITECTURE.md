@@ -113,9 +113,6 @@ src/
 │   ├── processor.ts          # Processor type + singleFrame helper
 │   ├── pipeline.ts           # Left-to-right processor composition
 │   ├── task.ts               # PipelineTask state machine
-│   ├── observer.ts           # Observer interface
-│   ├── observers/
-│   │   └── metrics.ts        # Metrics observer (mainly test-facing today)
 │   ├── adapters/
 │   │   ├── anthropic.ts      # Claude Agent SDK adapter
 │   │   ├── openai.ts         # Codex app-server adapter for OpenAI/ChatGPT auth
@@ -401,7 +398,6 @@ These are intentional or notable aspects of the implementation today:
 
 - `usePipeline()` creates the `PipelineTask` and terminal transport once on mount, then pushes later config/model changes through `task.updateConfig()`.
 - The terminal transport is outbound-only in production. The UI does not send inbound frames through it.
-- Observer support exists in `PipelineTask` and `createPipeline()`, but the app does not wire observers in normal runtime usage.
 - Model cycling uses the resolved model choices attached to `AppConfig`, so providers can expose semantic aliases without hardcoding every release in the UI.
 - The input box is a real multiline buffer: Enter submits, while `Ctrl+J` and `Alt+Enter` insert newlines.
 - The `cancel` frame type exists in the shared frame union, but cancellation is currently handled directly through `task.cancel()` rather than by piping cancel frames through the transport.
@@ -423,7 +419,7 @@ These are intentional or notable aspects of the implementation today:
 5. Implement the `AgentAdapter` contract in `src/pipeline/adapters/`.
 6. Update `createAgentProcessor()` dispatch and any UI labeling helpers.
 
-### Add a new transport or observer
+### Add a new transport
 
-1. Implement `Transport` under `src/pipeline/transports/` or `PipelineObserver` under `src/pipeline/`.
-2. Wire it through `createPipelineTask()` or `usePipeline()` depending on whether it is runtime-facing or test/diagnostic-only.
+1. Implement `Transport` under `src/pipeline/transports/`.
+2. Wire it through `createPipelineTask()` or `usePipeline()`.
