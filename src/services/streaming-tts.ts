@@ -90,6 +90,26 @@ function extractChunkAtBoundary(
   return { chunk: trimmed, consumed: boundary }
 }
 
+/**
+ * Is a code delimiter left open in `text`? An unclosed ``` fence or inline `
+ * makes earlier cleaning non-final — closing it later retroactively rewrites
+ * the text (see cleanTextForSpeech) — so the buffer prefix is not yet settled
+ * and must not be compacted away. Mirrors replaceDelimited's non-overlapping
+ * pairing: count ``` fences first, then inline backticks in the fence-free
+ * remainder.
+ */
+function hasOpenCodeDelimiter(text: string): boolean {
+  let fences = 0
+  let index = text.indexOf('```')
+  while (index !== -1) {
+    fences += 1
+    index = text.indexOf('```', index + 3)
+  }
+  if (fences % 2 !== 0) return true
+  const inlineTicks = (text.replace(/```/g, '').match(/`/g) ?? []).length
+  return inlineTicks % 2 !== 0
+}
+
 export function createStreamingSpeechController(
   config: AppConfig,
   callbacks: StreamingSpeechCallbacks = {},
@@ -248,6 +268,24 @@ export function createStreamingSpeechController(
     return extractChunksFromCleaned(cleanedText, { ...options, now })
   }
 
+  /**
+   * Drop the buffer once everything cleaned has been emitted and no code
+   * delimiter is left open. At that point the prefix is fully settled — its
+   * cleaning can no longer change — so re-cleaning it on every future delta is
+   * pure waste. Resetting keeps cleanTextForSpeech() O(unspoken tail) instead
+   * of O(whole response), avoiding quadratic cost on long answers. The spoken
+   * chunk sequence is unchanged (a leading space may drop from the next chunk,
+   * which TTS renders identically).
+   */
+  function compactSettledBuffer(): void {
+    if (lastCleanedText.length === 0) return
+    if (processedOffset < lastCleanedText.length) return
+    if (hasOpenCodeDelimiter(textBuffer)) return
+    textBuffer = ''
+    processedOffset = 0
+    lastCleanedText = ''
+  }
+
   function shouldGrace(pending: string): boolean {
     return /[\s.,!?;:]["')\]]?$/.test(pending)
   }
@@ -279,6 +317,7 @@ export function createStreamingSpeechController(
         const remaining = extractChunks({ forceFlush: true, finalized: false })
         maybeStartProcessing()
         resetFlushTimers(remaining)
+        compactSettledBuffer()
       }, config.ttsGraceWindowMs)
       return
     }
@@ -294,6 +333,7 @@ export function createStreamingSpeechController(
     }
     maybeStartProcessing()
     resetFlushTimers(remaining)
+    compactSettledBuffer()
   }
 
   async function generateAndPlayViaFile(sentence: string): Promise<void> {
@@ -477,6 +517,7 @@ export function createStreamingSpeechController(
       const remaining = extractChunks({ forceFlush: false, finalized: false })
       maybeStartProcessing()
       resetFlushTimers(remaining)
+      compactSettledBuffer()
     },
 
     finalize(): void {

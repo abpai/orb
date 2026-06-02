@@ -136,6 +136,77 @@ describe('createStreamingSpeechController', () => {
     })
   })
 
+  describe('buffer compaction', () => {
+    // Compaction drops the settled buffer prefix between sentences. Feeding the
+    // same text as many tiny deltas exercises compaction repeatedly, while one
+    // whole feed compacts only at the end — so identical spoken output proves
+    // compaction does not change chunk boundaries, ordering, or content.
+    async function spokenChunks(feeds: string[]): Promise<string[]> {
+      const requests: string[] = []
+      globalThis.fetch = mock(
+        async (_url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+          const body = typeof init?.body === 'string' ? init.body : ''
+          requests.push(body ? (JSON.parse(body).text as string) : '')
+          return emptyStreamResponse()
+        },
+      ) as unknown as typeof globalThis.fetch
+      Bun.which = mock(() => '/usr/local/bin/mpv') as unknown as typeof Bun.which
+      Bun.spawn = mock(
+        () =>
+          ({
+            stdin: { write() {}, end() {} },
+            exited: Promise.resolve(0),
+            kill() {},
+          }) as unknown as Bun.Subprocess,
+      ) as unknown as typeof Bun.spawn
+
+      const controller = createStreamingSpeechController(
+        createTestConfig({
+          ttsBufferSentences: 1,
+          ttsMinChunkLength: 0,
+          ttsMaxWaitMs: 0,
+          ttsClauseBoundaries: false,
+        }),
+      )
+      for (const feed of feeds) controller.feedText(feed)
+      controller.finalize()
+      await controller.waitForCompletion()
+      // Trim each chunk: compaction may drop a cosmetic leading space that TTS
+      // renders identically; boundaries/ordering/content must still match.
+      return requests.map((request) => request.trim())
+    }
+
+    function toDeltas(text: string, size: number): string[] {
+      const deltas: string[] = []
+      for (let i = 0; i < text.length; i += size) deltas.push(text.slice(i, i + size))
+      return deltas
+    }
+
+    it('yields identical chunks for prose fed whole vs. as tiny deltas', async () => {
+      const text =
+        'First sentence here. Second one follows! Is this the third? ' +
+        'A fourth sentence to be sure. And a fifth one closes it out.'
+
+      const whole = await spokenChunks([text])
+      const streamed = await spokenChunks(toDeltas(text, 2))
+
+      expect(whole.length).toBeGreaterThan(1)
+      expect(streamed).toEqual(whole)
+    })
+
+    it('keeps code fences and inline code intact across compaction', async () => {
+      const text =
+        'Here is `inline code` in a sentence. Now a block:\n' +
+        '```\nconst x = 1\nconst y = 2\n```\n' +
+        'The block is done. One more sentence after it.'
+
+      const whole = await spokenChunks([text])
+      const streamed = await spokenChunks(toDeltas(text, 1))
+
+      expect(streamed).toEqual(whole)
+    })
+  })
+
   describe('long text without whitespace', () => {
     it('handles text without any whitespace by triggering forced flush', async () => {
       installTTSMocks()
