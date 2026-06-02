@@ -86,11 +86,17 @@ async function detectCodexChatGptAuth(): Promise<boolean> {
   })
 
   try {
-    const [stdout, exitCode] = await withTimeout(
-      Promise.all([new Response(proc.stdout).text(), proc.exited]),
+    // `codex login status` may print its status line to either stream depending
+    // on version, so scan both for the ChatGPT marker rather than stdout alone.
+    const [stdout, stderr, exitCode] = await withTimeout(
+      Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]),
       CODEX_AUTH_TIMEOUT_MS,
     )
-    return exitCode === 0 && stdout.toLowerCase().includes('chatgpt')
+    return exitCode === 0 && `${stdout}\n${stderr}`.toLowerCase().includes('chatgpt')
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
     console.warn(`[orb] Codex credential detection failed: ${reason}`)
