@@ -14,6 +14,7 @@ interface FooterProps {
   provider: LlmProvider
   modelLabels?: Record<LlmModelId, string>
   canCycleModel: boolean
+  canOpenFiles?: boolean
   canTogglePause: boolean
   canRepeat: boolean
   isPaused: boolean
@@ -29,6 +30,7 @@ export const Footer = memo(function Footer({
   provider,
   modelLabels,
   canCycleModel,
+  canOpenFiles,
   canTogglePause,
   canRepeat,
   isPaused,
@@ -69,6 +71,11 @@ export const Footer = memo(function Footer({
         {showAllHints && canRepeat && (
           <Text color="gray" dimColor>
             ^R repeat
+          </Text>
+        )}
+        {showAllHints && canOpenFiles && (
+          <Text color="gray" dimColor>
+            ^G open
           </Text>
         )}
         <Text color="gray" dimColor>

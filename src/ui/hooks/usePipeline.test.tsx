@@ -79,6 +79,7 @@ describe('usePipeline submit', () => {
         onRunComplete: () => {},
         onStateChange: () => {},
         onSubmitError: () => {},
+        onOpenFiles: () => {},
         startEntry: (query) => {
           startEntryCalls.push(query)
           return { entryId: 'entry-1', query }
@@ -136,6 +137,7 @@ describe('usePipeline submit', () => {
         onRunComplete: () => {},
         onStateChange: () => {},
         onSubmitError: (query, message) => submitErrors.push({ query, message }),
+        onOpenFiles: () => {},
         startEntry,
       })
       return null
@@ -194,6 +196,7 @@ describe('usePipeline submit', () => {
         onRunComplete: () => {},
         onStateChange: () => {},
         onSubmitError: () => {},
+        onOpenFiles: () => {},
         startEntry,
       })
       return null
@@ -204,6 +207,61 @@ describe('usePipeline submit', () => {
     await controls.submit('/commands')
 
     expect(builtins).toEqual([{ query: '/commands', answer: 'Available slash commands' }])
+    expect(startEntry).not.toHaveBeenCalled()
+    expect(taskRun).not.toHaveBeenCalled()
+
+    app.unmount()
+  })
+
+  it('routes /open to the editor handler without running or expanding', async () => {
+    const taskRun = mock(async () => ({ entryId: 'entry-1', text: '', cancelled: false }))
+    const expandSlash = mock(async () => ({ kind: 'prompt' as const, prompt: 'unused' }))
+
+    mock.module('../../pipeline/task', () => ({
+      createPipelineTask: () => ({
+        updateConfig: () => {},
+        onStateChange: () => () => {},
+        cancel: () => {},
+        pause: () => {},
+        resume: () => {},
+        repeatTts: async () => {},
+        stopPlayback: () => {},
+        run: taskRun,
+      }),
+    }))
+
+    mock.module('../../services/commands', () => createCommandsMock(expandSlash))
+
+    const { usePipeline } = await importUsePipeline()
+
+    const openArgs: string[] = []
+    const startEntry = mock(() => ({ entryId: 'entry-1', query: 'should-not-run' }))
+    let controls!: ReturnType<typeof usePipeline>
+
+    function Harness() {
+      controls = usePipeline({
+        config: DEFAULT_CONFIG,
+        activeModel: DEFAULT_CONFIG.llmModel,
+        initialModel: DEFAULT_CONFIG.llmModel,
+        onFrame: () => {},
+        onSubmitBuiltin: () => {},
+        onRunComplete: () => {},
+        onStateChange: () => {},
+        onSubmitError: () => {},
+        onOpenFiles: (args) => {
+          openArgs.push(args)
+        },
+        startEntry,
+      })
+      return null
+    }
+
+    const app = render(<Harness />)
+
+    await controls.submit('/open src/foo.ts:42')
+
+    expect(openArgs).toEqual(['src/foo.ts:42'])
+    expect(expandSlash).not.toHaveBeenCalled()
     expect(startEntry).not.toHaveBeenCalled()
     expect(taskRun).not.toHaveBeenCalled()
 

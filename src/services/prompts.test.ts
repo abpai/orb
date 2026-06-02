@@ -28,6 +28,7 @@ describe('buildProviderPrompt', () => {
     const promptsDir = await createPromptsDir({
       'base.md': 'You are a helpful coding assistant.',
       'anthropic.md': 'The current project is "{{projectName}}" at {{projectPath}}.',
+      'open-file.md': 'Open files guidance.',
       'voice.md': 'Voice mode is enabled.',
     })
 
@@ -40,6 +41,7 @@ describe('buildProviderPrompt', () => {
 
     expect(prompt).toContain('You are a helpful coding assistant.')
     expect(prompt).toContain('The current project is "orb-demo" at /tmp/orb-demo.')
+    expect(prompt).toContain('Open files guidance.')
     expect(prompt).not.toContain('Voice mode is enabled.')
   })
 
@@ -47,6 +49,7 @@ describe('buildProviderPrompt', () => {
     const promptsDir = await createPromptsDir({
       'base.md': 'Base prompt.',
       'openai.md': 'OpenAI prompt.',
+      'open-file.md': 'Open file prompt.',
       'voice.md': 'Voice prompt.',
     })
 
@@ -57,12 +60,13 @@ describe('buildProviderPrompt', () => {
       promptsDir,
     })
 
-    expect(prompt).toBe('Base prompt.\n\nOpenAI prompt.\n\nVoice prompt.')
+    expect(prompt).toBe('Base prompt.\n\nOpenAI prompt.\n\nOpen file prompt.\n\nVoice prompt.')
   })
 
   it('throws a clear error when a required prompt file is missing', async () => {
     const promptsDir = await createPromptsDir({
       'base.md': 'Base prompt.',
+      'open-file.md': 'Open file prompt.',
       'voice.md': 'Voice prompt.',
     })
 

@@ -4,10 +4,12 @@ import type { AppState } from '../../types'
 
 interface UseKeyboardShortcutsConfig {
   canCycleModel: boolean
+  canOpenFiles: boolean
   canRepeat: boolean
   canTogglePause: boolean
   onCancel(): void
   onCycleModel(): void
+  onOpenFiles(): void
   onRepeat(): void
   onToggleDetailMode(): void
   onTogglePause(): void
@@ -16,10 +18,12 @@ interface UseKeyboardShortcutsConfig {
 
 export function useKeyboardShortcuts({
   canCycleModel,
+  canOpenFiles,
   canRepeat,
   canTogglePause,
   onCancel,
   onCycleModel,
+  onOpenFiles,
   onRepeat,
   onToggleDetailMode,
   onTogglePause,
@@ -59,6 +63,15 @@ export function useKeyboardShortcuts({
       }
     },
     { isActive: canRepeat },
+  )
+
+  useInput(
+    (input, key) => {
+      if (key.ctrl && input === 'g') {
+        onOpenFiles()
+      }
+    },
+    { isActive: canOpenFiles },
   )
 
   useInput(
