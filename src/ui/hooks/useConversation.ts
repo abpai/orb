@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { OutboundFrame } from '../../pipeline/transports/types'
 import type { RunResult } from '../../pipeline/task'
-import { FALLBACK_MODEL_CHOICES_BY_PROVIDER } from '../../services/model-catalog'
+import { FALLBACK_MODEL_CHOICES_BY_PROVIDER, modelAliasFamily } from '../../services/model-catalog'
 import { saveSession } from '../../services/session'
 import {
   type AgentSession,
@@ -26,40 +26,16 @@ function getModelChoices(config: AppConfig): LlmModelId[] {
     : FALLBACK_MODEL_CHOICES_BY_PROVIDER[config.llmProvider]
 }
 
-function semanticFamily(provider: AppConfig['llmProvider'], model: LlmModelId): string | null {
-  if (provider === 'anthropic') {
-    return model.match(/^claude-(haiku|sonnet|opus)-/)?.[1] ?? null
-  }
-
-  if (provider === 'openai') {
-    if (/^gpt-\d/.test(model) && model.includes('codex')) return 'codex'
-    if (/^gpt-\d/.test(model) && model.includes('mini')) return 'mini'
-    if (/^gpt-\d/.test(model) && model.includes('nano')) return 'nano'
-    if (/^gpt-\d/.test(model) && model.includes('pro')) return 'pro'
-    if (/^gpt-\d/.test(model)) return 'gpt'
-    return null
-  }
-
-  if (provider === 'gemini') {
-    if (!model.startsWith('gemini-') || model.includes('image')) return null
-    if (model.includes('flash-lite')) return 'flash-lite'
-    if (model.includes('flash')) return 'flash'
-    if (model.includes('pro')) return 'pro'
-  }
-
-  return null
-}
-
 function shouldRestoreSessionModel(config: AppConfig, model?: LlmModelId): model is LlmModelId {
   if (!model) return false
 
   const modelChoices = getModelChoices(config)
   if (modelChoices.includes(model)) return true
 
-  const family = semanticFamily(config.llmProvider, model)
+  const family = modelAliasFamily(config.llmProvider, model)
   if (!family) return true
 
-  return !modelChoices.some((choice) => semanticFamily(config.llmProvider, choice) === family)
+  return !modelChoices.some((choice) => modelAliasFamily(config.llmProvider, choice) === family)
 }
 
 function createLocalEntry(
