@@ -22,8 +22,12 @@ interface UsePipelineConfig {
   onRunComplete(result: RunResult): void
   onStateChange(state: TaskState): void
   onSubmitError(query: string, message: string): void
+  onOpenFiles(args: string): void | Promise<void>
   startEntry(query: string): PendingRun | null
 }
+
+/** Matches `/open` with optional trailing file args, e.g. `/open src/foo.ts:42`. */
+const OPEN_COMMAND_RE = /^\/open(?:\s+([\s\S]*))?$/
 
 export function usePipeline({
   config,
@@ -35,6 +39,7 @@ export function usePipeline({
   onRunComplete,
   onStateChange,
   onSubmitError,
+  onOpenFiles,
   startEntry,
 }: UsePipelineConfig) {
   const [state, setState] = useState<TaskState>('idle')
@@ -98,6 +103,14 @@ export function usePipeline({
 
       task.stopPlayback()
 
+      // `/open [files]` is a local editor action, not a prompt — handle it
+      // before slash-command expansion so it never reaches the agent.
+      const openMatch = query.trim().match(OPEN_COMMAND_RE)
+      if (openMatch) {
+        await onOpenFiles((openMatch[1] ?? '').trim())
+        return
+      }
+
       let prompt = query
       try {
         const expanded = await expandSlashCommandInput({
@@ -121,7 +134,15 @@ export function usePipeline({
       const result = await task.run(pendingRun.query, pendingRun.entryId)
       onRunComplete(result)
     },
-    [config.projectPath, onRunComplete, onSubmitBuiltin, onSubmitError, startEntry, task],
+    [
+      config.projectPath,
+      onOpenFiles,
+      onRunComplete,
+      onSubmitBuiltin,
+      onSubmitError,
+      startEntry,
+      task,
+    ],
   )
 
   return { cancel, pause, resume, repeat, state, stopPlayback, submit }

@@ -1,7 +1,9 @@
 import { useCallback, useMemo, useState } from 'react'
 import { basename } from 'node:path'
-import { Box } from 'ink'
+import { Box, Text } from 'ink'
 
+import { openInEditor, formatOpenOutcome } from '../services/editor'
+import { latestFocusRefs, parseExplicitRefs } from '../services/file-refs'
 import { FALLBACK_MODEL_CHOICES_BY_PROVIDER } from '../services/model-catalog'
 import { type AppConfig, type AppState, type DetailMode, type SavedSession } from '../types'
 import type { AnimationMode } from './components/AsciiOrb'
@@ -39,6 +41,7 @@ export function App({ config, initialSession }: AppProps) {
   const [state, setState] = useState<AppState>('idle')
   const [isPaused, setIsPaused] = useState(false)
   const [splashDismissed, setSplashDismissed] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const conversation = useConversation({
     config,
@@ -49,7 +52,29 @@ export function App({ config, initialSession }: AppProps) {
   const handleStateChange = useCallback((next: AppState) => {
     setState(next)
     if (next === 'idle' || next === 'processing') setIsPaused(false)
+    // A new turn supersedes any lingering "opened files" notice.
+    if (next === 'processing') setNotice(null)
   }, [])
+
+  // Files the most recent turn is "about" — what `^G` / bare `/open` act on.
+  const focusRefs = useMemo(() => {
+    const turns = conversation.liveTurn
+      ? [...conversation.completedTurns, conversation.liveTurn]
+      : conversation.completedTurns
+    return latestFocusRefs(turns)
+  }, [conversation.completedTurns, conversation.liveTurn])
+
+  const handleOpenFiles = useCallback(
+    async (args?: string) => {
+      // Explicit args are authoritative — never fall back to focus refs, or
+      // `/open Dockerfile` could silently open the previous turn's files.
+      const trimmed = args?.trim() ?? ''
+      const refs = trimmed ? parseExplicitRefs(trimmed) : focusRefs
+      const outcome = await openInEditor(refs, { projectPath: config.projectPath })
+      setNotice(formatOpenOutcome(outcome))
+    },
+    [focusRefs, config.projectPath],
+  )
 
   const { cancel, pause, repeat, resume, stopPlayback, submit } = usePipeline({
     config,
@@ -61,6 +86,7 @@ export function App({ config, initialSession }: AppProps) {
     onStateChange: handleStateChange,
     onSubmitBuiltin: conversation.recordLocalAnswer,
     onSubmitError: conversation.recordLocalError,
+    onOpenFiles: handleOpenFiles,
     startEntry: conversation.startEntry,
   })
 
@@ -110,10 +136,12 @@ export function App({ config, initialSession }: AppProps) {
 
   useKeyboardShortcuts({
     canCycleModel,
+    canOpenFiles: focusRefs.length > 0,
     canRepeat,
     canTogglePause,
     onCancel: handleCancel,
     onCycleModel: conversation.cycleModel,
+    onOpenFiles: () => void handleOpenFiles(),
     onRepeat: handleRepeat,
     onToggleDetailMode: () => setDetailMode((m) => (m === 'compact' ? 'expanded' : 'compact')),
     onTogglePause: handleTogglePause,
@@ -181,12 +209,18 @@ export function App({ config, initialSession }: AppProps) {
           provider={config.llmProvider}
           modelLabels={config.llmModelLabels}
           canCycleModel={canCycleModel}
+          canOpenFiles={focusRefs.length > 0}
           canTogglePause={canTogglePause}
           canRepeat={canRepeat}
           isPaused={isPaused}
           projectPath={config.projectPath}
           yolo={config.yolo}
         />
+      )}
+      {!showWelcome && notice && (
+        <Text color="gray" dimColor>
+          {notice}
+        </Text>
       )}
     </Box>
   )

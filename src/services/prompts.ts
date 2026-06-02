@@ -11,6 +11,7 @@ const PROVIDER_PROMPT_FILES: Record<LlmProvider, string> = {
 }
 
 const VOICE_PROMPT_FILE = 'voice.md'
+const OPEN_FILE_PROMPT_FILE = 'open-file.md'
 
 interface PromptTemplateValues {
   projectName: string
@@ -67,6 +68,7 @@ export async function buildProviderPrompt({
   const fileNames = [
     'base.md',
     PROVIDER_PROMPT_FILES[provider],
+    OPEN_FILE_PROMPT_FILE,
     ...(ttsEnabled ? [VOICE_PROMPT_FILE] : []),
   ]
   const sections = await Promise.all(
