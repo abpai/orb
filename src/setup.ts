@@ -11,8 +11,8 @@ import {
   listBundledDefaultCommands,
   type InstallDefaultCommandsResult,
 } from './services/default-commands'
-import { DEFAULT_MODEL_BY_PROVIDER } from './config'
-import { VOICES, type LlmProvider, type Voice } from './types'
+import { DEFAULT_MODEL_ALIAS_BY_PROVIDER } from './config'
+import { DEFAULT_CONFIG, VOICES, type LlmProvider, type Voice } from './types'
 
 const SETUP_CANCELED = 'Setup canceled.'
 const KOKORO_SPACY_INSTALL =
@@ -56,8 +56,10 @@ async function promptText(args: {
 }
 
 function defaultModelFor(provider: LlmProvider, current?: string): string {
-  if (!current?.trim()) return DEFAULT_MODEL_BY_PROVIDER[provider]
-  return current
+  const normalized = current?.trim()
+  if (!normalized) return DEFAULT_MODEL_ALIAS_BY_PROVIDER[provider]
+  if (provider === 'openai' && normalized === 'gpt') return DEFAULT_MODEL_ALIAS_BY_PROVIDER.openai
+  return normalized
 }
 
 function mergeSetupConfig(base: OrbGlobalConfig, updates: OrbGlobalConfig): OrbGlobalConfig {
@@ -103,7 +105,7 @@ export async function runSetup(options: RunSetupOptions = {}): Promise<void> {
   }
 
   const current = existing.config
-  const currentProvider = current.provider ?? 'anthropic'
+  const currentProvider = current.provider ?? 'openai'
   const currentModel = defaultModelFor(currentProvider, current.model)
 
   intro('orb setup')
@@ -114,8 +116,9 @@ export async function runSetup(options: RunSetupOptions = {}): Promise<void> {
       message: 'Default provider',
       initialValue: currentProvider,
       options: [
+        { value: 'openai', label: 'OpenAI (Codex / ChatGPT subscription)' },
         { value: 'anthropic', label: 'Anthropic' },
-        { value: 'openai', label: 'OpenAI' },
+        { value: 'gemini', label: 'Gemini (Google API key)' },
       ],
     }),
   ) as LlmProvider
@@ -123,7 +126,7 @@ export async function runSetup(options: RunSetupOptions = {}): Promise<void> {
   const model = await promptText({
     message: 'Default model',
     initialValue:
-      current.provider === provider ? currentModel : DEFAULT_MODEL_BY_PROVIDER[provider],
+      current.provider === provider ? currentModel : DEFAULT_MODEL_ALIAS_BY_PROVIDER[provider],
     validate: (value) => (value.length === 0 ? 'Model is required.' : undefined),
   })
 
@@ -189,6 +192,7 @@ export async function runSetup(options: RunSetupOptions = {}): Promise<void> {
   const nextConfig = mergeSetupConfig(current, {
     provider,
     model,
+    reasoningEffort: DEFAULT_CONFIG.llmReasoningEffort,
     skipIntro,
     tts: {
       enabled: ttsEnabled,

@@ -1,6 +1,6 @@
 /**
  * Shared parsing helpers extracted from existing agent implementations.
- * Used by both Anthropic and OpenAI adapters.
+ * Used by Anthropic and AI SDK adapters.
  */
 
 // ── Anthropic SDK message parsing ──
@@ -66,7 +66,7 @@ export function extractToolResultText(content: unknown): string {
   return ''
 }
 
-// ── OpenAI tool result parsing ──
+// ── AI SDK tool result parsing ──
 
 export function normalizeToolInput(value: unknown): Record<string, unknown> {
   if (!value) return {}

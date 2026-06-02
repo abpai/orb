@@ -64,6 +64,7 @@ describe('runSetup', () => {
       const written = await readFile(configPath, 'utf8')
       expect(written).toContain('provider = "openai"')
       expect(written).toContain('model = "gpt-5.4-mini"')
+      expect(written).toContain('reasoning_effort = "high"')
       expect(written).toContain('skip_intro = true')
       expect(written).toContain('server_url = "http://voicebox.local:8000"')
       expect(written).toContain('voice = "jean"')
@@ -113,6 +114,48 @@ describe('runSetup', () => {
 
     const written = await readFile(configPath, 'utf8')
     expect(written).toBe('provider = "anthropic"\n')
+  })
+
+  it('upgrades the old OpenAI gpt setup default to gpt-5.5', async () => {
+    setTTY(true)
+    const tempDir = await mkdtemp(join(tmpdir(), 'orb-setup-'))
+    tempDirs.push(tempDir)
+    const configPath = join(tempDir, 'config.toml')
+    await Bun.write(configPath, 'provider = "openai"\nmodel = "gpt"\n')
+    const setupCalls = { select: 0, text: 0, confirm: 0 }
+    const modelInitialValues: string[] = []
+
+    mock.module('@clack/prompts', () => ({
+      intro: () => {},
+      outro: () => {},
+      cancel: () => {},
+      isCancel: () => false,
+      select: async () => {
+        const call = setupCalls.select++
+        return call === 0 ? 'openai' : call === 1 ? 'serve' : 'alba'
+      },
+      confirm: async () => {
+        const call = setupCalls.confirm++
+        return call < 4 ? true : false
+      },
+      text: async (args: { initialValue?: string }) => {
+        const call = setupCalls.text++
+        if (call === 0) {
+          modelInitialValues.push(args.initialValue ?? '')
+          return args.initialValue
+        }
+        return call === 1 ? 'http://localhost:8000' : '1.5'
+      },
+    }))
+
+    const { runSetup } = await importSetupModule()
+
+    await runSetup({ configPath })
+
+    const written = await readFile(configPath, 'utf8')
+    expect(modelInitialValues).toEqual(['gpt-5.5'])
+    expect(written).toContain('model = "gpt-5.5"')
+    expect(written).toContain('reasoning_effort = "high"')
   })
 
   it('throws if setup is run without a TTY', async () => {

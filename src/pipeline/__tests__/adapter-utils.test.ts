@@ -75,7 +75,7 @@ describe('Anthropic parsing helpers', () => {
   })
 })
 
-describe('OpenAI parsing helpers', () => {
+describe('AI SDK parsing helpers', () => {
   describe('normalizeToolInput', () => {
     it('passes objects through', () => {
       expect(normalizeToolInput({ command: 'ls' })).toEqual({ command: 'ls' })

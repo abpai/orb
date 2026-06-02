@@ -1342,8 +1342,8 @@
             <div class="observation__num">&sect; 005</div>
             <h3 class="observation__title plain">Model cycling</h3>
             <p class="observation__body">
-              Shift+Tab rotates Claude models mid-conversation. Haiku for speed, Opus when the
-              question gets interesting.
+              Shift+Tab rotates the resolved model choices for the active provider. Use faster
+              aliases for quick passes, deeper aliases when the question gets interesting.
             </p>
           </article>
         </div>
@@ -1419,13 +1419,14 @@
               <div class="proc__label">STEP TWO &middot; AUTHENTICATE</div>
               <h3 class="proc__title">Point at a model</h3>
               <p class="proc__body">
-                Reuse your Claude Code or Max session, or export an API key. Orb auto-selects in a
-                sensible order.
+                Sign in with Codex and ChatGPT, reuse Claude Code or Max, or export a Gemini or
+                Anthropic API key. Orb prefers Codex when it is available.
               </p>
             </div>
-            <pre><span class="dim">$</span> export ANTHROPIC_API_KEY=<span class="acc">sk-ant-&hellip;</span>
-<span class="dim">$</span> <span class="dim"># or, for OpenAI</span>
-<span class="dim">$</span> export OPENAI_API_KEY=<span class="acc">sk-&hellip;</span></pre>
+            <pre><span class="dim">$</span> codex login --device-auth
+<span class="dim">$</span> codex login status
+<span class="dim">$</span> <span class="dim"># optional fallbacks</span>
+<span class="dim">$</span> export GOOGLE_GENERATIVE_AI_API_KEY=<span class="acc">&hellip;</span></pre>
           </article>
 
           <article class="proc">
@@ -1464,7 +1465,7 @@
         <div class="chapter__head">
           <div class="chapter__num">
             <span class="chapter__roman">V.</span>
-            <span class="chapter__meta">THE TWO LIGHTS</span>
+            <span class="chapter__meta">MODEL LIGHTS</span>
           </div>
           <h2 class="chapter__title">Bring <em>whichever model</em> you already trust.</h2>
         </div>
@@ -1486,16 +1487,18 @@
 
           <div class="provider">
             <div class="provider__mark">GPT</div>
-            <div class="provider__kind">OPENAI &middot; RESPONSES API</div>
+            <div class="provider__kind">OPENAI &middot; CODEX APP-SERVER</div>
             <p class="provider__copy">
-              Runs through Orb&rsquo;s own <em>bash</em>, <em>readFile</em>, and
-              <em>writeFile</em> tools, backed by a local subprocess sandbox scoped to your project
-              root.
+              Uses your Codex ChatGPT login, starts or resumes a project thread through
+              <em>codex app-server</em>, defaults to GPT 5.5 high effort, and streams Codex command
+              and file-change activity into Orb&rsquo;s terminal UI.
             </p>
             <ul class="provider__models">
-              <li><span class="k">gpt-5.4</span><span class="v">default</span></li>
-              <li><span class="k">gpt-5</span><span class="v">flagship</span></li>
-              <li><span class="k">gpt-5.4-mini</span><span class="v">light</span></li>
+              <li>
+                <span class="k">gpt-5.5</span><span class="v">default &middot; high effort</span>
+              </li>
+              <li><span class="k">gpt</span><span class="v">latest mainline</span></li>
+              <li><span class="k">pro</span><span class="v">deeper</span></li>
             </ul>
           </div>
         </div>
@@ -1528,7 +1531,7 @@
           </div>
           <div class="key">
             <span class="kbd">SHIFT+TAB</span
-            ><span class="key__desc">Cycle Claude models mid-flight</span>
+            ><span class="key__desc">Cycle provider models mid-flight</span>
           </div>
           <div class="key">
             <span class="kbd">CTRL+O</span

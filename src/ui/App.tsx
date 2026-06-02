@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { basename } from 'node:path'
 import { Box } from 'ink'
 
+import { FALLBACK_MODEL_CHOICES_BY_PROVIDER } from '../services/model-catalog'
 import { type AppConfig, type AppState, type DetailMode, type SavedSession } from '../types'
 import type { AnimationMode } from './components/AsciiOrb'
 import { ConversationRail } from './components/ConversationRail'
@@ -73,7 +74,11 @@ export function App({ config, initialSession }: AppProps) {
     [terminalRows, liveToolCount],
   )
 
-  const canCycleModel = state === 'idle' && config.llmProvider === 'anthropic'
+  const modelChoices =
+    config.llmModelChoices && config.llmModelChoices.length > 0
+      ? config.llmModelChoices
+      : FALLBACK_MODEL_CHOICES_BY_PROVIDER[config.llmProvider]
+  const canCycleModel = state === 'idle' && modelChoices.length > 1
   const isSpeakingState = state === 'speaking' || state === 'processing_speaking'
   const lastCompletedAnswer =
     conversation.completedTurns[conversation.completedTurns.length - 1]?.answer ?? ''
@@ -118,14 +123,19 @@ export function App({ config, initialSession }: AppProps) {
   // ── Derived state ──
 
   const animationMode = useMemo(() => mapStateToAnimationMode(state), [state])
-  const assistantLabel = config.llmProvider === 'anthropic' ? 'claude' : 'openai'
+  const assistantLabel =
+    config.llmProvider === 'anthropic'
+      ? 'claude'
+      : config.llmProvider === 'gemini'
+        ? 'gemini'
+        : 'openai'
   const projectName = useMemo(
     () => basename(config.projectPath) || config.projectPath,
     [config.projectPath],
   )
   const modelLabel = useMemo(
-    () => formatModelLabel(config.llmProvider, conversation.activeModel),
-    [config.llmProvider, conversation.activeModel],
+    () => formatModelLabel(config.llmProvider, conversation.activeModel, config.llmModelLabels),
+    [config.llmProvider, conversation.activeModel, config.llmModelLabels],
   )
 
   const showWelcome =
@@ -169,6 +179,7 @@ export function App({ config, initialSession }: AppProps) {
           onEdit={handlePromptEdit}
           model={conversation.activeModel}
           provider={config.llmProvider}
+          modelLabels={config.llmModelLabels}
           canCycleModel={canCycleModel}
           canTogglePause={canTogglePause}
           canRepeat={canRepeat}

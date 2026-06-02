@@ -75,7 +75,7 @@ function isSavedSessionV2(value: unknown): value is SavedSession {
 }
 
 function normalizeSessionProvider(provider: string): LlmProvider | undefined {
-  if (provider === 'anthropic' || provider === 'openai') return provider
+  if (provider === 'anthropic' || provider === 'openai' || provider === 'gemini') return provider
   return undefined
 }
 
@@ -84,8 +84,8 @@ function isValidOpenAiSession(value: unknown): value is OpenAiSession {
   const session = value as Partial<OpenAiSession>
   return (
     session.provider === 'openai' &&
-    typeof session.previousResponseId === 'string' &&
-    session.previousResponseId.trim().length > 0
+    typeof session.threadId === 'string' &&
+    session.threadId.trim().length > 0
   )
 }
 

@@ -7,6 +7,7 @@ const PROMPTS_DIR = join(import.meta.dir, '..', '..', 'prompts')
 const PROVIDER_PROMPT_FILES: Record<LlmProvider, string> = {
   anthropic: 'anthropic.md',
   openai: 'openai.md',
+  gemini: 'gemini.md',
 }
 
 const VOICE_PROMPT_FILE = 'voice.md'

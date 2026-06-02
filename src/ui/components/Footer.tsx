@@ -12,6 +12,7 @@ interface FooterProps {
   onEdit?: () => void
   model: LlmModelId
   provider: LlmProvider
+  modelLabels?: Record<LlmModelId, string>
   canCycleModel: boolean
   canTogglePause: boolean
   canRepeat: boolean
@@ -26,6 +27,7 @@ export const Footer = memo(function Footer({
   onEdit,
   model,
   provider,
+  modelLabels,
   canCycleModel,
   canTogglePause,
   canRepeat,
@@ -34,7 +36,7 @@ export const Footer = memo(function Footer({
   yolo,
 }: FooterProps) {
   const { columns } = useTerminalSize()
-  const modelLabel = formatModelLabel(provider, model)
+  const modelLabel = formatModelLabel(provider, model, modelLabels)
 
   const showModel = columns >= 60
   const showAllHints = columns >= 80

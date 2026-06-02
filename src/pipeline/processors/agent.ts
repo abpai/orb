@@ -4,6 +4,7 @@ import type { Processor } from '../processor'
 import type { AgentAdapterConfig } from '../adapters/types'
 import { createAnthropicAdapter } from '../adapters/anthropic'
 import { createOpenAiAdapter } from '../adapters/openai'
+import { createGeminiAdapter } from '../adapters/gemini'
 import { isAbortError } from '../adapters/utils'
 
 /**
@@ -22,7 +23,9 @@ export function createAgentProcessor(adapterConfig: AgentAdapterConfig): Process
       const adapter =
         adapterConfig.appConfig.llmProvider === 'openai'
           ? createOpenAiAdapter(adapterConfig)
-          : createAnthropicAdapter(adapterConfig)
+          : adapterConfig.appConfig.llmProvider === 'gemini'
+            ? createGeminiAdapter(adapterConfig)
+            : createAnthropicAdapter(adapterConfig)
 
       try {
         yield* adapter.stream(frame.text)
