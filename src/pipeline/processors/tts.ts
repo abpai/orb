@@ -16,7 +16,7 @@ export interface TTSCompletionHandle {
   resume(): void
 }
 
-export interface TTSRunControl {
+interface TTSRunControl {
   setCompletion(handle: TTSCompletionHandle | null): void
 }
 

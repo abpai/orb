@@ -1,7 +1,7 @@
 import type { Frame } from './frames'
 import type { Processor } from './processor'
 
-export interface PipelineConfig {
+interface PipelineConfig {
   processors: Processor[]
 }
 

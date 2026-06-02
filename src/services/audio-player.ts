@@ -13,7 +13,7 @@ import { TTSError } from '../types'
 
 type PlayerBinary = 'mpv' | 'ffplay'
 
-export interface PlayerConfig {
+interface PlayerConfig {
   binary: PlayerBinary
   spawn: (speed: number) => PlayerProcess
 }

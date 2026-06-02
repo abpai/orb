@@ -8,9 +8,9 @@ import { modelCachePath as orbModelCachePath } from './orb-paths'
 export const GATEWAY_MODELS_URL = 'https://ai-gateway.vercel.sh/v1/models'
 export const MODEL_CATALOG_TTL_MS = 24 * 60 * 60 * 1000
 
-export type ModelCatalogSource = 'gateway' | 'cache' | 'stale-cache' | 'fallback'
+type ModelCatalogSource = 'gateway' | 'cache' | 'stale-cache' | 'fallback'
 
-export interface CatalogModel {
+interface CatalogModel {
   gatewayId: string
   provider: LlmProvider
   nativeId: LlmModelId
@@ -22,14 +22,14 @@ export interface CatalogModel {
   tags: string[]
 }
 
-export interface LoadedModelCatalog {
+interface LoadedModelCatalog {
   models: CatalogModel[]
   fetchedAt: number
   source: ModelCatalogSource
   warning?: string
 }
 
-export interface ResolvedModelConfig {
+interface ResolvedModelConfig {
   llmModel: LlmModelId
   llmModelChoices: LlmModelId[]
   llmModelLabels: Record<LlmModelId, string>

@@ -290,7 +290,7 @@ interface ParsedOpts {
   yolo?: boolean
 }
 
-export interface ParseResult {
+interface ParseResult {
   config: AppConfig
   explicit: ExplicitFlags
 }

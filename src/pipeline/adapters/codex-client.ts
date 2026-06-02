@@ -5,9 +5,9 @@
 // notifications as an async iterable. It holds no OpenAI/Codex domain logic —
 // method names and params live in the adapter.
 
-export type JsonRpcId = number
+type JsonRpcId = number
 
-export interface JsonRpcMessage {
+interface JsonRpcMessage {
   id?: JsonRpcId
   method?: string
   params?: unknown

@@ -8,6 +8,7 @@ import { applyGlobalConfig, loadGlobalConfig } from './services/global-config'
 import { resolveAppModelConfig } from './services/model-catalog'
 import { resolveSmartProvider } from './services/provider-defaults'
 import { loadSession } from './services/session'
+import { warn } from './services/log'
 import { runSetupCommand } from './setup'
 import type { AgentSession, SavedSession } from './types'
 
@@ -94,7 +95,7 @@ export async function run(args: string[]): Promise<void> {
 
   const globalConfig = await loadGlobalConfig()
   for (const warning of globalConfig.warnings) {
-    console.warn(`[orb] ${warning}`)
+    warn(warning)
   }
 
   const baseConfig = applyGlobalConfig(DEFAULT_CONFIG, globalConfig.config)
@@ -121,7 +122,7 @@ export async function run(args: string[]): Promise<void> {
   config.llmModelChoices = resolvedModel.llmModelChoices
   config.llmModelLabels = resolvedModel.llmModelLabels
   if (resolvedModel.catalog.warning) {
-    console.warn(`[orb] Model catalog refresh failed: ${resolvedModel.catalog.warning}`)
+    warn(`Model catalog refresh failed: ${resolvedModel.catalog.warning}`)
   }
   applyOpenAiStreamingDefaults(config, explicit)
   const savedSession = config.startFresh ? null : await loadSession(config.projectPath)

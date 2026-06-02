@@ -10,6 +10,7 @@ import type {
   SavedSession,
 } from '../types'
 import { isFileNotFoundError, sessionsDir } from './orb-paths'
+import { warn } from './log'
 
 const SESSION_VERSION = 2
 const MAX_SESSION_AGE_DAYS = 30
@@ -134,7 +135,7 @@ export async function loadSession(projectPath: string): Promise<SavedSession | n
   const sessionFile = Bun.file(sessionPath)
 
   void cleanupOldSessions().catch((err) => {
-    console.warn('Failed to clean up old sessions:', err)
+    warn('Failed to clean up old sessions:', err)
   })
 
   try {
@@ -168,11 +169,11 @@ export async function loadSession(projectPath: string): Promise<SavedSession | n
       return migrated
     }
 
-    console.warn('Invalid session format, starting fresh.')
+    warn('Invalid session format, starting fresh.')
     return null
   } catch (err) {
     if (isFileNotFoundError(err)) return null
-    console.warn('Failed to load session, starting fresh:', err)
+    warn('Failed to load session, starting fresh:', err)
     return null
   }
 }

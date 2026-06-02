@@ -19,7 +19,7 @@ interface PromptTemplateValues {
   projectPath: string
 }
 
-export interface PromptBuildOptions {
+interface PromptBuildOptions {
   provider: LlmProvider
   projectPath: string
   ttsEnabled: boolean

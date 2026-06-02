@@ -1,7 +1,6 @@
 import { unlink } from 'node:fs/promises'
 import { TTSError, type AppConfig } from '../types'
 import {
-  cleanTextForSpeech,
   createTempAudioPath,
   createStreamSession,
   detectPlayer,
@@ -11,12 +10,12 @@ import {
   resumeSpeaking,
   stopSpeaking,
   resetPlaybackStoppedFlag,
-  DEFAULT_SERVER_URL,
   type StreamSession,
 } from './tts'
-import { createGatewayClient } from './gateway-client'
+import { cleanTextForSpeech } from '../ui/utils/markdown'
+import { createGatewayClient, DEFAULT_SERVER_URL } from './gateway-client'
 
-export interface StreamingSpeechCallbacks {
+interface StreamingSpeechCallbacks {
   onSpeakingStart?: () => void
   onSpeakingEnd?: () => void
   onError?: (error: TTSError) => void

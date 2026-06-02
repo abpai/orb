@@ -2,6 +2,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 import { DEFAULT_MODEL_BY_PROVIDER } from '../config'
 import type { AppConfig, LlmProvider } from '../types'
 import { getGeminiApiKey } from './gemini-auth'
+import { warn } from './log'
 
 type SmartProviderSource = 'claude-oauth' | 'codex-chatgpt' | 'gemini-api-key' | 'anthropic-api-key'
 
@@ -64,7 +65,7 @@ async function detectClaudeAuth(config: AppConfig): Promise<ClaudeAuthState> {
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
-    console.warn(`[orb] Claude credential detection failed: ${reason}`)
+    warn(`Claude credential detection failed: ${reason}`)
     return { hasOAuth: false, hasApiKey: false }
   } finally {
     abortController.abort()
@@ -99,7 +100,7 @@ async function detectCodexChatGptAuth(): Promise<boolean> {
     return exitCode === 0 && `${stdout}\n${stderr}`.toLowerCase().includes('chatgpt')
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
-    console.warn(`[orb] Codex credential detection failed: ${reason}`)
+    warn(`Codex credential detection failed: ${reason}`)
     proc.kill()
     return false
   }

@@ -6,7 +6,7 @@ export const DEFAULT_SERVER_URL = 'http://localhost:8000'
 const DEFAULT_SPEECH_PATH = '/v1/speech'
 const DEFAULT_STREAM_PATH = '/tts/stream'
 
-export interface GatewaySpeechResult {
+interface GatewaySpeechResult {
   audio: Buffer
   contentType: string
 }

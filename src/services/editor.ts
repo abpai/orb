@@ -8,7 +8,7 @@ const DEFAULT_MAX_FILES = 4
 const DEFAULT_EDITOR = 'cursor'
 
 /** Result of one launch attempt. `missing` flags an editor that isn't on PATH. */
-export interface LaunchResult {
+interface LaunchResult {
   ok: boolean
   error?: string
   missing?: boolean
@@ -16,7 +16,7 @@ export interface LaunchResult {
 
 export type EditorLauncher = (command: string, args: string[]) => Promise<LaunchResult>
 
-export interface OpenInEditorOptions {
+interface OpenInEditorOptions {
   projectPath: string
   /** Cap on how many files we'll open at once. Extra refs are reported, not opened. */
   maxFiles?: number
@@ -27,12 +27,12 @@ export interface OpenInEditorOptions {
 }
 
 /** A ref that resolved to a real file inside the project. */
-export interface ResolvedRef extends FileRef {
+interface ResolvedRef extends FileRef {
   /** Absolute, realpath-resolved file path. */
   resolved: string
 }
 
-export interface OpenOutcome {
+interface OpenOutcome {
   /** Files actually handed to the editor. */
   opened: ResolvedRef[]
   /** Refs that resolved outside the project root (refused). */

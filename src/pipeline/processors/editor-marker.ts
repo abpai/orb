@@ -3,7 +3,7 @@ import { createFrame } from '../frames'
 import type { Processor } from '../processor'
 import { parseFileRefs, type FileRef } from '../../services/file-refs'
 
-export interface EditorMarkerOptions {
+interface EditorMarkerOptions {
   /** Called once per turn with the parsed refs of every complete `orb:open` block. */
   open: (refs: FileRef[]) => void
   /** Fence info-string that marks an open block. Defaults to `orb:open`. */

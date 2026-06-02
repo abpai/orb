@@ -7,7 +7,7 @@ import { createFrame, type Frame } from '../frames'
 
 // ── Tool-call frame tracking ──
 
-export interface ToolStartInput {
+interface ToolStartInput {
   id: string
   name: string
   input: Record<string, unknown>
@@ -53,15 +53,15 @@ export function createToolFrameTracker() {
 
 // ── Anthropic SDK message parsing ──
 
-export type TextBlock = { type: 'text'; text: string }
-export type ToolUseBlock = {
+type TextBlock = { type: 'text'; text: string }
+type ToolUseBlock = {
   type: 'tool_use'
   id?: string
   tool_use_id?: string
   name: string
   input?: Record<string, unknown>
 }
-export type ToolResultBlock = {
+type ToolResultBlock = {
   type: 'tool_result'
   tool_use_id?: string
   id?: string

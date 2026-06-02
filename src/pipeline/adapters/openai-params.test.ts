@@ -8,7 +8,7 @@ import {
   createOpenAiThreadParams,
   createOpenAiTurnStartParams,
   isOpenAiFullHistoryCapabilityError,
-} from './openai'
+} from './codex-params'
 
 describe('OpenAI app-server params', () => {
   it('declares experimental API support for full-history thread persistence', () => {
