@@ -261,8 +261,8 @@ export function useConversation({ config, initialSession, taskState }: UseConver
     if (!nextModel) return
     setActiveModel(nextModel)
 
-    void persistSession(nextModel, getHistorySnapshot())
-  }, [activeModel, config.llmModelChoices, config.llmProvider, getHistorySnapshot, persistSession])
+    void persistSession(nextModel)
+  }, [activeModel, config.llmModelChoices, config.llmProvider, persistSession])
 
   const recordLocalError = useCallback((question: string, message: string) => {
     const trimmedQuestion = question.trim()

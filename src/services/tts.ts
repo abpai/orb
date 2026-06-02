@@ -199,7 +199,7 @@ function isValidSpeed(speed: number | undefined): speed is number {
   return typeof speed === 'number' && Number.isFinite(speed) && speed > 0
 }
 
-export function getTempAudioExtension(mode: AppConfig['ttsMode']): string {
+function getTempAudioExtension(mode: AppConfig['ttsMode']): string {
   return mode === 'generate' ? 'aiff' : 'mp3'
 }
 

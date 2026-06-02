@@ -1,10 +1,8 @@
 import type { Frame } from './frames'
 import type { Processor } from './processor'
-import type { PipelineObserver } from './observer'
 
 export interface PipelineConfig {
   processors: Processor[]
-  observers?: PipelineObserver[]
 }
 
 /**
@@ -19,25 +17,6 @@ export function createPipeline(config: PipelineConfig): Processor {
       stream = processor(stream)
     }
 
-    if (config.observers && config.observers.length > 0) {
-      stream = tapObservers(stream, config.observers)
-    }
-
     return stream
-  }
-}
-
-/**
- * Wraps a stream to notify observers of each frame without modifying the stream.
- */
-async function* tapObservers(
-  upstream: AsyncIterable<Frame>,
-  observers: PipelineObserver[],
-): AsyncGenerator<Frame> {
-  for await (const frame of upstream) {
-    for (const observer of observers) {
-      observer.onFrame(frame)
-    }
-    yield frame
   }
 }

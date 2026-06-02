@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 
 import { extractSlashCommandName, listAvailableSlashCommands } from '../../services/commands'

@@ -70,7 +70,6 @@ export interface AppConfig {
   llmReasoningEffort: ReasoningEffort
   llmModelChoices?: LlmModelId[]
   llmModelLabels?: Record<LlmModelId, string>
-  geminiApiKey?: string
   ttsVoice: Voice
   ttsMode: 'generate' | 'serve'
   ttsServerUrl?: string

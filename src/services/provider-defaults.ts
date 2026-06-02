@@ -118,7 +118,7 @@ export async function resolveSmartProvider(
     return { provider: 'anthropic', source: 'claude-oauth' }
   }
 
-  const geminiApiKey = getGeminiApiKey(config)
+  const geminiApiKey = getGeminiApiKey()
   if (geminiApiKey) {
     return { provider: 'gemini', source: 'gemini-api-key' }
   }

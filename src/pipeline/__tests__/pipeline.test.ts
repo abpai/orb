@@ -1,8 +1,7 @@
 import { describe, expect, it, beforeEach } from 'bun:test'
 import { createFrame, resetFrameIds, type Frame } from '../frames'
-import { createProcessor, type Processor } from '../processor'
+import type { Processor } from '../processor'
 import { createPipeline } from '../pipeline'
-import type { PipelineObserver } from '../observer'
 
 async function collectFrames(source: AsyncIterable<Frame>): Promise<Frame[]> {
   const result: Frame[] = []
@@ -18,6 +17,18 @@ async function* fromFrames(frames: Frame[]): AsyncIterable<Frame> {
   }
 }
 
+/** Test helper: build a Processor from a per-frame handler (frame, list, or null to drop). */
+function mapProcessor(handler: (frame: Frame) => Frame | Frame[] | null): Processor {
+  return async function* (upstream: AsyncIterable<Frame>): AsyncGenerator<Frame> {
+    for await (const frame of upstream) {
+      const result = handler(frame)
+      if (result === null) continue
+      if (Array.isArray(result)) yield* result
+      else yield result
+    }
+  }
+}
+
 describe('createPipeline', () => {
   beforeEach(() => {
     resetFrameIds()
@@ -26,12 +37,12 @@ describe('createPipeline', () => {
   it('chains processors left-to-right', async () => {
     const log: string[] = []
 
-    const p1: Processor = createProcessor((frame) => {
+    const p1: Processor = mapProcessor((frame) => {
       log.push(`p1:${frame.kind}`)
       return frame
     })
 
-    const p2: Processor = createProcessor((frame) => {
+    const p2: Processor = mapProcessor((frame) => {
       log.push(`p2:${frame.kind}`)
       return frame
     })
@@ -45,7 +56,7 @@ describe('createPipeline', () => {
 
   it('supports processor that expands frames (downstream sees expanded)', async () => {
     // p1 expands user-text into text + delta
-    const p1: Processor = createProcessor((frame) => {
+    const p1: Processor = mapProcessor((frame) => {
       if (frame.kind === 'user-text') {
         return [
           frame,
@@ -57,7 +68,7 @@ describe('createPipeline', () => {
 
     // p2 collects all frame kinds
     const seen: string[] = []
-    const p2: Processor = createProcessor((frame) => {
+    const p2: Processor = mapProcessor((frame) => {
       seen.push(frame.kind)
       return frame
     })
@@ -71,7 +82,7 @@ describe('createPipeline', () => {
   })
 
   it('supports processor that filters frames', async () => {
-    const filterCancel: Processor = createProcessor((frame) =>
+    const filterCancel: Processor = mapProcessor((frame) =>
       frame.kind === 'cancel' ? null : frame,
     )
 
@@ -87,25 +98,6 @@ describe('createPipeline', () => {
     expect(output.map((f) => f.kind)).toEqual(['user-text', 'tts-speaking-start'])
   })
 
-  it('notifies observers of each frame', async () => {
-    const observed: string[] = []
-    const observer: PipelineObserver = {
-      onFrame(frame: Frame) {
-        observed.push(frame.kind)
-      },
-    }
-
-    const pipeline = createPipeline({
-      processors: [createProcessor((frame) => frame)],
-      observers: [observer],
-    })
-
-    const input = [createFrame('cancel'), createFrame('tts-speaking-start')]
-    await collectFrames(pipeline(fromFrames(input)))
-
-    expect(observed).toEqual(['cancel', 'tts-speaking-start'])
-  })
-
   it('works with empty processor list (passthrough)', async () => {
     const pipeline = createPipeline({ processors: [] })
     const input = [createFrame('cancel'), createFrame('tts-speaking-end')]
@@ -118,8 +110,8 @@ describe('createPipeline', () => {
     const ids: number[] = []
 
     // p1 passes through, p2 records frame IDs
-    const p1: Processor = createProcessor((f) => f)
-    const p2: Processor = createProcessor((frame) => {
+    const p1: Processor = mapProcessor((f) => f)
+    const p2: Processor = mapProcessor((frame) => {
       ids.push(frame.id)
       return frame
     })
