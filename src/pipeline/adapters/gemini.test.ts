@@ -15,9 +15,7 @@ describe('createGeminiAdapter', () => {
     let streamArgs: Record<string, unknown> | undefined
 
     mock.module('../../services/gemini-auth', () => ({
-      resolveGeminiProvider: async () => ({
-        provider: () => ({ id: 'mock-gemini-model' }),
-      }),
+      resolveGeminiProvider: async () => () => ({ id: 'mock-gemini-model' }),
     }))
 
     mock.module('../../services/prompts', () => ({
@@ -90,9 +88,7 @@ describe('createGeminiAdapter', () => {
 
     try {
       mock.module('../../services/gemini-auth', () => ({
-        resolveGeminiProvider: async () => ({
-          provider: () => ({ id: 'mock-gemini-model' }),
-        }),
+        resolveGeminiProvider: async () => () => ({ id: 'mock-gemini-model' }),
       }))
 
       mock.module('../../services/prompts', () => ({

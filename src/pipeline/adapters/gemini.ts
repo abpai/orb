@@ -89,7 +89,7 @@ export function createGeminiAdapter(config: AgentAdapterConfig): AgentAdapter {
         )
       }
 
-      const { provider } = await resolveGeminiProvider(appConfig)
+      const provider = await resolveGeminiProvider()
       const model = provider(appConfig.llmModel as never)
 
       try {
