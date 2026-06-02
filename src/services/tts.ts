@@ -6,8 +6,6 @@ import { cleanTextForSpeech } from '../ui/utils/markdown'
 import { detectPlayer, type PlayerProcess } from './audio-player'
 import { createGatewayClient, DEFAULT_SERVER_URL } from './gateway-client'
 
-export { cleanTextForSpeech }
-export { DEFAULT_SERVER_URL }
 export { detectPlayer, resetDetectedPlayer } from './audio-player'
 
 export interface StreamSession {
