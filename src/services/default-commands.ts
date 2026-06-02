@@ -2,6 +2,7 @@ import { constants as fsConstants } from 'node:fs'
 import { copyFile, mkdir, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { getGlobalCommandsDir } from './commands'
+import { isFileNotFoundError } from './orb-paths'
 
 const BUNDLED_COMMANDS_DIR = path.join(import.meta.dir, '..', '..', 'commands')
 
@@ -35,7 +36,7 @@ export async function listBundledDefaultCommands(
       }))
       .sort((a, b) => a.name.localeCompare(b.name))
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    if (isFileNotFoundError(error)) return []
     throw error
   }
 }

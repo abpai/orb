@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import type { LlmProvider } from '../types'
+import { isFileNotFoundError } from './orb-paths'
 
 const PROMPTS_DIR = join(import.meta.dir, '..', '..', 'prompts')
 
@@ -49,7 +50,7 @@ async function readPromptFile(
     const contents = await readFile(filePath, 'utf8')
     return interpolatePrompt(contents.trim(), values)
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+    if (isFileNotFoundError(error)) {
       throw new Error(`Missing prompt file: ${filePath}`)
     }
     throw new Error(

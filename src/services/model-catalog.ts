@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 import type { AppConfig, LlmModelId, LlmProvider } from '../types'
+import { modelCachePath as orbModelCachePath } from './orb-paths'
 
 export const GATEWAY_MODELS_URL = 'https://ai-gateway.vercel.sh/v1/models'
 export const MODEL_CATALOG_TTL_MS = 24 * 60 * 60 * 1000
@@ -158,7 +159,7 @@ const FALLBACK_CATALOG_MODELS: CatalogModel[] = Object.entries(
 )
 
 function modelCachePath(homeDir = os.homedir()): string {
-  return path.join(homeDir, '.orb', 'models', 'gateway.json')
+  return orbModelCachePath(homeDir)
 }
 
 function getGatewayProvider(id: string): LlmProvider | null {
