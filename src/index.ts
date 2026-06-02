@@ -53,10 +53,6 @@ function shouldHandleMetaFlag(args: string[]): boolean {
   )
 }
 
-function providerForSession(session: AgentSession): AppConfig['llmProvider'] {
-  return session.provider
-}
-
 function sameAgentSession(a: AgentSession | undefined, b: AgentSession): boolean {
   if (!a || a.provider !== b.provider) return false
   if (a.provider === 'anthropic' && b.provider === 'anthropic') return a.sessionId === b.sessionId
@@ -77,7 +73,7 @@ export function createInitialSession(
   return {
     version: 2,
     projectPath: config.projectPath,
-    llmProvider: providerForSession(resumeSession),
+    llmProvider: resumeSession.provider,
     llmModel: config.llmModel,
     agentSession: resumeSession,
     lastModified: savedSession?.lastModified ?? new Date().toISOString(),

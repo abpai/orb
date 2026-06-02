@@ -36,5 +36,3 @@ export const STATUS_CONFIG = {
   error: { icon: '✗', color: 'red' },
   complete: { icon: '✓', color: 'green' },
 } as const
-
-export type ToolStatus = keyof typeof STATUS_CONFIG

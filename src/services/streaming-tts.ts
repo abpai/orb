@@ -10,7 +10,6 @@ import {
   playAudio,
   resumeSpeaking,
   stopSpeaking,
-  wasPlaybackStopped,
   resetPlaybackStoppedFlag,
   DEFAULT_SERVER_URL,
   type StreamSession,
@@ -345,7 +344,6 @@ export function createStreamingSpeechController(
       await generateAudio(sentence, config, audioPath)
       resetPlaybackStoppedFlag()
       await playAudio(audioPath, config.ttsSpeed)
-      if (wasPlaybackStopped()) return
     } finally {
       await unlink(audioPath).catch(() => {})
     }

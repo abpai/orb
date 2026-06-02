@@ -138,7 +138,6 @@ src/
 │       ├── terminal-text.ts  # In-memory outbound transport used by the UI
 │       └── types.ts          # Transport contracts
 ├── services/
-│   ├── auth-utils.ts         # Local auth helper utilities
 │   ├── global-config.ts      # ~/.orb/config.toml parsing and writing
 │   ├── gemini-auth.ts        # Gemini API-key resolution
 │   ├── prompts.ts            # Prompt file composition for providers/TTS

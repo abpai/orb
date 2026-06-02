@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 
 import { createPipelineTask } from '../../pipeline/task'
 import type { RunResult, TaskState } from '../../pipeline/task'
@@ -42,7 +42,6 @@ export function usePipeline({
   onOpenFiles,
   startEntry,
 }: UsePipelineConfig) {
-  const [state, setState] = useState<TaskState>('idle')
   const activeConfig = useMemo(() => ({ ...config, llmModel: activeModel }), [config, activeModel])
 
   const { task, transport } = useMemo(() => {
@@ -63,14 +62,7 @@ export function usePipeline({
     task.updateConfig(activeConfig)
   }, [task, activeConfig])
 
-  useEffect(
-    () =>
-      task.onStateChange((nextState) => {
-        setState(nextState)
-        onStateChange(nextState)
-      }),
-    [onStateChange, task],
-  )
+  useEffect(() => task.onStateChange(onStateChange), [onStateChange, task])
 
   useEffect(() => transport.onOutbound(onFrame), [onFrame, transport])
 
@@ -145,5 +137,5 @@ export function usePipeline({
     ],
   )
 
-  return { cancel, pause, resume, repeat, state, stopPlayback, submit }
+  return { cancel, pause, resume, repeat, stopPlayback, submit }
 }
