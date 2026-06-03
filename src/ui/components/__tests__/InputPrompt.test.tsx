@@ -4,7 +4,7 @@ import path from 'node:path'
 import { describe, expect, it, mock } from 'bun:test'
 import { render } from 'ink-testing-library'
 
-import { normalizeFrame } from '../../__tests__/test-utils'
+import { normalizeFrame, settle } from '../../__tests__/test-utils'
 
 mock.module('../../hooks/useAnimationFrame', () => ({
   useAnimationFrame: () => 0,
@@ -212,11 +212,6 @@ async function createFileFixture(files: string[]) {
       await rm(base, { force: true, recursive: true })
     },
   }
-}
-
-/** Let the async file search resolve and the menu re-render. */
-const settle = async () => {
-  for (let i = 0; i < 4; i++) await new Promise((resolve) => setTimeout(resolve, 20))
 }
 
 describe('InputPrompt @-file menu', () => {

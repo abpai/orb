@@ -23,6 +23,15 @@ export function normalizeFrame(frame: string | undefined): string {
     .replace(/\n+$/g, '')
 }
 
+/**
+ * Wait long enough for async UI work to settle: a chunked stdin write to flush,
+ * an async file search to resolve and re-render, or Ink's escape-sequence
+ * disambiguation timeout to elapse so a lone Esc registers as `key.escape`.
+ */
+export const settle = async (): Promise<void> => {
+  for (let i = 0; i < 4; i++) await new Promise((resolve) => setTimeout(resolve, 20))
+}
+
 // ─────────────────────────────────────────────────
 // Test Fixtures
 // ─────────────────────────────────────────────────

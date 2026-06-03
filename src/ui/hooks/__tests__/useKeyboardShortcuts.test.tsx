@@ -2,14 +2,9 @@ import { afterEach, describe, expect, it, mock } from 'bun:test'
 import { Text } from 'ink'
 import { render } from 'ink-testing-library'
 
+import { settle } from '../../__tests__/test-utils'
 import { setMentionMenuOpen } from '../../input/mention-menu-state'
 import { useKeyboardShortcuts } from '../useKeyboardShortcuts'
-
-// A lone Esc needs Ink's escape-sequence disambiguation timeout to elapse
-// before it registers as `key.escape`, so wait long enough for that.
-const settle = async () => {
-  for (let i = 0; i < 4; i++) await new Promise((resolve) => setTimeout(resolve, 20))
-}
 
 function Harness({ onCancel }: { onCancel: () => void }) {
   useKeyboardShortcuts({
