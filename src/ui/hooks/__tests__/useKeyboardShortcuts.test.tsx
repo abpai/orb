@@ -1,17 +1,17 @@
-import { afterEach, describe, expect, it, mock } from 'bun:test'
+import { describe, expect, it, mock } from 'bun:test'
 import { Text } from 'ink'
 import { render } from 'ink-testing-library'
 
 import { settle } from '../../__tests__/test-utils'
-import { setMentionMenuOpen } from '../../input/mention-menu-state'
 import { useKeyboardShortcuts } from '../useKeyboardShortcuts'
 
-function Harness({ onCancel }: { onCancel: () => void }) {
+function Harness({ onCancel, menuOpen }: { onCancel: () => void; menuOpen: boolean }) {
   useKeyboardShortcuts({
     canCycleModel: false,
     canOpenFiles: false,
     canRepeat: false,
     canTogglePause: false,
+    menuOpen,
     onCancel,
     onCycleModel: () => {},
     onOpenFiles: () => {},
@@ -24,11 +24,9 @@ function Harness({ onCancel }: { onCancel: () => void }) {
 }
 
 describe('useKeyboardShortcuts Esc handling', () => {
-  afterEach(() => setMentionMenuOpen(false))
-
   it('cancels the turn on Esc when the @-menu is closed', async () => {
     const onCancel = mock(() => {})
-    const app = render(<Harness onCancel={onCancel} />)
+    const app = render(<Harness onCancel={onCancel} menuOpen={false} />)
     await settle()
 
     app.stdin.write('\x1b') // Esc
@@ -40,8 +38,7 @@ describe('useKeyboardShortcuts Esc handling', () => {
 
   it('lets the menu own Esc without cancelling the turn when it is open', async () => {
     const onCancel = mock(() => {})
-    setMentionMenuOpen(true)
-    const app = render(<Harness onCancel={onCancel} />)
+    const app = render(<Harness onCancel={onCancel} menuOpen={true} />)
     await settle()
 
     app.stdin.write('\x1b') // Esc — menu dismisses itself; turn must survive

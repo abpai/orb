@@ -39,6 +39,9 @@ const FIXED_UI_OVERHEAD = 8
 export function App({ config, initialSession }: AppProps) {
   const [detailMode, setDetailMode] = useState<DetailMode>('compact')
   const [state, setState] = useState<AppState>('idle')
+  // Whether the input's `@`-file menu is open. Lifted here so the global Esc
+  // handler can defer to the menu (the menu owns Esc while open).
+  const [inputMenuOpen, setInputMenuOpen] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
   const [splashDismissed, setSplashDismissed] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
@@ -139,6 +142,7 @@ export function App({ config, initialSession }: AppProps) {
     canOpenFiles: focusRefs.length > 0,
     canRepeat,
     canTogglePause,
+    menuOpen: inputMenuOpen,
     onCancel: handleCancel,
     onCycleModel: conversation.cycleModel,
     onOpenFiles: () => void handleOpenFiles(),
@@ -215,6 +219,7 @@ export function App({ config, initialSession }: AppProps) {
           isPaused={isPaused}
           projectPath={config.projectPath}
           yolo={config.yolo}
+          onMenuOpenChange={setInputMenuOpen}
         />
       )}
       {!showWelcome && notice && (
