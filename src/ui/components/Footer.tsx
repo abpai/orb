@@ -20,6 +20,7 @@ interface FooterProps {
   isPaused: boolean
   projectPath?: string
   yolo?: boolean
+  onMenuOpenChange?: (open: boolean) => void
 }
 
 export const Footer = memo(function Footer({
@@ -36,6 +37,7 @@ export const Footer = memo(function Footer({
   isPaused,
   projectPath,
   yolo,
+  onMenuOpenChange,
 }: FooterProps) {
   const { columns } = useTerminalSize()
   const modelLabel = formatModelLabel(provider, model, modelLabels)
@@ -45,7 +47,13 @@ export const Footer = memo(function Footer({
 
   return (
     <Box flexDirection="column">
-      <InputPrompt onSubmit={onSubmit} onEdit={onEdit} state={state} projectPath={projectPath} />
+      <InputPrompt
+        onSubmit={onSubmit}
+        onEdit={onEdit}
+        state={state}
+        projectPath={projectPath}
+        onMenuOpenChange={onMenuOpenChange}
+      />
       <Box gap={2}>
         {showModel && (
           <Text color="gray" dimColor>

@@ -6,7 +6,6 @@ import { searchProjectFiles } from '../../services/file-search'
 import type { AppState } from '../../types'
 import { keyToAction } from '../input/keymap'
 import { applyMention, findActiveMention } from '../input/mention'
-import { setMentionMenuOpen } from '../input/mention-menu-state'
 import { sanitizePaste } from '../input/paste'
 import {
   backspace,
@@ -36,6 +35,9 @@ interface InputPromptProps {
   state: AppState
   projectPath?: string
   homeDir?: string
+  /** Notified when the `@`-file menu opens or closes, so the global Esc
+   * handler can let the menu own Esc instead of cancelling the turn. */
+  onMenuOpenChange?: (open: boolean) => void
 }
 
 interface CycleState {
@@ -70,6 +72,7 @@ export const InputPrompt = memo(function InputPrompt({
   state,
   projectPath,
   homeDir,
+  onMenuOpenChange,
 }: InputPromptProps) {
   const [buffer, setBuffer] = useState<TextBufferState>(() => empty())
   // Mirror of `buffer` for the useInput callback. Ink can fire stdin events
@@ -108,15 +111,21 @@ export const InputPrompt = memo(function InputPrompt({
     }
   }, [projectPath, homeDir])
 
-  const setMenuState = useCallback((next: MenuState | null) => {
-    menuRef.current = next
-    // Let the global Esc handler know the menu owns Esc while it's open.
-    setMentionMenuOpen(next !== null)
-    setMenu(next)
-  }, [])
+  const setMenuState = useCallback(
+    (next: MenuState | null) => {
+      const wasOpen = menuRef.current !== null
+      const isOpen = next !== null
+      menuRef.current = next
+      // Let the global Esc handler know the menu owns Esc while it's open. Only
+      // fire on an actual open<->closed transition, not on every navigation.
+      if (isOpen !== wasOpen) onMenuOpenChange?.(isOpen)
+      setMenu(next)
+    },
+    [onMenuOpenChange],
+  )
 
-  // Clear the shared flag if we unmount with the menu still open.
-  useEffect(() => () => setMentionMenuOpen(false), [])
+  // Reset the parent flag if we unmount with the menu still open.
+  useEffect(() => () => onMenuOpenChange?.(false), [onMenuOpenChange])
 
   const closeMenu = useCallback(() => {
     searchSeqRef.current++ // invalidate any in-flight search
