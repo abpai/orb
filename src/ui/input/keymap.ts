@@ -31,6 +31,7 @@ type Action =
   | { kind: 'kill-to-line-end' }
   | { kind: 'kill-line' }
   | { kind: 'complete' }
+  | { kind: 'dismiss' }
   | { kind: 'insert'; text: string }
   | { kind: 'ignore' }
 
@@ -45,7 +46,7 @@ export const keyToAction = (input: string, key: Key): Action => {
 
   if (key.backspace || key.delete || RAW_BACKSPACE.has(input)) return { kind: 'backspace' }
 
-  if (key.escape) return { kind: 'ignore' }
+  if (key.escape) return { kind: 'dismiss' }
   if (key.tab) return key.shift ? { kind: 'ignore' } : { kind: 'complete' }
 
   if (key.leftArrow) return { kind: key.meta ? 'move-word-left' : 'move-left' }

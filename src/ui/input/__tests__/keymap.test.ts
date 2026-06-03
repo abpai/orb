@@ -26,4 +26,8 @@ describe('keyToAction', () => {
   it('treats key.delete (what Ink reports for macOS Backspace) as backspace', () => {
     expect(keyToAction('', { delete: true } as never)).toEqual({ kind: 'backspace' })
   })
+
+  it('maps Escape to dismiss', () => {
+    expect(keyToAction('', { escape: true } as never)).toEqual({ kind: 'dismiss' })
+  })
 })

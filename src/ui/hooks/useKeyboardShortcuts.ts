@@ -1,6 +1,7 @@
 import { useInput } from 'ink'
 
 import type { AppState } from '../../types'
+import { isMentionMenuOpen } from '../input/mention-menu-state'
 
 interface UseKeyboardShortcutsConfig {
   canCycleModel: boolean
@@ -31,6 +32,9 @@ export function useKeyboardShortcuts({
 }: UseKeyboardShortcutsConfig) {
   useInput(
     (input, key) => {
+      // The `@`-file menu owns Esc while it's open (it dismisses itself); don't
+      // also cancel the in-flight turn. Ctrl-S still cancels unconditionally.
+      if (key.escape && isMentionMenuOpen()) return
       if (key.escape || (key.ctrl && input === 's')) {
         onCancel()
       }

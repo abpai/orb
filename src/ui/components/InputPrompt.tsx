@@ -2,8 +2,11 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 
 import { extractSlashCommandName, listAvailableSlashCommands } from '../../services/commands'
+import { searchProjectFiles } from '../../services/file-search'
 import type { AppState } from '../../types'
 import { keyToAction } from '../input/keymap'
+import { applyMention, findActiveMention } from '../input/mention'
+import { setMentionMenuOpen } from '../input/mention-menu-state'
 import { sanitizePaste } from '../input/paste'
 import {
   backspace,
@@ -24,6 +27,7 @@ import {
   toString,
   type TextBufferState,
 } from '../input/TextBuffer'
+import { FileMenu } from './FileMenu'
 import { MicroOrb } from './MicroOrb'
 
 interface InputPromptProps {
@@ -36,6 +40,12 @@ interface InputPromptProps {
 
 interface CycleState {
   matches: string[]
+  index: number
+}
+
+/** Open `@`-file menu: the candidate paths and which row is highlighted. */
+interface MenuState {
+  items: string[]
   index: number
 }
 
@@ -71,6 +81,13 @@ export const InputPrompt = memo(function InputPrompt({
   const commandNamesRef = useRef<string[]>([])
   const cycleRef = useRef<CycleState | null>(null)
 
+  // `@`-file menu. `menuRef` mirrors `menu` for the synchronous `useInput`
+  // closure (same reason as `bufferRef`); `searchSeqRef` discards stale async
+  // results — each new search/close bumps it.
+  const [menu, setMenu] = useState<MenuState | null>(null)
+  const menuRef = useRef<MenuState | null>(null)
+  const searchSeqRef = useRef(0)
+
   useEffect(() => {
     let cancelled = false
     commandNamesRef.current = []
@@ -91,6 +108,62 @@ export const InputPrompt = memo(function InputPrompt({
     }
   }, [projectPath, homeDir])
 
+  const setMenuState = useCallback((next: MenuState | null) => {
+    menuRef.current = next
+    // Let the global Esc handler know the menu owns Esc while it's open.
+    setMentionMenuOpen(next !== null)
+    setMenu(next)
+  }, [])
+
+  // Clear the shared flag if we unmount with the menu still open.
+  useEffect(() => () => setMentionMenuOpen(false), [])
+
+  const closeMenu = useCallback(() => {
+    searchSeqRef.current++ // invalidate any in-flight search
+    if (menuRef.current !== null) setMenuState(null)
+  }, [setMenuState])
+
+  // Recompute the active `@`-mention from a buffer and refresh the menu. Runs
+  // off the synchronous `bufferRef` path (not a React effect) so the menu never
+  // lags the buffer between chunked stdin events. The only async step is the
+  // file search; its result is dropped unless the live mention still matches.
+  const refreshMenu = useCallback(
+    (buffer: TextBufferState) => {
+      if (!projectPath) {
+        closeMenu()
+        return
+      }
+      const line = buffer.lines[buffer.row] ?? ''
+      const mention = findActiveMention(line, buffer.col)
+      if (!mention) {
+        closeMenu()
+        return
+      }
+      const seq = ++searchSeqRef.current
+      const expected = { row: buffer.row, start: mention.start, query: mention.query }
+      void searchProjectFiles(mention.query, { projectPath })
+        .then((items) => {
+          if (seq !== searchSeqRef.current) return // superseded
+          const live = bufferRef.current
+          const liveLine = live.lines[live.row] ?? ''
+          const liveMention = findActiveMention(liveLine, live.col)
+          if (
+            !liveMention ||
+            live.row !== expected.row ||
+            liveMention.start !== expected.start ||
+            liveMention.query !== expected.query
+          ) {
+            return // cursor/query moved on; ignore this result
+          }
+          setMenuState(items.length > 0 ? { items, index: 0 } : null)
+        })
+        .catch(() => {
+          /* search is best-effort; leave the menu as-is */
+        })
+    },
+    [projectPath, closeMenu, setMenuState],
+  )
+
   const apply = useCallback(
     (
       update: (current: TextBufferState) => TextBufferState,
@@ -102,10 +175,27 @@ export const InputPrompt = memo(function InputPrompt({
       if (options.notifyEdit) onEdit?.()
       bufferRef.current = next
       setBuffer(next)
+      refreshMenu(next)
       return true
     },
-    [onEdit],
+    [onEdit, refreshMenu],
   )
+
+  const acceptMention = useCallback(() => {
+    const current = menuRef.current
+    if (!current || current.items.length === 0) return
+    const choice = current.items[current.index]
+    if (!choice) return
+    const buf = bufferRef.current
+    const line = buf.lines[buf.row] ?? ''
+    const mention = findActiveMention(line, buf.col)
+    if (!mention) {
+      closeMenu()
+      return
+    }
+    apply((b) => applyMention(b, mention.start, choice), { notifyEdit: true })
+    closeMenu()
+  }, [apply, closeMenu])
 
   const handleComplete = useCallback(() => {
     const buf = bufferRef.current
@@ -138,6 +228,26 @@ export const InputPrompt = memo(function InputPrompt({
   useInput((input, key) => {
     const action = keyToAction(input, key)
     if (action.kind !== 'complete') cycleRef.current = null
+
+    // When the `@`-menu is open it owns the arrow keys, Enter/Tab, and Esc.
+    // Everything else falls through so editing keeps the menu live.
+    const openMenu = menuRef.current
+    if (openMenu && openMenu.items.length > 0) {
+      const count = openMenu.items.length
+      switch (action.kind) {
+        case 'move-up':
+          return setMenuState({ ...openMenu, index: (openMenu.index - 1 + count) % count })
+        case 'move-down':
+          return setMenuState({ ...openMenu, index: (openMenu.index + 1) % count })
+        case 'submit':
+        case 'complete':
+          return acceptMention()
+        case 'dismiss':
+          return closeMenu()
+      }
+    } else if (action.kind === 'dismiss') {
+      return // Esc with no menu open: no-op
+    }
 
     switch (action.kind) {
       case 'submit': {
@@ -200,6 +310,7 @@ export const InputPrompt = memo(function InputPrompt({
           cursor={idx === buffer.row ? buffer.col : null}
         />
       ))}
+      {menu && <FileMenu items={menu.items} selected={menu.index} />}
     </Box>
   )
 })

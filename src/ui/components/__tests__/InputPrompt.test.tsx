@@ -186,3 +186,173 @@ describe('InputPrompt', () => {
     app.unmount()
   })
 })
+
+async function createFileFixture(files: string[]) {
+  const { invalidateFileList } = await import('../../../services/file-search')
+  const base = await mkdtemp(path.join(tmpdir(), 'orb-input-mention-'))
+  const projectPath = path.join(base, 'project')
+  await mkdir(projectPath, { recursive: true })
+  for (const file of files) {
+    const abs = path.join(projectPath, file)
+    await mkdir(path.dirname(abs), { recursive: true })
+    await writeFile(abs, '')
+  }
+  // A real git repo makes `git ls-files` return a deterministic sorted list.
+  await Bun.spawn(['git', 'init', '-q'], {
+    cwd: projectPath,
+    stdout: 'ignore',
+    stderr: 'ignore',
+  }).exited
+  invalidateFileList(projectPath)
+
+  return {
+    projectPath,
+    async cleanup() {
+      invalidateFileList(projectPath)
+      await rm(base, { force: true, recursive: true })
+    },
+  }
+}
+
+/** Let the async file search resolve and the menu re-render. */
+const settle = async () => {
+  for (let i = 0; i < 4; i++) await new Promise((resolve) => setTimeout(resolve, 20))
+}
+
+describe('InputPrompt @-file menu', () => {
+  it('opens after @ and inserts the selected path on Enter, then submits', async () => {
+    const fixture = await createFileFixture(['src/alpha.ts', 'src/beta.ts'])
+    const { InputPrompt } = await importInputPrompt()
+    const submitted: string[] = []
+    const app = render(
+      <InputPrompt
+        state="idle"
+        onSubmit={(value: string) => submitted.push(value)}
+        projectPath={fixture.projectPath}
+      />,
+    )
+    await flush()
+
+    app.stdin.write('look at @al')
+    await settle()
+    expect(normalizeFrame(app.lastFrame())).toContain('src/alpha.ts')
+
+    app.stdin.write('\r') // Enter accepts the highlighted item
+    await settle()
+    app.stdin.write('\r') // now Enter submits the message
+    await settle()
+
+    expect(submitted).toEqual(['look at src/alpha.ts'])
+
+    app.unmount()
+    await fixture.cleanup()
+  })
+
+  it('accepts the selection on Tab', async () => {
+    const fixture = await createFileFixture(['src/alpha.ts'])
+    const { InputPrompt } = await importInputPrompt()
+    const submitted: string[] = []
+    const app = render(
+      <InputPrompt
+        state="idle"
+        onSubmit={(value: string) => submitted.push(value)}
+        projectPath={fixture.projectPath}
+      />,
+    )
+    await flush()
+
+    app.stdin.write('@al')
+    await settle()
+    app.stdin.write('\t') // Tab accepts
+    await settle()
+    app.stdin.write('\r')
+    await settle()
+
+    expect(submitted).toEqual(['src/alpha.ts'])
+
+    app.unmount()
+    await fixture.cleanup()
+  })
+
+  it('navigates with the down arrow before accepting', async () => {
+    const fixture = await createFileFixture(['src/aaa.ts', 'src/aab.ts'])
+    const { InputPrompt } = await importInputPrompt()
+    const submitted: string[] = []
+    const app = render(
+      <InputPrompt
+        state="idle"
+        onSubmit={(value: string) => submitted.push(value)}
+        projectPath={fixture.projectPath}
+      />,
+    )
+    await flush()
+
+    app.stdin.write('@aa')
+    await settle()
+    app.stdin.write('\x1b[B') // down arrow -> second item (sorted: aab)
+    await settle()
+    app.stdin.write('\r') // accept
+    await settle()
+    app.stdin.write('\r') // submit
+    await settle()
+
+    expect(submitted).toEqual(['src/aab.ts'])
+
+    app.unmount()
+    await fixture.cleanup()
+  })
+
+  it('dismisses on Esc, leaving the literal text so Enter submits it', async () => {
+    const fixture = await createFileFixture(['src/alpha.ts'])
+    const { InputPrompt } = await importInputPrompt()
+    const submitted: string[] = []
+    const app = render(
+      <InputPrompt
+        state="idle"
+        onSubmit={(value: string) => submitted.push(value)}
+        projectPath={fixture.projectPath}
+      />,
+    )
+    await flush()
+
+    app.stdin.write('@al')
+    await settle()
+    app.stdin.write('\x1b') // Esc dismisses the menu
+    await settle()
+    expect(normalizeFrame(app.lastFrame())).not.toContain('select')
+
+    app.stdin.write('\r') // Enter now submits the raw text
+    await settle()
+
+    expect(submitted).toEqual(['@al'])
+
+    app.unmount()
+    await fixture.cleanup()
+  })
+
+  it('submits normally when the query matches no files', async () => {
+    const fixture = await createFileFixture(['src/alpha.ts'])
+    const { InputPrompt } = await importInputPrompt()
+    const submitted: string[] = []
+    const app = render(
+      <InputPrompt
+        state="idle"
+        onSubmit={(value: string) => submitted.push(value)}
+        projectPath={fixture.projectPath}
+      />,
+    )
+    await flush()
+
+    app.stdin.write('@zzzzz')
+    await settle()
+    expect(normalizeFrame(app.lastFrame())).not.toContain('select')
+
+    app.stdin.write('\r')
+    await settle()
+
+    expect(submitted).toEqual(['@zzzzz'])
+
+    app.unmount()
+    await fixture.cleanup()
+  })
+})
