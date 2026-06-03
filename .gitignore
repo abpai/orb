@@ -161,6 +161,9 @@ reference
 # Pi workflow state
 .agents/
 
+# prepare-pr / finish-lane generated artifacts
+.workflow/
+
 # Claude Code local/user state
 .claude/settings.local.json
 .claude/skills/

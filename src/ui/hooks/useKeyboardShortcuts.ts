@@ -7,6 +7,8 @@ interface UseKeyboardShortcutsConfig {
   canOpenFiles: boolean
   canRepeat: boolean
   canTogglePause: boolean
+  /** Whether the input's `@`-file menu is open; when true it owns Esc. */
+  menuOpen: boolean
   onCancel(): void
   onCycleModel(): void
   onOpenFiles(): void
@@ -21,6 +23,7 @@ export function useKeyboardShortcuts({
   canOpenFiles,
   canRepeat,
   canTogglePause,
+  menuOpen,
   onCancel,
   onCycleModel,
   onOpenFiles,
@@ -31,6 +34,9 @@ export function useKeyboardShortcuts({
 }: UseKeyboardShortcutsConfig) {
   useInput(
     (input, key) => {
+      // The `@`-file menu owns Esc while it's open (it dismisses itself); don't
+      // also cancel the in-flight turn. Ctrl-S still cancels unconditionally.
+      if (key.escape && menuOpen) return
       if (key.escape || (key.ctrl && input === 's')) {
         onCancel()
       }
