@@ -2,16 +2,18 @@ import { afterEach, describe, expect, it, mock } from 'bun:test'
 import { render } from 'ink-testing-library'
 
 import { DEFAULT_CONFIG } from '../../types'
+import type { createPipelineTask } from '../../pipeline/task'
 
 afterEach(() => {
   mock.restore()
 })
 
-function createCommandsMock(
-  expandSlashCommandInput: () => Promise<
-    { kind: 'prompt'; prompt: string } | { kind: 'builtin'; commandName: string; answer: string }
-  >,
-) {
+type ExpandResult =
+  | { kind: 'prompt'; prompt: string }
+  | { kind: 'builtin'; commandName: string; answer: string }
+  | { kind: 'action'; commandName: string; action: string }
+
+function createCommandsMock(expandSlashCommandInput: () => Promise<ExpandResult>) {
   return {
     expandSlashCommandInput,
     extractSlashCommandName: (line: string) => {
@@ -27,6 +29,27 @@ function createCommandsMock(
   }
 }
 
+/**
+ * Build a fake task factory for usePipeline's `createTask` option. Injecting it
+ * avoids mock.module on the task module — Bun can't un-mock a module mid-run, so
+ * a wholesale task mock would leak into other test files (e.g. task.test.ts).
+ */
+function fakeTask(
+  impl: Partial<ReturnType<typeof createPipelineTask>> = {},
+): typeof createPipelineTask {
+  return (() => ({
+    updateConfig: () => {},
+    onStateChange: () => () => {},
+    cancel: () => {},
+    pause: () => {},
+    resume: () => {},
+    repeatTts: async () => {},
+    stopPlayback: () => {},
+    run: async () => ({ entryId: 'entry-1', text: '', cancelled: false }),
+    ...impl,
+  })) as unknown as typeof createPipelineTask
+}
+
 async function importUsePipeline() {
   return await import('./usePipeline')
 }
@@ -39,28 +62,10 @@ describe('usePipeline submit', () => {
       return { entryId: 'entry-1', text: '', cancelled: false }
     })
 
-    mock.module('../../pipeline/task', () => ({
-      createPipelineTask: () => ({
-        updateConfig: () => {},
-        onStateChange: () => () => {},
-        cancel: () => {},
-        pause: () => {},
-        resume: () => {},
-        repeatTts: async () => {},
-        stopPlayback: () => {
-          events.push('stop')
-        },
-        run: taskRun,
-      }),
-    }))
-
     mock.module('../../services/commands', () =>
       createCommandsMock(async () => {
         events.push('expand')
-        return {
-          kind: 'prompt',
-          prompt: 'Expanded explain prompt',
-        }
+        return { kind: 'prompt', prompt: 'Expanded explain prompt' }
       }),
     )
 
@@ -74,8 +79,10 @@ describe('usePipeline submit', () => {
         config: DEFAULT_CONFIG,
         activeModel: DEFAULT_CONFIG.llmModel,
         initialModel: DEFAULT_CONFIG.llmModel,
+        createTask: fakeTask({ run: taskRun, stopPlayback: () => events.push('stop') }),
         onFrame: () => {},
         onSubmitBuiltin: () => {},
+        onAction: () => {},
         onRunComplete: () => {},
         onStateChange: () => {},
         onSubmitError: () => {},
@@ -102,19 +109,6 @@ describe('usePipeline submit', () => {
   it('routes slash-command lookup failures to the local error handler', async () => {
     const taskRun = mock(async () => ({ entryId: 'entry-1', text: '', cancelled: false }))
 
-    mock.module('../../pipeline/task', () => ({
-      createPipelineTask: () => ({
-        updateConfig: () => {},
-        onStateChange: () => () => {},
-        cancel: () => {},
-        pause: () => {},
-        resume: () => {},
-        repeatTts: async () => {},
-        stopPlayback: () => {},
-        run: taskRun,
-      }),
-    }))
-
     mock.module('../../services/commands', () =>
       createCommandsMock(async () => {
         throw new Error('Slash command "/explain" not found.')
@@ -132,8 +126,10 @@ describe('usePipeline submit', () => {
         config: DEFAULT_CONFIG,
         activeModel: DEFAULT_CONFIG.llmModel,
         initialModel: DEFAULT_CONFIG.llmModel,
+        createTask: fakeTask({ run: taskRun }),
         onFrame: () => {},
         onSubmitBuiltin: () => {},
+        onAction: () => {},
         onRunComplete: () => {},
         onStateChange: () => {},
         onSubmitError: (query, message) => submitErrors.push({ query, message }),
@@ -159,19 +155,6 @@ describe('usePipeline submit', () => {
   it('routes built-in slash commands to the local built-in handler', async () => {
     const taskRun = mock(async () => ({ entryId: 'entry-1', text: '', cancelled: false }))
 
-    mock.module('../../pipeline/task', () => ({
-      createPipelineTask: () => ({
-        updateConfig: () => {},
-        onStateChange: () => () => {},
-        cancel: () => {},
-        pause: () => {},
-        resume: () => {},
-        repeatTts: async () => {},
-        stopPlayback: () => {},
-        run: taskRun,
-      }),
-    }))
-
     mock.module('../../services/commands', () =>
       createCommandsMock(async () => ({
         kind: 'builtin',
@@ -191,8 +174,10 @@ describe('usePipeline submit', () => {
         config: DEFAULT_CONFIG,
         activeModel: DEFAULT_CONFIG.llmModel,
         initialModel: DEFAULT_CONFIG.llmModel,
+        createTask: fakeTask({ run: taskRun }),
         onFrame: () => {},
         onSubmitBuiltin: (query, answer) => builtins.push({ query, answer }),
+        onAction: () => {},
         onRunComplete: () => {},
         onStateChange: () => {},
         onSubmitError: () => {},
@@ -213,22 +198,55 @@ describe('usePipeline submit', () => {
     app.unmount()
   })
 
+  it('routes action slash commands to the action handler', async () => {
+    const taskRun = mock(async () => ({ entryId: 'entry-1', text: '', cancelled: false }))
+
+    mock.module('../../services/commands', () =>
+      createCommandsMock(async () => ({
+        kind: 'action',
+        commandName: 'sessions',
+        action: 'open-sessions',
+      })),
+    )
+
+    const { usePipeline } = await importUsePipeline()
+
+    const actions: string[] = []
+    const startEntry = mock(() => ({ entryId: 'entry-1', query: 'should-not-run' }))
+    let controls!: ReturnType<typeof usePipeline>
+
+    function Harness() {
+      controls = usePipeline({
+        config: DEFAULT_CONFIG,
+        activeModel: DEFAULT_CONFIG.llmModel,
+        initialModel: DEFAULT_CONFIG.llmModel,
+        createTask: fakeTask({ run: taskRun }),
+        onFrame: () => {},
+        onSubmitBuiltin: () => {},
+        onAction: (action) => actions.push(action),
+        onRunComplete: () => {},
+        onStateChange: () => {},
+        onSubmitError: () => {},
+        onOpenFiles: () => {},
+        startEntry,
+      })
+      return null
+    }
+
+    const app = render(<Harness />)
+
+    await controls.submit('/sessions')
+
+    expect(actions).toEqual(['open-sessions'])
+    expect(startEntry).not.toHaveBeenCalled()
+    expect(taskRun).not.toHaveBeenCalled()
+
+    app.unmount()
+  })
+
   it('routes /open to the editor handler without running or expanding', async () => {
     const taskRun = mock(async () => ({ entryId: 'entry-1', text: '', cancelled: false }))
     const expandSlash = mock(async () => ({ kind: 'prompt' as const, prompt: 'unused' }))
-
-    mock.module('../../pipeline/task', () => ({
-      createPipelineTask: () => ({
-        updateConfig: () => {},
-        onStateChange: () => () => {},
-        cancel: () => {},
-        pause: () => {},
-        resume: () => {},
-        repeatTts: async () => {},
-        stopPlayback: () => {},
-        run: taskRun,
-      }),
-    }))
 
     mock.module('../../services/commands', () => createCommandsMock(expandSlash))
 
@@ -243,8 +261,10 @@ describe('usePipeline submit', () => {
         config: DEFAULT_CONFIG,
         activeModel: DEFAULT_CONFIG.llmModel,
         initialModel: DEFAULT_CONFIG.llmModel,
+        createTask: fakeTask({ run: taskRun }),
         onFrame: () => {},
         onSubmitBuiltin: () => {},
+        onAction: () => {},
         onRunComplete: () => {},
         onStateChange: () => {},
         onSubmitError: () => {},

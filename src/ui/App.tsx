@@ -5,10 +5,13 @@ import { Box, Text } from 'ink'
 import { openInEditor, formatOpenOutcome } from '../services/editor'
 import { latestFocusRefs, parseExplicitRefs } from '../services/file-refs'
 import { FALLBACK_MODEL_CHOICES_BY_PROVIDER } from '../services/model-catalog'
+import { buildResumeArgs } from '../services/relaunch'
+import { listSessions, type SessionSummary } from '../services/session'
 import { type AppConfig, type AppState, type DetailMode, type SavedSession } from '../types'
 import type { AnimationMode } from './components/AsciiOrb'
 import { ConversationRail } from './components/ConversationRail'
 import { Footer } from './components/Footer'
+import { SessionPicker } from './components/SessionPicker'
 import { TTSErrorBanner } from './components/TTSErrorBanner'
 import { WelcomeSplash } from './components/WelcomeSplash'
 import { useConversation } from './hooks/useConversation'
@@ -20,6 +23,8 @@ import { formatModelLabel } from './utils/model-label'
 interface AppProps {
   config: AppConfig
   initialSession?: SavedSession | null
+  orbSessionId?: string
+  onRequestRelaunch?: (args: string[]) => void
 }
 
 function mapStateToAnimationMode(state: AppState): AnimationMode {
@@ -36,7 +41,7 @@ function mapStateToAnimationMode(state: AppState): AnimationMode {
 
 const FIXED_UI_OVERHEAD = 8
 
-export function App({ config, initialSession }: AppProps) {
+export function App({ config, initialSession, orbSessionId, onRequestRelaunch }: AppProps) {
   const [detailMode, setDetailMode] = useState<DetailMode>('compact')
   const [state, setState] = useState<AppState>('idle')
   // Whether the input's `@`-file menu is open. Lifted here so the global Esc
@@ -45,12 +50,32 @@ export function App({ config, initialSession }: AppProps) {
   const [isPaused, setIsPaused] = useState(false)
   const [splashDismissed, setSplashDismissed] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [pickerSessions, setPickerSessions] = useState<SessionSummary[] | null>(null)
 
   const conversation = useConversation({
     config,
     initialSession,
+    orbSessionId,
     taskState: state,
   })
+
+  const isPickerOpen = pickerSessions !== null
+
+  const handleOpenSessions = useCallback(() => {
+    void listSessions()
+      .then((sessions) => setPickerSessions(sessions))
+      .catch(() => setPickerSessions([]))
+  }, [])
+
+  const handlePickSession = useCallback(
+    (session: SessionSummary) => {
+      setPickerSessions(null)
+      onRequestRelaunch?.(buildResumeArgs(session.projectPath, session.id))
+    },
+    [onRequestRelaunch],
+  )
+
+  const handleCancelPicker = useCallback(() => setPickerSessions(null), [])
 
   const handleStateChange = useCallback((next: AppState) => {
     setState(next)
@@ -88,6 +113,7 @@ export function App({ config, initialSession }: AppProps) {
     onRunComplete: conversation.handleRunComplete,
     onStateChange: handleStateChange,
     onSubmitBuiltin: conversation.recordLocalAnswer,
+    onAction: handleOpenSessions,
     onSubmitError: conversation.recordLocalError,
     onOpenFiles: handleOpenFiles,
     startEntry: conversation.startEntry,
@@ -142,6 +168,7 @@ export function App({ config, initialSession }: AppProps) {
     canOpenFiles: focusRefs.length > 0,
     canRepeat,
     canTogglePause,
+    enabled: !isPickerOpen,
     menuOpen: inputMenuOpen,
     onCancel: handleCancel,
     onCycleModel: conversation.cycleModel,
@@ -184,7 +211,15 @@ export function App({ config, initialSession }: AppProps) {
       {conversation.ttsError && (
         <TTSErrorBanner type={conversation.ttsError.type} message={conversation.ttsError.message} />
       )}
-      {showWelcome ? (
+      {isPickerOpen ? (
+        <SessionPicker
+          sessions={pickerSessions ?? []}
+          currentProjectPath={config.projectPath}
+          currentId={orbSessionId}
+          onSelect={handlePickSession}
+          onCancel={handleCancelPicker}
+        />
+      ) : showWelcome ? (
         <WelcomeSplash
           animationMode={animationMode}
           assistantLabel={assistantLabel}
@@ -204,7 +239,7 @@ export function App({ config, initialSession }: AppProps) {
           assistantLabel={assistantLabel}
         />
       )}
-      {!showWelcome && (
+      {!showWelcome && !isPickerOpen && (
         <Footer
           state={state}
           onSubmit={submit}
@@ -222,7 +257,7 @@ export function App({ config, initialSession }: AppProps) {
           onMenuOpenChange={setInputMenuOpen}
         />
       )}
-      {!showWelcome && notice && (
+      {!showWelcome && !isPickerOpen && notice && (
         <Text color="gray" dimColor>
           {notice}
         </Text>

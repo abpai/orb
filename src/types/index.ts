@@ -54,6 +54,8 @@ export type AgentSession = { provider: 'anthropic'; sessionId: string } | OpenAi
 
 export interface SavedSession {
   version: 2
+  /** Stable per-conversation id, minted once when a fresh conversation starts. */
+  id: string
   projectPath: string
   llmProvider: LlmProvider
   llmModel: LlmModelId
@@ -81,6 +83,8 @@ export interface AppConfig {
   ttsMaxWaitMs: number
   ttsGraceWindowMs: number
   resumeSession?: AgentSession
+  /** When set, resume this specific saved session id instead of the latest. */
+  resumeId?: string
   startFresh: boolean
   skipIntro: boolean
   yolo: boolean

@@ -6,7 +6,7 @@ import { render } from 'ink-testing-library'
 
 import { FALLBACK_MODEL_CHOICES_BY_PROVIDER } from '../../services/model-catalog'
 import { DEFAULT_CONFIG } from '../../types'
-import { getSessionPath, loadSession } from '../../services/session'
+import { getProjectSessionDir, loadSession } from '../../services/session'
 import type { RunResult } from '../../pipeline/task'
 import type { OutboundFrame } from '../../pipeline/transports/types'
 import { useConversation } from './useConversation'
@@ -44,8 +44,7 @@ describe('useConversation', () => {
     const projectPath = path.join(tempProjectRoot, 'project')
     await mkdir(projectPath, { recursive: true })
 
-    const sessionPath = getSessionPath(projectPath)
-    cleanupPaths.add(sessionPath)
+    cleanupPaths.add(getProjectSessionDir(projectPath))
 
     let controls!: ReturnType<typeof useConversation>
 
@@ -92,6 +91,7 @@ describe('useConversation', () => {
         },
         initialSession: {
           version: 2,
+          id: 'stale-model-test',
           projectPath: '/tmp/stale-model-test',
           llmProvider: 'anthropic',
           llmModel: 'claude-opus-4-6',
@@ -123,6 +123,7 @@ describe('useConversation', () => {
         },
         initialSession: {
           version: 2,
+          id: 'provider-switch-history-test',
           projectPath: '/tmp/provider-switch-history-test',
           llmProvider: 'openai',
           llmModel: 'gpt-5.5',
@@ -179,8 +180,7 @@ describe('useConversation', () => {
       const projectPath = path.join(tempProjectRoot, 'project')
       await mkdir(projectPath, { recursive: true })
 
-      const sessionPath = getSessionPath(projectPath)
-      cleanupPaths.add(sessionPath)
+      cleanupPaths.add(getProjectSessionDir(projectPath))
 
       let controls!: ReturnType<typeof useConversation>
 

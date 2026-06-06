@@ -4,7 +4,7 @@ import { createPipelineTask } from '../../pipeline/task'
 import type { RunResult, TaskState } from '../../pipeline/task'
 import { createTerminalTextTransport } from '../../pipeline/transports/terminal-text'
 import type { OutboundFrame, Transport } from '../../pipeline/transports/types'
-import { expandSlashCommandInput } from '../../services/commands'
+import { expandSlashCommandInput, type SlashActionName } from '../../services/commands'
 import type { AgentSession, AppConfig } from '../../types'
 
 interface PendingRun {
@@ -17,8 +17,11 @@ interface UsePipelineConfig {
   activeModel: string
   initialModel: string
   initialSession?: AgentSession
+  /** Task factory; overridable in tests to avoid spinning up the real pipeline. */
+  createTask?: typeof createPipelineTask
   onFrame(frame: OutboundFrame): void
   onSubmitBuiltin(query: string, answer: string): void
+  onAction(action: SlashActionName): void
   onRunComplete(result: RunResult): void
   onStateChange(state: TaskState): void
   onSubmitError(query: string, message: string): void
@@ -34,8 +37,10 @@ export function usePipeline({
   activeModel,
   initialModel,
   initialSession,
+  createTask = createPipelineTask,
   onFrame,
   onSubmitBuiltin,
+  onAction,
   onRunComplete,
   onStateChange,
   onSubmitError,
@@ -46,7 +51,7 @@ export function usePipeline({
 
   const { task, transport } = useMemo(() => {
     const nextTransport = createTerminalTextTransport()
-    const nextTask = createPipelineTask({
+    const nextTask = createTask({
       appConfig: { ...config, llmModel: initialModel },
       session: initialSession,
       transport: nextTransport,
@@ -113,6 +118,10 @@ export function usePipeline({
           onSubmitBuiltin(query, expanded.answer)
           return
         }
+        if (expanded.kind === 'action') {
+          onAction(expanded.action)
+          return
+        }
         prompt = expanded.prompt
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
@@ -128,6 +137,7 @@ export function usePipeline({
     },
     [
       config.projectPath,
+      onAction,
       onOpenFiles,
       onRunComplete,
       onSubmitBuiltin,

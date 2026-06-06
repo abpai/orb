@@ -1,4 +1,5 @@
 import React from 'react'
+import { randomUUID } from 'node:crypto'
 import { render } from 'ink'
 import { App } from './ui/App'
 import { DEFAULT_CONFIG, DEFAULT_MODEL_ALIAS_BY_PROVIDER, parseCliArgs } from './config'
@@ -7,7 +8,9 @@ import type { AppConfig } from './types'
 import { applyGlobalConfig, loadGlobalConfig } from './services/global-config'
 import { resolveAppModelConfig } from './services/model-catalog'
 import { resolveSmartProvider } from './services/provider-defaults'
-import { loadSession } from './services/session'
+import { loadSession, loadSessionById } from './services/session'
+import { relaunchOrb } from './services/relaunch'
+import { runSessionsCommand } from './sessions-cli'
 import { warn } from './services/log'
 import { runSetupCommand } from './setup'
 import type { AgentSession, SavedSession } from './types'
@@ -73,6 +76,7 @@ export function createInitialSession(
 
   return {
     version: 2,
+    id: keepSavedHistory ? (savedSession?.id ?? randomUUID()) : randomUUID(),
     projectPath: config.projectPath,
     llmProvider: resumeSession.provider,
     llmModel: config.llmModel,
@@ -86,6 +90,10 @@ export async function run(args: string[]): Promise<void> {
   const command = args[0]
   if (command === 'setup') {
     await runSetupCommand(args.slice(1))
+    return
+  }
+  if (command === 'sessions') {
+    await runSessionsCommand(args.slice(1))
     return
   }
   if (shouldHandleMetaFlag(args)) {
@@ -103,7 +111,22 @@ export async function run(args: string[]): Promise<void> {
     baseConfig,
     baseExplicit: globalConfig.explicit,
   })
-  if (!explicit.provider && !explicit.model) {
+
+  // Resume a specific saved session by id (from `orb sessions`). Loaded up front
+  // so the saved conversation's provider/model wins over auto-detection.
+  let resumeById: SavedSession | null = null
+  if (config.resumeId && !config.startFresh) {
+    resumeById = await loadSessionById(config.projectPath, config.resumeId)
+    if (!resumeById) {
+      console.error(`No saved session "${config.resumeId}" found for ${config.projectPath}.`)
+      process.exit(1)
+    }
+    config.llmProvider = resumeById.llmProvider
+    config.llmModel = resumeById.llmModel
+  }
+  const resumeLocksProvider = resumeById !== null
+
+  if (!explicit.provider && !explicit.model && !resumeLocksProvider) {
     const smartProvider = await resolveSmartProvider(config)
     if (!smartProvider) {
       console.error(
@@ -125,10 +148,21 @@ export async function run(args: string[]): Promise<void> {
     warn(`Model catalog refresh failed: ${resolvedModel.catalog.warning}`)
   }
   applyOpenAiStreamingDefaults(config, explicit)
-  const savedSession = config.startFresh ? null : await loadSession(config.projectPath)
+  const savedSession =
+    resumeById ?? (config.startFresh ? null : await loadSession(config.projectPath))
   const initialSession = createInitialSession(config, savedSession)
+  const orbSessionId = initialSession?.id ?? randomUUID()
 
-  render(React.createElement(App, { config, initialSession }), {
-    patchConsole: true,
-  })
+  const instance = render(
+    React.createElement(App, {
+      config,
+      initialSession,
+      orbSessionId,
+      onRequestRelaunch: (relaunchArgs: string[]) =>
+        void relaunchOrb(relaunchArgs, () => instance.unmount()),
+    }),
+    {
+      patchConsole: true,
+    },
+  )
 }
