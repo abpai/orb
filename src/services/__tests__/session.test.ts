@@ -160,7 +160,9 @@ describe('session persistence', () => {
     expect(loaded?.agentSession).toEqual({ provider: 'anthropic', sessionId: 'claude-session-123' })
 
     // The migrated session now appears in listings and the flat file is gone.
-    expect((await listSessions(home)).length).toBe(1)
+    const summaries = await listSessions(home)
+    expect(summaries).toHaveLength(1)
+    expect(summaries[0]?.lastModified).toBe('2026-03-01T00:00:00.000Z')
     expect(await Bun.file(legacyPath).exists()).toBe(false)
   })
 
@@ -210,6 +212,7 @@ describe('session persistence', () => {
     // listSessions alone (no per-project loadSession) must migrate and surface it.
     const summaries = await listSessions(home)
     expect(summaries.map((s) => s.preview)).toEqual(['legacy chat'])
+    expect(summaries[0]?.lastModified).toBe('2026-02-01T00:00:00.000Z')
     expect(await Bun.file(legacyPath).exists()).toBe(false)
 
     // It is now resumable by its newly minted id.

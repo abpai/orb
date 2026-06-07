@@ -211,7 +211,7 @@ async function migrateLegacySession(
   const legacy = await readSessionFile(legacyPath, resolved)
   if (!legacy) return null
 
-  await saveSession(legacy, homeDir)
+  await writeSessionPayload(legacy, homeDir, { refreshLastModified: false })
   await fs.unlink(legacyPath).catch(() => {})
   return legacy
 }
@@ -251,7 +251,7 @@ async function migrateLegacyFile(legacyPath: string, homeDir: string): Promise<v
   const session = projectPath ? normalizeLoaded(parsed, projectPath) : null
   if (!session) return
 
-  await saveSession(session, homeDir)
+  await writeSessionPayload(session, homeDir, { refreshLastModified: false })
   await fs.unlink(legacyPath).catch(() => {})
 }
 
@@ -401,7 +401,11 @@ export async function listSessions(homeDir = os.homedir()): Promise<SessionSumma
   return summaries.sort((a, b) => b.lastModified.localeCompare(a.lastModified))
 }
 
-export async function saveSession(session: SavedSession, homeDir = os.homedir()): Promise<void> {
+async function writeSessionPayload(
+  session: SavedSession,
+  homeDir: string,
+  { refreshLastModified }: { refreshLastModified: boolean },
+): Promise<void> {
   const resolved = path.resolve(session.projectPath)
   const id = session.id && session.id.length > 0 ? session.id : crypto.randomUUID()
   const sessionPath = getSessionFilePath(resolved, id, homeDir)
@@ -416,7 +420,7 @@ export async function saveSession(session: SavedSession, homeDir = os.homedir())
     projectPath: resolved,
     llmProvider: normalizeSessionProvider(session.llmProvider) ?? 'anthropic',
     agentSession: normalizeAgentSession(session.agentSession),
-    lastModified: new Date().toISOString(),
+    lastModified: refreshLastModified ? new Date().toISOString() : session.lastModified,
   }
 
   // A unique suffix keeps concurrent saves of the same session (even within the
@@ -424,4 +428,8 @@ export async function saveSession(session: SavedSession, homeDir = os.homedir())
   const tempPath = `${sessionPath}.${crypto.randomUUID()}.tmp`
   await Bun.write(tempPath, JSON.stringify(payload, null, 2))
   await fs.rename(tempPath, sessionPath)
+}
+
+export async function saveSession(session: SavedSession, homeDir = os.homedir()): Promise<void> {
+  await writeSessionPayload(session, homeDir, { refreshLastModified: true })
 }

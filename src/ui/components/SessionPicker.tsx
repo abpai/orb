@@ -27,8 +27,9 @@ export function formatRelativeTime(iso: string, now: number = Date.now()): strin
   return diffMonth < 12 ? `${diffMonth} mo ago` : `${Math.round(diffMonth / 12)} yr ago`
 }
 
-function providerLabel(provider: SessionSummary['llmProvider']): string {
-  return provider === 'anthropic' ? 'claude' : 'openai'
+export function formatProviderLabel(provider: SessionSummary['llmProvider']): string {
+  if (provider === 'anthropic') return 'claude'
+  return provider
 }
 
 function matchesFilter(session: SessionSummary, filter: string): boolean {
@@ -114,7 +115,7 @@ export function SessionPicker({
                 <Text color={isSelected ? 'cyan' : undefined}>
                   {session.projectName}
                   <Text color="gray" dimColor>
-                    {`  ${providerLabel(session.llmProvider)} · ${formatRelativeTime(
+                    {`  ${formatProviderLabel(session.llmProvider)} · ${formatRelativeTime(
                       session.lastModified,
                     )} · ${session.turnCount} turns`}
                     {isCurrent ? ' · current' : ''}

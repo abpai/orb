@@ -1,7 +1,11 @@
 import React from 'react'
 import { render } from 'ink'
 
-import { SessionPicker, formatRelativeTime } from './ui/components/SessionPicker'
+import {
+  SessionPicker,
+  formatProviderLabel,
+  formatRelativeTime,
+} from './ui/components/SessionPicker'
 import { listSessions, type SessionSummary } from './services/session'
 import { buildResumeArgs, relaunchOrb } from './services/relaunch'
 
@@ -10,17 +14,26 @@ function truncate(value: string, max: number): string {
   return collapsed.length > max ? `${collapsed.slice(0, max - 1)}…` : collapsed
 }
 
+function shellQuote(value: string): string {
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(value)) return value
+  return `'${value.replaceAll("'", "'\\''")}'`
+}
+
+function formatResumeCommand(session: SessionSummary): string {
+  return `orb ${shellQuote(session.projectPath)} --resume ${shellQuote(session.id)}`
+}
+
 /** Plain, non-interactive listing — used when stdout is piped or not a TTY. */
 export function formatSessionList(sessions: SessionSummary[]): string {
   if (sessions.length === 0) return 'No saved sessions yet.'
 
   const lines = sessions.map((session) => {
-    const provider = session.llmProvider === 'anthropic' ? 'claude' : 'openai'
+    const provider = formatProviderLabel(session.llmProvider)
     const preview = truncate(session.preview || '(no messages yet)', 60)
     return [
       `${session.projectName}  (${provider} · ${formatRelativeTime(session.lastModified)} · ${session.turnCount} turns)`,
       `  ${preview}`,
-      `  resume: orb ${session.projectPath} --resume ${session.id}`,
+      `  resume: ${formatResumeCommand(session)}`,
     ].join('\n')
   })
 

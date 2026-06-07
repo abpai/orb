@@ -33,6 +33,20 @@ describe('SessionPicker', () => {
     app.unmount()
   })
 
+  it('labels Gemini sessions as Gemini', () => {
+    const app = render(
+      <SessionPicker
+        sessions={[summary({ llmProvider: 'gemini' })]}
+        onSelect={() => {}}
+        onCancel={() => {}}
+      />,
+    )
+    const frame = normalizeFrame(app.lastFrame())
+    expect(frame).toContain('gemini')
+    expect(frame).not.toContain('openai')
+    app.unmount()
+  })
+
   it('resumes the highlighted session on enter', async () => {
     const selected: SessionSummary[] = []
     const sessions = [
