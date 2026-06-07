@@ -5,9 +5,18 @@ import path from 'node:path'
 import { globalCommandsDir, isFileNotFoundError, ORB_DIR_NAME } from './orb-paths'
 
 const COMMANDS_DIR = 'commands'
-const BUILTIN_COMMANDS = ['help', 'commands'] as const
+const TEXT_BUILTIN_COMMANDS = ['help', 'commands'] as const
+const ACTION_BUILTIN_COMMANDS = ['sessions'] as const
+const BUILTIN_COMMANDS = [...TEXT_BUILTIN_COMMANDS, ...ACTION_BUILTIN_COMMANDS] as const
 
-type BuiltinCommandName = (typeof BUILTIN_COMMANDS)[number]
+type TextBuiltinCommandName = (typeof TEXT_BUILTIN_COMMANDS)[number]
+type ActionBuiltinCommandName = (typeof ACTION_BUILTIN_COMMANDS)[number]
+
+export type SlashActionName = 'open-sessions'
+
+const ACTION_BY_COMMAND: Record<ActionBuiltinCommandName, SlashActionName> = {
+  sessions: 'open-sessions',
+}
 
 export class SlashCommandError extends Error {
   constructor(message: string) {
@@ -30,11 +39,17 @@ interface ExpandedPrompt {
 
 interface BuiltinSlashCommand {
   kind: 'builtin'
-  commandName: BuiltinCommandName
+  commandName: TextBuiltinCommandName
   answer: string
 }
 
-type SlashCommandResolution = ExpandedPrompt | BuiltinSlashCommand
+interface SlashActionCommand {
+  kind: 'action'
+  commandName: ActionBuiltinCommandName
+  action: SlashActionName
+}
+
+type SlashCommandResolution = ExpandedPrompt | BuiltinSlashCommand | SlashActionCommand
 
 interface ExpandSlashCommandOptions {
   input: string
@@ -94,8 +109,12 @@ function formatMissingCommandError(commandName: string, candidatePaths: string[]
   return `Slash command "/${commandName}" not found. Looked in: ${candidatePaths.join(', ')}.`
 }
 
-function isBuiltinCommand(name: string): name is BuiltinCommandName {
-  return BUILTIN_COMMANDS.includes(name as BuiltinCommandName)
+function isTextBuiltinCommand(name: string): name is TextBuiltinCommandName {
+  return TEXT_BUILTIN_COMMANDS.includes(name as TextBuiltinCommandName)
+}
+
+function isActionBuiltinCommand(name: string): name is ActionBuiltinCommandName {
+  return ACTION_BUILTIN_COMMANDS.includes(name as ActionBuiltinCommandName)
 }
 
 async function readCommandsDir(
@@ -181,6 +200,7 @@ async function buildHelpAnswer(projectPath: string, homeDir: string): Promise<st
     'Built-ins:',
     '- `/help` shows this guide.',
     '- `/commands` lists every available command.',
+    '- `/sessions` opens the saved-session picker to resume past conversations.',
     '',
     ...formatCommandDirectories(projectPath, homeDir),
     '',
@@ -241,7 +261,15 @@ export async function expandSlashCommandInput({
     }
   }
 
-  if (isBuiltinCommand(parsed.name)) {
+  if (isActionBuiltinCommand(parsed.name)) {
+    return {
+      kind: 'action',
+      commandName: parsed.name,
+      action: ACTION_BY_COMMAND[parsed.name],
+    }
+  }
+
+  if (isTextBuiltinCommand(parsed.name)) {
     const answer =
       parsed.name === 'help'
         ? await buildHelpAnswer(projectPath, homeDir)

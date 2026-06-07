@@ -255,6 +255,7 @@ function createProgram({ config: defaults }: ProgramDefaults): Command {
     .option('--claude-session <id>', 'Resume a Claude Code session by id')
     .option('--codex-thread <id>', 'Resume a Codex app-server thread by id')
     .option('--new', 'Start fresh (ignore saved session)')
+    .option('--resume <id>', 'Resume a specific saved session by id')
     .option('--skip-intro', 'Skip the welcome animation')
     .option('--tts', 'Enable text-to-speech (default: true)')
     .option('--no-tts', 'Disable text-to-speech')
@@ -284,6 +285,7 @@ interface ParsedOpts {
   claudeSession?: string
   codexThread?: string
   new?: boolean
+  resume?: string
   skipIntro?: boolean
   tts?: boolean
   streamingTts?: boolean
@@ -327,6 +329,7 @@ export function parseCliArgs(args: string[], options: ParseCliOptions = {}): Par
     ...baseConfig,
     projectPath,
     startFresh: opts.new ?? false,
+    resumeId: opts.resume?.trim() || undefined,
     skipIntro: isUserSet(program, 'skipIntro') ? opts.skipIntro === true : baseConfig.skipIntro,
     ttsEnabled: isUserSet(program, 'tts') ? opts.tts !== false : baseConfig.ttsEnabled,
     ttsStreamingEnabled: isUserSet(program, 'streamingTts')

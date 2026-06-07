@@ -7,6 +7,8 @@ interface UseKeyboardShortcutsConfig {
   canOpenFiles: boolean
   canRepeat: boolean
   canTogglePause: boolean
+  /** When false, app shortcuts are suspended (e.g. while the session picker owns input). */
+  enabled?: boolean
   /** Whether the input's `@`-file menu is open; when true it owns Esc. */
   menuOpen: boolean
   onCancel(): void
@@ -23,6 +25,7 @@ export function useKeyboardShortcuts({
   canOpenFiles,
   canRepeat,
   canTogglePause,
+  enabled = true,
   menuOpen,
   onCancel,
   onCycleModel,
@@ -41,7 +44,7 @@ export function useKeyboardShortcuts({
         onCancel()
       }
     },
-    { isActive: state !== 'idle' },
+    { isActive: enabled && state !== 'idle' },
   )
 
   useInput(
@@ -50,7 +53,7 @@ export function useKeyboardShortcuts({
         onToggleDetailMode()
       }
     },
-    { isActive: true },
+    { isActive: enabled },
   )
 
   useInput(
@@ -59,7 +62,7 @@ export function useKeyboardShortcuts({
         onTogglePause()
       }
     },
-    { isActive: canTogglePause },
+    { isActive: enabled && canTogglePause },
   )
 
   useInput(
@@ -68,7 +71,7 @@ export function useKeyboardShortcuts({
         onRepeat()
       }
     },
-    { isActive: canRepeat },
+    { isActive: enabled && canRepeat },
   )
 
   useInput(
@@ -77,7 +80,7 @@ export function useKeyboardShortcuts({
         onOpenFiles()
       }
     },
-    { isActive: canOpenFiles },
+    { isActive: enabled && canOpenFiles },
   )
 
   useInput(
@@ -88,7 +91,7 @@ export function useKeyboardShortcuts({
         onCycleModel()
       }
     },
-    { isActive: canCycleModel },
+    { isActive: enabled && canCycleModel },
   )
 
   useInput(

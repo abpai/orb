@@ -46,6 +46,7 @@ describe('createInitialSession', () => {
     const { createInitialSession } = await importIndex()
     const savedSession: SavedSession = {
       version: 2,
+      id: 'saved-1',
       projectPath: '/tmp/project',
       llmProvider: 'openai',
       llmModel: 'gpt-5.5',
@@ -78,6 +79,7 @@ describe('createInitialSession', () => {
     const { createInitialSession } = await importIndex()
     const savedSession: SavedSession = {
       version: 2,
+      id: 'saved-1',
       projectPath: '/tmp/project',
       llmProvider: 'openai',
       llmModel: 'gpt-5.5',
@@ -104,6 +106,7 @@ describe('createInitialSession', () => {
     const { createInitialSession } = await importIndex()
     const savedSession: SavedSession = {
       version: 2,
+      id: 'saved-1',
       projectPath: '/tmp/project',
       llmProvider: 'openai',
       llmModel: 'gpt-5.5',

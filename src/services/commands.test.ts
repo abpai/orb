@@ -129,6 +129,19 @@ describe('expandSlashCommandInput', () => {
     expect(result.answer).toContain('/commands')
   })
 
+  it('resolves /sessions to an open-sessions action', async () => {
+    const result = await expandSlashCommandInput({
+      input: '/sessions',
+      projectPath: '/tmp/orb-project',
+      homeDir: '/tmp/orb-home',
+    })
+
+    expect(result.kind).toBe('action')
+    if (result.kind !== 'action') throw new Error('expected action result')
+    expect(result.commandName).toBe('sessions')
+    expect(result.action).toBe('open-sessions')
+  })
+
   it('prefers markdown command files over built-in names', async () => {
     const homeDir = await mkdtemp(path.join(tmpdir(), 'orb-command-home-'))
     const projectDir = await mkdtemp(path.join(tmpdir(), 'orb-command-project-'))
@@ -199,6 +212,7 @@ describe('listAvailableSlashCommands', () => {
       ['commands', 'builtin', []],
       ['help', 'builtin', []],
       ['local', 'project', []],
+      ['sessions', 'builtin', []],
       ['shared', 'project', ['global']],
     ])
   })

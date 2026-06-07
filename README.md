@@ -22,7 +22,7 @@ Orb is a Bun-native terminal app for exploring real codebases with Anthropic, Op
 - **Streaming TTS (serve mode)** - Hear answers while they are still being generated
 - **Provider selection** - Choose Anthropic (Claude), OpenAI/Codex, or Gemini via CLI flags
 - **Model switching** - Cycle provider model choices during a conversation with Shift+Tab
-- **Session persistence** - Automatically resume the last session per project
+- **Session history & resume** - Keeps recent conversations per project; auto-resumes the latest, or pick any past session with `orb sessions` / `/sessions`
 - **Slash command prompts** - Expand `/explain`-style shortcuts from project or global Markdown files
 - **Focused terminal UI** - Ink-based interface with conversation history, tool activity, and the Orb intro
 
@@ -127,6 +127,12 @@ orb --model=gemini:flash-lite
 # Fresh conversation
 orb --new
 
+# List saved sessions and resume one (interactive picker)
+orb sessions
+
+# Resume a specific saved session by id
+orb /path/to/project --resume <session-id>
+
 # Skip the intro animation
 orb --skip-intro
 ```
@@ -143,6 +149,7 @@ orb --skip-intro
 | `--tts-server-url=<url>`      | Serve-mode gateway URL                                                                                      | `http://localhost:8000`                                 |
 | `--tts-speed=<rate>`          | TTS speed multiplier                                                                                        | `1.5`                                                   |
 | `--resume-session=<ref>`      | Resume a provider session, using `claude:<session-id>` or `codex:<thread-id>`                               | -                                                       |
+| `--resume=<id>`               | Resume a specific saved session by id (see `orb sessions`)                                                  | -                                                       |
 | `--claude-session=<id>`       | Resume a Claude Code session by id                                                                          | -                                                       |
 | `--codex-thread=<id>`         | Resume a Codex app-server thread by id                                                                      | -                                                       |
 | `--new`                       | Start fresh (ignore saved session)                                                                          | -                                                       |
@@ -168,7 +175,7 @@ Orb can expand slash-command prompts from Markdown files:
 - Project-local commands: `<project>/.orb/commands/*.md`
 - Global commands: `~/.orb/commands/*.md`
 - If both exist, the project-local command wins
-- Built-ins: `/help` explains slash commands and `/commands` lists everything available
+- Built-ins: `/help` explains slash commands, `/commands` lists everything available, and `/sessions` opens the saved-session picker to resume a past conversation
 
 Example:
 
@@ -193,6 +200,7 @@ Built-in commands:
 ```text
 /help
 /commands
+/sessions
 ```
 
 ## TTS Setup
@@ -406,7 +414,10 @@ Config-only advanced tuning keys live under `[tts]`:
 - `max_wait_ms`
 - `grace_window_ms`
 
-Sessions are stored under `~/.orb/sessions/` (one per project).
+Sessions are stored under `~/.orb/sessions/<project>/<session-id>.json`, keeping a
+history of recent conversations per project (older ones are pruned). Orb auto-resumes
+the latest on startup; use `orb sessions` (or `/sessions` in the app) to browse and
+resume any saved conversation across projects.
 
 ## Customizing Prompts
 

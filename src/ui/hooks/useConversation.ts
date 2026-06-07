@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { randomUUID } from 'node:crypto'
 
 import type { OutboundFrame } from '../../pipeline/transports/types'
 import type { RunResult } from '../../pipeline/task'
@@ -18,6 +19,8 @@ import {
 interface UseConversationConfig {
   config: AppConfig
   initialSession?: SavedSession | null
+  /** Stable id for this conversation; minted here when starting fresh. */
+  orbSessionId?: string
   taskState: AppState
 }
 
@@ -52,7 +55,12 @@ function createLocalEntry(
   }
 }
 
-export function useConversation({ config, initialSession, taskState }: UseConversationConfig) {
+export function useConversation({
+  config,
+  initialSession,
+  orbSessionId,
+  taskState,
+}: UseConversationConfig) {
   const sessionMatchesProvider = initialSession?.llmProvider === config.llmProvider
   const initialHistory = sessionMatchesProvider ? (initialSession?.history ?? []) : []
   const sessionModel = sessionMatchesProvider ? initialSession?.llmModel : undefined
@@ -68,6 +76,7 @@ export function useConversation({ config, initialSession, taskState }: UseConver
 
   const liveTurnRef = useRef<HistoryEntry | null>(null)
   const activeEntryIdRef = useRef<string | null>(null)
+  const sessionIdRef = useRef<string>(orbSessionId ?? initialSession?.id ?? randomUUID())
   const agentSessionRef = useRef<AgentSession | undefined>(initialAgentSession)
   const pendingSaveRef = useRef(false)
   const pendingRenderTurnRef = useRef<HistoryEntry | null>(null)
@@ -107,6 +116,7 @@ export function useConversation({ config, initialSession, taskState }: UseConver
       const history = historyOverride ?? getHistorySnapshot()
       const payload: SavedSession = {
         version: 2,
+        id: sessionIdRef.current,
         projectPath: config.projectPath,
         llmProvider: config.llmProvider,
         llmModel: modelOverride ?? activeModel,
