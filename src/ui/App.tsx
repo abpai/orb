@@ -217,6 +217,7 @@ export function App({
     !conversation.liveTurn &&
     !config.skipIntro &&
     !initialSession?.history?.length &&
+    !resumeInfo &&
     !splashDismissed
 
   // Reassure the user that a resumed external session's hidden history is still

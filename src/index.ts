@@ -60,6 +60,7 @@ function shouldHandleMetaFlag(args: string[]): boolean {
 
 function sameAgentSession(a: AgentSession | undefined, b: AgentSession): boolean {
   if (!a || a.provider !== b.provider) return false
+  // ubs:ignore not-a-secret — sessionId/threadId are public CLI-supplied lookup keys, not bearer tokens or HMACs
   if (a.provider === 'anthropic' && b.provider === 'anthropic') return a.sessionId === b.sessionId
   if (a.provider === 'openai' && b.provider === 'openai') return a.threadId === b.threadId
   return false
@@ -157,7 +158,7 @@ export async function run(args: string[]): Promise<void> {
   // When resuming an external session with no orb-side history, look up how much
   // hidden context the model carries so the UI can reassure the user.
   let resumeInfo: ResumeInfo | undefined
-  if (config.resumeSession && (initialSession?.history.length ?? 0) === 0) {
+  if (config.resumeSession && !config.startFresh && (initialSession?.history.length ?? 0) === 0) {
     const meta = await lookupExternalSessionMeta(config.resumeSession, config.projectPath).catch(
       () => null,
     )
