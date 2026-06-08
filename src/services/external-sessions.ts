@@ -192,7 +192,8 @@ function claudeRowFromIndex(
     projectName: path.basename(projectPath) || projectPath,
     llmProvider: 'anthropic',
     llmModel: '',
-    lastModified: asString(entry.session?.last_message_time) ?? isoFromUnixSecs(entry.modified_time),
+    lastModified:
+      asString(entry.session?.last_message_time) ?? isoFromUnixSecs(entry.modified_time),
     turnCount: asFiniteNumber(entry.session?.message_count) ?? 0,
     preview: (asString(entry.first_user_content) ?? asString(entry.session?.summary) ?? '').trim(),
     source: 'claude',

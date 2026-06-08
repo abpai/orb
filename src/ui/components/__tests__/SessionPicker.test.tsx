@@ -133,6 +133,59 @@ describe('SessionPicker', () => {
     app.unmount()
   })
 
+  it('tags each row with its source', () => {
+    const app = render(
+      <SessionPicker
+        sessions={[
+          summary({ id: 'orb-1', source: 'orb', preview: 'orb chat' }),
+          summary({ id: 'claude-1', source: 'claude', preview: 'claude chat' }),
+          summary({ id: 'codex-1', source: 'codex', preview: 'codex chat' }),
+        ]}
+        onSelect={() => {}}
+        onCancel={() => {}}
+      />,
+    )
+    const frame = normalizeFrame(app.lastFrame())
+    expect(frame).toContain('claude code ·')
+    expect(frame).toContain('codex ·')
+    expect(frame).toContain('orb ·')
+    app.unmount()
+  })
+
+  it('filters by source tag', async () => {
+    const app = render(
+      <SessionPicker
+        sessions={[
+          // Previews deliberately omit the word "codex" so a match can only come
+          // from the source tag, not the preview text.
+          summary({ id: 'claude-1', source: 'claude', preview: 'fix the bug' }),
+          summary({ id: 'codex-1', source: 'codex', preview: 'deploy the script' }),
+        ]}
+        onSelect={() => {}}
+        onCancel={() => {}}
+      />,
+    )
+    app.stdin.write('codex')
+    await flush()
+    const frame = normalizeFrame(app.lastFrame())
+    expect(frame).toContain('deploy the script')
+    expect(frame).not.toContain('fix the bug')
+    app.unmount()
+  })
+
+  it('renders an advisory note when provided', () => {
+    const app = render(
+      <SessionPicker
+        sessions={[summary()]}
+        note="Codex scan stopped early."
+        onSelect={() => {}}
+        onCancel={() => {}}
+      />,
+    )
+    expect(normalizeFrame(app.lastFrame())).toContain('Codex scan stopped early.')
+    app.unmount()
+  })
+
   it('cancels on escape', async () => {
     let cancelled = false
     const app = render(
