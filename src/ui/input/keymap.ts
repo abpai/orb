@@ -57,7 +57,8 @@ export const keyToAction = (input: string, key: Key): Action => {
   if (key.end) return { kind: 'move-end' }
 
   if (key.meta && !key.ctrl) {
-    switch (input) {
+    // Match readline: M-b/M-f and their shifted forms (M-B/M-F) both move by word.
+    switch (input.toLowerCase()) {
       case 'b':
         return { kind: 'move-word-left' }
       case 'f':

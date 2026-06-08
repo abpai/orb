@@ -16,6 +16,16 @@ describe('keyToAction', () => {
     expect(keyToAction('f', { meta: true } as never)).toEqual({ kind: 'move-word-right' })
   })
 
+  it('treats meta+B/F (shifted) as word movement', () => {
+    expect(keyToAction('B', { meta: true } as never)).toEqual({ kind: 'move-word-left' })
+    expect(keyToAction('F', { meta: true } as never)).toEqual({ kind: 'move-word-right' })
+  })
+
+  it('inserts a plain b/f with no modifier', () => {
+    expect(keyToAction('b', {} as never)).toEqual({ kind: 'insert', text: 'b' })
+    expect(keyToAction('f', {} as never)).toEqual({ kind: 'insert', text: 'f' })
+  })
+
   it('treats meta+arrow keys as word movement', () => {
     expect(keyToAction('', { leftArrow: true, meta: true } as never)).toEqual({
       kind: 'move-word-left',
