@@ -130,6 +130,9 @@ orb --new
 # List this project's saved sessions and resume one (interactive picker)
 orb sessions
 
+# Include this project's Claude Code and Codex sessions in the picker
+orb sessions --all
+
 # Resume a specific saved session by id
 orb /path/to/project --resume <session-id>
 
@@ -137,9 +140,9 @@ orb /path/to/project --resume <session-id>
 orb --skip-intro
 ```
 
-### Options
+### Commands and options
 
-| Option                        | Description                                                                                                 | Default                                                 |
+| Command / option              | Description                                                                                                 | Default                                                 |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
 | `--provider=<provider>`       | LLM provider: `anthropic`\|`claude`, `openai`\|`gpt`\|`codex`, `gemini`\|`google` (alias: `--llm-provider`) | `auto`                                                  |
 | `--model=<model>`             | Model ID or semantic alias (`haiku`, `sonnet`, `opus`, `gpt`, `mini`, `pro`, etc.) or `provider:model`      | `haiku` (anthropic), `gpt-5.5` (openai), `pro` (gemini) |
@@ -150,6 +153,7 @@ orb --skip-intro
 | `--tts-speed=<rate>`          | TTS speed multiplier                                                                                        | `1.5`                                                   |
 | `--resume-session=<ref>`      | Resume a provider session, using `claude:<session-id>` or `codex:<thread-id>`                               | -                                                       |
 | `--resume=<id>`               | Resume a specific saved session by id (see `orb sessions`)                                                  | -                                                       |
+| `orb sessions --all`          | Include this project's Claude Code and Codex sessions in the session picker                                 | -                                                       |
 | `--claude-session=<id>`       | Resume a Claude Code session by id                                                                          | -                                                       |
 | `--codex-thread=<id>`         | Resume a Codex app-server thread by id                                                                      | -                                                       |
 | `--new`                       | Start fresh (ignore saved session)                                                                          | -                                                       |
@@ -290,7 +294,7 @@ orb --codex-thread=019e188d-1e3e-73f0-986f-bbb7ca00d009 /path/to/project
 orb --resume-session=codex:019e188d-1e3e-73f0-986f-bbb7ca00d009 /path/to/project
 ```
 
-Use this after the other client is idle; do not drive the same Claude or Codex conversation from two terminals at once. The project path must match the original session's working directory. `--new` clears Orb's visible saved history but still honors the explicit handoff id.
+Use this after the other client is idle; do not drive the same Claude or Codex conversation from two terminals at once. The project path must match the original session's working directory. `--new` clears Orb's visible saved history but still honors the explicit handoff id. If you do not know the provider id, run `orb sessions --all` from the project to include matching Claude Code and Codex sessions in the interactive picker. When Orb resumes an external session, prior transcript lines are not imported into Orb's scrollback; instead, a short banner notes that earlier messages are hidden while the model still has the provider's conversation context.
 
 ### OpenAI (default)
 
@@ -417,7 +421,9 @@ Config-only advanced tuning keys live under `[tts]`:
 Sessions are stored under `~/.orb/sessions/<project>/<session-id>.json`, keeping a
 history of recent conversations per project (older ones are pruned). Orb auto-resumes
 the latest on startup; use `orb sessions` (or `/sessions` in the app) to browse and
-resume a past conversation for the current project.
+resume a past Orb conversation for the current project. Use `orb sessions --all` to
+also discover matching Claude Code and Codex sessions from the same project and relaunch
+Orb with the right external resume flag.
 
 ## Customizing Prompts
 

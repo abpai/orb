@@ -61,7 +61,7 @@ export function formatSessionsHelp(): string {
     '',
     `${heading('Usage:')} orb sessions [--all]`,
     '  Interactive picker in a TTY; plain list when piped.',
-    '  Pick a session to relaunch orb with --resume.',
+    '  Pick a session to relaunch orb with the right resume flag.',
     '',
     `${heading('Options:')}`,
     '  --all    Also include this project’s Claude Code and Codex sessions',

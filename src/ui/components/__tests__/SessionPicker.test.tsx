@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { render } from 'ink-testing-library'
 
-import { normalizeFrame } from '../../__tests__/test-utils'
+import { normalizeFrame, settle } from '../../__tests__/test-utils'
 import { SessionPicker, formatRelativeTime } from '../SessionPicker'
 import type { SessionSummary } from '../../../services/session'
 
@@ -105,7 +105,7 @@ describe('SessionPicker', () => {
     )
 
     app.stdin.write('beta')
-    await flush()
+    await settle()
 
     const frame = normalizeFrame(app.lastFrame())
     expect(frame).toContain('beta chat')
@@ -166,7 +166,7 @@ describe('SessionPicker', () => {
       />,
     )
     app.stdin.write('codex')
-    await flush()
+    await settle()
     const frame = normalizeFrame(app.lastFrame())
     expect(frame).toContain('deploy the script')
     expect(frame).not.toContain('fix the bug')
