@@ -60,6 +60,7 @@ function shouldHandleMetaFlag(args: string[]): boolean {
 
 function sameAgentSession(a: AgentSession | undefined, b: AgentSession): boolean {
   if (!a || a.provider !== b.provider) return false
+  // ubs:ignore not-a-secret — sessionId/threadId are public CLI-supplied lookup keys, not bearer tokens or HMACs
   if (a.provider === 'anthropic' && b.provider === 'anthropic') return a.sessionId === b.sessionId
   if (a.provider === 'openai' && b.provider === 'openai') return a.threadId === b.threadId
   return false
