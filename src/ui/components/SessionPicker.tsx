@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 
 import type { SessionSummary } from '../../services/session'
+import type { SessionSource } from '../../types'
 import { abbreviateHome } from '../../services/orb-paths'
 import { useTerminalSize } from '../hooks/useTerminalSize'
 
@@ -11,6 +12,8 @@ interface SessionPickerProps {
   currentId?: string
   onSelect: (session: SessionSummary) => void
   onCancel: () => void
+  /** Optional advisory line under the hint (e.g. a capped-scan notice). */
+  note?: string
 }
 
 /** Lines of chrome above/below the scrolling list (title, hint, blank, indicators, padding). */
@@ -43,6 +46,12 @@ export function pluralizeTurns(count: number): string {
   return `${count} turn${count === 1 ? '' : 's'}`
 }
 
+export function formatSourceTag(source?: SessionSource): string {
+  if (source === 'claude') return 'claude code'
+  if (source === 'codex') return 'codex'
+  return 'orb'
+}
+
 function sessionTitle(session: SessionSummary): string {
   return session.preview.trim() || '(no messages yet)'
 }
@@ -50,7 +59,7 @@ function sessionTitle(session: SessionSummary): string {
 function matchesFilter(session: SessionSummary, filter: string): boolean {
   if (!filter) return true
   const haystack =
-    `${session.projectName} ${session.projectPath} ${session.preview} ${session.llmModel}`.toLowerCase()
+    `${formatSourceTag(session.source)} ${session.projectName} ${session.projectPath} ${session.preview} ${session.llmModel}`.toLowerCase()
   return haystack.includes(filter.toLowerCase())
 }
 
@@ -60,6 +69,7 @@ export function SessionPicker({
   currentId,
   onSelect,
   onCancel,
+  note,
 }: SessionPickerProps) {
   const [filter, setFilter] = useState('')
   const [selected, setSelected] = useState(0)
@@ -137,6 +147,11 @@ export function SessionPicker({
       <Text color="gray" dimColor>
         {filter ? `filter: ${filter}` : '↑↓ navigate · type to filter · enter resume · esc cancel'}
       </Text>
+      {note ? (
+        <Text color="yellow" dimColor>
+          {note}
+        </Text>
+      ) : null}
       <Text> </Text>
       {visible.length === 0 ? (
         <Text color="gray" dimColor>
@@ -153,9 +168,11 @@ export function SessionPicker({
               session.id === currentId &&
               currentProjectPath !== undefined &&
               session.projectPath === currentProjectPath
-            const meta = `${abbreviateHome(session.projectPath)} · ${formatProviderLabel(
-              session.llmProvider,
-            )} · ${formatRelativeTime(session.lastModified)} · ${pluralizeTurns(session.turnCount)}`
+            const meta = `${formatSourceTag(session.source)} · ${abbreviateHome(
+              session.projectPath,
+            )} · ${formatProviderLabel(session.llmProvider)} · ${formatRelativeTime(
+              session.lastModified,
+            )} · ${pluralizeTurns(session.turnCount)}`
             return (
               <Box key={`${session.projectPath}:${session.id}`}>
                 <Text color={isSelected ? 'cyan' : 'gray'}>{isSelected ? '› ' : '  '}</Text>
