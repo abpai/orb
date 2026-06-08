@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 
 import type { SessionSummary } from './services/session'
-import { formatSessionList } from './sessions-cli'
+import { formatSessionsHelp, formatSessionList, runSessionsCommand } from './sessions-cli'
 
 function summary(overrides: Partial<SessionSummary> = {}): SessionSummary {
   return {
@@ -34,7 +34,40 @@ describe('formatSessionList', () => {
   it('labels Gemini sessions as Gemini', () => {
     const output = formatSessionList([summary({ llmProvider: 'gemini' })])
 
-    expect(output).toContain('(gemini ·')
-    expect(output).not.toContain('(openai ·')
+    expect(output).toContain('· gemini ·')
+    expect(output).not.toContain('· openai ·')
+  })
+
+  it('shows the first message as the title and the folder path beneath it', () => {
+    const output = formatSessionList([
+      summary({ projectPath: '/Users/andy/Projects/orb', preview: 'resume this project' }),
+    ])
+
+    expect(output).toContain('resume this project')
+    expect(output).toContain('/Users/andy/Projects/orb')
+  })
+})
+
+describe('runSessionsCommand --help', () => {
+  it('documents usage including --all', () => {
+    const help = formatSessionsHelp()
+    expect(help).toContain('orb sessions')
+    expect(help).toContain('--all')
+  })
+
+  it('prints usage and returns without opening the picker', async () => {
+    const logs: string[] = []
+    const original = console.log
+    console.log = ((...args: unknown[]) => {
+      logs.push(args.join(' '))
+    }) as typeof console.log
+    try {
+      await runSessionsCommand(['--help'])
+    } finally {
+      console.log = original
+    }
+
+    expect(logs.join('\n')).toContain('orb sessions')
+    expect(logs.join('\n')).toContain('--all')
   })
 })

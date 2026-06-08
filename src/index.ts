@@ -9,11 +9,12 @@ import { applyGlobalConfig, loadGlobalConfig } from './services/global-config'
 import { resolveAppModelConfig } from './services/model-catalog'
 import { resolveSmartProvider } from './services/provider-defaults'
 import { loadSession, loadSessionById } from './services/session'
+import { lookupExternalSessionMeta } from './services/external-sessions'
 import { relaunchOrb } from './services/relaunch'
 import { runSessionsCommand } from './sessions-cli'
 import { warn } from './services/log'
 import { runSetupCommand } from './setup'
-import type { AgentSession, SavedSession } from './types'
+import type { AgentSession, ResumeInfo, SavedSession } from './types'
 
 export { App } from './ui/App'
 export { parseCliArgs, DEFAULT_CONFIG } from './config'
@@ -153,11 +154,25 @@ export async function run(args: string[]): Promise<void> {
   const initialSession = createInitialSession(config, savedSession)
   const orbSessionId = initialSession?.id ?? randomUUID()
 
+  // When resuming an external session with no orb-side history, look up how much
+  // hidden context the model carries so the UI can reassure the user.
+  let resumeInfo: ResumeInfo | undefined
+  if (config.resumeSession && (initialSession?.history.length ?? 0) === 0) {
+    const meta = await lookupExternalSessionMeta(config.resumeSession, config.projectPath).catch(
+      () => null,
+    )
+    resumeInfo = {
+      source: config.resumeSession.provider === 'anthropic' ? 'claude' : 'codex',
+      messageCount: meta?.messageCount,
+    }
+  }
+
   const instance = render(
     React.createElement(App, {
       config,
       initialSession,
       orbSessionId,
+      resumeInfo,
       onRequestRelaunch: (relaunchArgs: string[]) =>
         void relaunchOrb(relaunchArgs, () => instance.unmount()),
     }),

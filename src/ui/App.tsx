@@ -5,12 +5,19 @@ import { Box, Text } from 'ink'
 import { openInEditor, formatOpenOutcome } from '../services/editor'
 import { latestFocusRefs, parseExplicitRefs } from '../services/file-refs'
 import { FALLBACK_MODEL_CHOICES_BY_PROVIDER } from '../services/model-catalog'
-import { buildResumeArgs } from '../services/relaunch'
+import { buildResumeArgsForSession } from '../services/relaunch'
 import { listSessions, type SessionSummary } from '../services/session'
-import { type AppConfig, type AppState, type DetailMode, type SavedSession } from '../types'
+import {
+  type AppConfig,
+  type AppState,
+  type DetailMode,
+  type ResumeInfo,
+  type SavedSession,
+} from '../types'
 import type { AnimationMode } from './components/AsciiOrb'
 import { ConversationRail } from './components/ConversationRail'
 import { Footer } from './components/Footer'
+import { ResumeBanner } from './components/ResumeBanner'
 import { SessionPicker } from './components/SessionPicker'
 import { TTSErrorBanner } from './components/TTSErrorBanner'
 import { WelcomeSplash } from './components/WelcomeSplash'
@@ -24,6 +31,8 @@ interface AppProps {
   config: AppConfig
   initialSession?: SavedSession | null
   orbSessionId?: string
+  /** Present when resuming an external session with empty scrollback. */
+  resumeInfo?: ResumeInfo
   onRequestRelaunch?: (args: string[]) => void
 }
 
@@ -41,7 +50,13 @@ function mapStateToAnimationMode(state: AppState): AnimationMode {
 
 const FIXED_UI_OVERHEAD = 8
 
-export function App({ config, initialSession, orbSessionId, onRequestRelaunch }: AppProps) {
+export function App({
+  config,
+  initialSession,
+  orbSessionId,
+  resumeInfo,
+  onRequestRelaunch,
+}: AppProps) {
   const [detailMode, setDetailMode] = useState<DetailMode>('compact')
   const [state, setState] = useState<AppState>('idle')
   // Whether the input's `@`-file menu is open. Lifted here so the global Esc
@@ -62,15 +77,15 @@ export function App({ config, initialSession, orbSessionId, onRequestRelaunch }:
   const isPickerOpen = pickerSessions !== null
 
   const handleOpenSessions = useCallback(() => {
-    void listSessions()
+    void listSessions(undefined, config.projectPath)
       .then((sessions) => setPickerSessions(sessions))
       .catch(() => setPickerSessions([]))
-  }, [])
+  }, [config.projectPath])
 
   const handlePickSession = useCallback(
     (session: SessionSummary) => {
       setPickerSessions(null)
-      onRequestRelaunch?.(buildResumeArgs(session.projectPath, session.id))
+      onRequestRelaunch?.(buildResumeArgsForSession(session))
     },
     [onRequestRelaunch],
   )
@@ -204,6 +219,14 @@ export function App({ config, initialSession, orbSessionId, onRequestRelaunch }:
     !initialSession?.history?.length &&
     !splashDismissed
 
+  // Reassure the user that a resumed external session's hidden history is still
+  // in the model's context — until they take the first turn.
+  const showResumeBanner =
+    resumeInfo !== undefined &&
+    !isPickerOpen &&
+    conversation.completedTurns.length === 0 &&
+    !conversation.liveTurn
+
   // ── Rendering ──
 
   return (
@@ -211,6 +234,7 @@ export function App({ config, initialSession, orbSessionId, onRequestRelaunch }:
       {conversation.ttsError && (
         <TTSErrorBanner type={conversation.ttsError.type} message={conversation.ttsError.message} />
       )}
+      {showResumeBanner && resumeInfo && <ResumeBanner info={resumeInfo} />}
       {isPickerOpen ? (
         <SessionPicker
           sessions={pickerSessions ?? []}

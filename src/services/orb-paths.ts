@@ -35,6 +35,14 @@ export function globalCommandsDir(homeDir = os.homedir()): string {
   return path.join(orbHome(homeDir), 'commands')
 }
 
+/** Collapse the user's home directory to `~` so paths stay readable in the UI. */
+export function abbreviateHome(targetPath: string, homeDir = os.homedir()): string {
+  if (!homeDir) return targetPath
+  if (targetPath === homeDir) return '~'
+  if (targetPath.startsWith(homeDir + path.sep)) return `~${targetPath.slice(homeDir.length)}`
+  return targetPath
+}
+
 /** True when a filesystem error means "file or directory does not exist". */
 export function isFileNotFoundError(err: unknown): boolean {
   return (err as { code?: string } | null)?.code === 'ENOENT'

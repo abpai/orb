@@ -1,13 +1,41 @@
 import { fileURLToPath } from 'node:url'
 
+import type { SessionSource } from '../types'
+import type { SessionSummary } from './session'
+
 /** Resolve the orb entry script so a child process re-invokes the same CLI. */
 export function resolveEntryPath(): string {
   return process.argv[1] ?? fileURLToPath(new URL('../cli.ts', import.meta.url))
 }
 
-/** Build the argv that resumes a specific saved session. */
+/** Build the argv that resumes a specific orb saved session. */
 export function buildResumeArgs(projectPath: string, id: string): string[] {
   return [projectPath, '--resume', id]
+}
+
+/**
+ * Build the argv that resumes a session by source: orb saved sessions go
+ * through `--resume`, external ones through the provider handoff flags so the
+ * adapter resolves them against the Claude Code / Codex stores.
+ */
+export function buildExternalResumeArgs(
+  projectPath: string,
+  source: SessionSource,
+  externalId: string,
+): string[] {
+  switch (source) {
+    case 'claude':
+      return [projectPath, '--claude-session', externalId]
+    case 'codex':
+      return [projectPath, '--codex-thread', externalId]
+    default:
+      return buildResumeArgs(projectPath, externalId)
+  }
+}
+
+/** Pick the right resume argv for a picker row regardless of its source. */
+export function buildResumeArgsForSession(session: SessionSummary): string[] {
+  return buildExternalResumeArgs(session.projectPath, session.source ?? 'orb', session.id)
 }
 
 /**

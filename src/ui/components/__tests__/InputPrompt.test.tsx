@@ -65,7 +65,7 @@ describe('InputPrompt', () => {
     const app = render(<InputPrompt state="idle" onSubmit={() => {}} />)
 
     app.stdin.write('[200~hello world[201~')
-    await flush()
+    await settle()
 
     expect(normalizeFrame(app.lastFrame())).toContain('hello world')
     expect(normalizeFrame(app.lastFrame())).not.toContain('[200~')
@@ -86,7 +86,7 @@ describe('InputPrompt', () => {
         homeDir={fixture.homeDir}
       />,
     )
-    await flush()
+    await settle()
 
     app.stdin.write('/he')
     app.stdin.write('\t')
@@ -111,7 +111,7 @@ describe('InputPrompt', () => {
         homeDir={fixture.homeDir}
       />,
     )
-    await flush()
+    await settle()
 
     app.stdin.write('/exp')
     app.stdin.write('\t')
@@ -137,7 +137,7 @@ describe('InputPrompt', () => {
         homeDir={fixture.homeDir}
       />,
     )
-    await flush()
+    await settle()
 
     app.stdin.write('hello')
     app.stdin.write('\t')
