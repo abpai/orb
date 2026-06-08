@@ -5,14 +5,12 @@ import {
   SessionPicker,
   formatProviderLabel,
   formatRelativeTime,
+  pluralizeTurns,
+  truncate,
 } from './ui/components/SessionPicker'
 import { listSessions, type SessionSummary } from './services/session'
+import { abbreviateHome } from './services/orb-paths'
 import { buildResumeArgs, relaunchOrb } from './services/relaunch'
-
-function truncate(value: string, max: number): string {
-  const collapsed = value.replace(/\s+/g, ' ').trim()
-  return collapsed.length > max ? `${collapsed.slice(0, max - 1)}…` : collapsed
-}
 
 function shellQuote(value: string): string {
   if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(value)) return value
@@ -29,10 +27,10 @@ export function formatSessionList(sessions: SessionSummary[]): string {
 
   const lines = sessions.map((session) => {
     const provider = formatProviderLabel(session.llmProvider)
-    const preview = truncate(session.preview || '(no messages yet)', 60)
+    const title = truncate(session.preview || '(no messages yet)', 72)
     return [
-      `${session.projectName}  (${provider} · ${formatRelativeTime(session.lastModified)} · ${session.turnCount} turns)`,
-      `  ${preview}`,
+      title,
+      `  ${abbreviateHome(session.projectPath)} · ${provider} · ${formatRelativeTime(session.lastModified)} · ${pluralizeTurns(session.turnCount)}`,
       `  resume: ${formatResumeCommand(session)}`,
     ].join('\n')
   })
@@ -41,7 +39,7 @@ export function formatSessionList(sessions: SessionSummary[]): string {
 }
 
 export async function runSessionsCommand(_args: string[]): Promise<void> {
-  const sessions = await listSessions()
+  const sessions = await listSessions(undefined, process.cwd())
 
   if (!process.stdout.isTTY || sessions.length === 0) {
     console.log(formatSessionList(sessions))

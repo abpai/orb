@@ -373,15 +373,28 @@ export async function loadSessionById(
   return readSessionFile(getSessionFilePath(projectPath, id, homeDir), resolved)
 }
 
-/** List every saved session across all projects, newest first. */
-export async function listSessions(homeDir = os.homedir()): Promise<SessionSummary[]> {
-  // Fold any pre-history flat files into the per-project layout first so old
-  // sessions from projects the user hasn't reopened still show up (and become
-  // resumable by id) instead of staying invisible until that project loads.
-  const legacyFiles = await listLegacyFiles(homeDir)
-  await Promise.all(legacyFiles.map((file) => migrateLegacyFile(file, homeDir)))
-
-  const projectDirs = await listProjectDirs(homeDir)
+/**
+ * List saved sessions, newest first. Pass `projectPath` to scope the listing to
+ * a single project (the directory Orb was launched in); omit it to list every
+ * project.
+ */
+export async function listSessions(
+  homeDir = os.homedir(),
+  projectPath?: string,
+): Promise<SessionSummary[]> {
+  // Fold pre-history flat files into the per-project layout first so old
+  // sessions still show up (and become resumable by id) instead of staying
+  // invisible until that project loads. When scoped to one project we only need
+  // that project's legacy file, so skip the global scan of every other project.
+  let projectDirs: string[]
+  if (projectPath) {
+    await migrateLegacySession(projectPath, homeDir)
+    projectDirs = [getProjectSessionDir(projectPath, homeDir)]
+  } else {
+    const legacyFiles = await listLegacyFiles(homeDir)
+    await Promise.all(legacyFiles.map((file) => migrateLegacyFile(file, homeDir)))
+    projectDirs = await listProjectDirs(homeDir)
+  }
   const perProject = await Promise.all(projectDirs.map((dir) => loadProjectSessions(dir)))
 
   const summaries = perProject.flat().map((session): SessionSummary => {

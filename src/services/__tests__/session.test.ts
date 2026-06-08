@@ -136,6 +136,31 @@ describe('session persistence', () => {
     expect(summaries[0]?.turnCount).toBe(1)
   })
 
+  it('scopes the listing to a single project when a projectPath is given', async () => {
+    const home = await tempHome()
+    const projectA = await tempProject()
+    const projectB = await tempProject()
+
+    await writeSessionFile(
+      makeSession(projectA, {
+        id: 'a-1',
+        history: [{ id: 'e', question: 'project A chat', toolCalls: [], answer: 'a', error: null }],
+      }),
+      home,
+    )
+    await writeSessionFile(
+      makeSession(projectB, {
+        id: 'b-1',
+        history: [{ id: 'e', question: 'project B chat', toolCalls: [], answer: 'a', error: null }],
+      }),
+      home,
+    )
+
+    const summaries = await listSessions(home, projectA)
+    expect(summaries.map((s) => s.id)).toEqual(['a-1'])
+    expect(summaries.every((s) => s.projectPath === path.resolve(projectA))).toBe(true)
+  })
+
   it('migrates a legacy flat v1 session into the per-project directory', async () => {
     const home = await tempHome()
     const projectPath = await tempProject()
@@ -223,6 +248,31 @@ describe('session persistence', () => {
       provider: 'anthropic',
       sessionId: 'claude-session-legacy',
     })
+  })
+
+  it('migrates the scoped project’s legacy flat file when listing one project', async () => {
+    const home = await tempHome()
+    const projectPath = await tempProject()
+
+    const legacyPath = getLegacyPathForTest(projectPath, home)
+    await mkdir(path.dirname(legacyPath), { recursive: true })
+    await Bun.write(
+      legacyPath,
+      JSON.stringify({
+        version: 1,
+        projectPath,
+        sessionId: 'claude-session-scoped',
+        model: 'claude-haiku-4-5-20251001',
+        lastModified: '2026-02-01T00:00:00.000Z',
+        history: [
+          { id: 'e', question: 'scoped legacy chat', toolCalls: [], answer: 'a', error: null },
+        ],
+      }),
+    )
+
+    const summaries = await listSessions(home, projectPath)
+    expect(summaries.map((s) => s.preview)).toEqual(['scoped legacy chat'])
+    expect(await Bun.file(legacyPath).exists()).toBe(false)
   })
 
   it('skips a corrupt history entry instead of crashing the listing', async () => {

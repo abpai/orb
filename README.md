@@ -22,7 +22,7 @@ Orb is a Bun-native terminal app for exploring real codebases with Anthropic, Op
 - **Streaming TTS (serve mode)** - Hear answers while they are still being generated
 - **Provider selection** - Choose Anthropic (Claude), OpenAI/Codex, or Gemini via CLI flags
 - **Model switching** - Cycle provider model choices during a conversation with Shift+Tab
-- **Session history & resume** - Keeps recent conversations per project; auto-resumes the latest, or pick any past session with `orb sessions` / `/sessions`
+- **Session history & resume** - Keeps recent conversations per project; auto-resumes the latest, or pick a past session for the current project with `orb sessions` / `/sessions`
 - **Slash command prompts** - Expand `/explain`-style shortcuts from project or global Markdown files
 - **Focused terminal UI** - Ink-based interface with conversation history, tool activity, and the Orb intro
 
@@ -127,7 +127,7 @@ orb --model=gemini:flash-lite
 # Fresh conversation
 orb --new
 
-# List saved sessions and resume one (interactive picker)
+# List this project's saved sessions and resume one (interactive picker)
 orb sessions
 
 # Resume a specific saved session by id
@@ -417,7 +417,7 @@ Config-only advanced tuning keys live under `[tts]`:
 Sessions are stored under `~/.orb/sessions/<project>/<session-id>.json`, keeping a
 history of recent conversations per project (older ones are pruned). Orb auto-resumes
 the latest on startup; use `orb sessions` (or `/sessions` in the app) to browse and
-resume any saved conversation across projects.
+resume a past conversation for the current project.
 
 ## Customizing Prompts
 

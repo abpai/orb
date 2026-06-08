@@ -22,14 +22,43 @@ function summary(overrides: Partial<SessionSummary> = {}): SessionSummary {
 }
 
 describe('SessionPicker', () => {
-  it('renders sessions with project, preview, and turn count', () => {
+  it('renders the first message as the title with folder path and turn count', () => {
     const app = render(
       <SessionPicker sessions={[summary()]} onSelect={() => {}} onCancel={() => {}} />,
     )
     const frame = normalizeFrame(app.lastFrame())
-    expect(frame).toContain('orb')
     expect(frame).toContain('how do I list sessions')
+    expect(frame).toContain('/projects/orb')
     expect(frame).toContain('3 turns')
+    app.unmount()
+  })
+
+  it('pluralizes a single turn', () => {
+    const app = render(
+      <SessionPicker
+        sessions={[summary({ turnCount: 1 })]}
+        onSelect={() => {}}
+        onCancel={() => {}}
+      />,
+    )
+    const frame = normalizeFrame(app.lastFrame())
+    expect(frame).toContain('1 turn')
+    expect(frame).not.toContain('1 turns')
+    app.unmount()
+  })
+
+  it('windows a long list and shows how many rows are hidden', () => {
+    const sessions = Array.from({ length: 40 }, (_, i) =>
+      summary({ id: `id-${i}`, preview: `chat number ${i}` }),
+    )
+    const app = render(
+      <SessionPicker sessions={sessions} onSelect={() => {}} onCancel={() => {}} />,
+    )
+    const frame = normalizeFrame(app.lastFrame())
+    // First rows are visible; far-down rows are not, and a "more" indicator hints at them.
+    expect(frame).toContain('chat number 0')
+    expect(frame).not.toContain('chat number 39')
+    expect(frame).toContain('more')
     app.unmount()
   })
 
@@ -79,8 +108,8 @@ describe('SessionPicker', () => {
     await flush()
 
     const frame = normalizeFrame(app.lastFrame())
-    expect(frame).toContain('beta-proj')
-    expect(frame).not.toContain('alpha-proj')
+    expect(frame).toContain('beta chat')
+    expect(frame).not.toContain('alpha chat')
     app.unmount()
   })
 

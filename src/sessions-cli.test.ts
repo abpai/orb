@@ -34,7 +34,16 @@ describe('formatSessionList', () => {
   it('labels Gemini sessions as Gemini', () => {
     const output = formatSessionList([summary({ llmProvider: 'gemini' })])
 
-    expect(output).toContain('(gemini ·')
-    expect(output).not.toContain('(openai ·')
+    expect(output).toContain('· gemini ·')
+    expect(output).not.toContain('· openai ·')
+  })
+
+  it('shows the first message as the title and the folder path beneath it', () => {
+    const output = formatSessionList([
+      summary({ projectPath: '/Users/andy/Projects/orb', preview: 'resume this project' }),
+    ])
+
+    expect(output).toContain('resume this project')
+    expect(output).toContain('/Users/andy/Projects/orb')
   })
 })

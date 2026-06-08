@@ -62,10 +62,10 @@ export function App({ config, initialSession, orbSessionId, onRequestRelaunch }:
   const isPickerOpen = pickerSessions !== null
 
   const handleOpenSessions = useCallback(() => {
-    void listSessions()
+    void listSessions(undefined, config.projectPath)
       .then((sessions) => setPickerSessions(sessions))
       .catch(() => setPickerSessions([]))
-  }, [])
+  }, [config.projectPath])
 
   const handlePickSession = useCallback(
     (session: SessionSummary) => {
