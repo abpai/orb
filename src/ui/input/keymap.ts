@@ -56,6 +56,15 @@ export const keyToAction = (input: string, key: Key): Action => {
   if (key.home) return { kind: 'move-home' }
   if (key.end) return { kind: 'move-end' }
 
+  if (key.meta && !key.ctrl) {
+    switch (input) {
+      case 'b':
+        return { kind: 'move-word-left' }
+      case 'f':
+        return { kind: 'move-word-right' }
+    }
+  }
+
   if (key.ctrl) {
     switch (input) {
       case 'a':
