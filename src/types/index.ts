@@ -52,6 +52,18 @@ export interface OpenAiSession {
 
 export type AgentSession = { provider: 'anthropic'; sessionId: string } | OpenAiSession
 
+/** Where a listed session came from: orb's own store, Claude Code, or Codex. */
+export type SessionSource = 'orb' | 'claude' | 'codex'
+
+/**
+ * Describes an external session resumed with empty scrollback, so the UI can
+ * reassure the user that prior history is hidden but the model still has it.
+ */
+export interface ResumeInfo {
+  source: 'claude' | 'codex'
+  messageCount?: number
+}
+
 export interface SavedSession {
   version: 2
   /** Stable per-conversation id, minted once when a fresh conversation starts. */

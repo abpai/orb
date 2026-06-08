@@ -10,6 +10,7 @@ import type {
   OpenAiSession,
   SavedSession,
   AgentSession,
+  SessionSource,
 } from '../types'
 import { isFileNotFoundError, sessionsDir } from './orb-paths'
 import { warn } from './log'
@@ -60,6 +61,10 @@ function getLegacySessionPath(projectPath: string, homeDir = os.homedir()): stri
 export const getLegacyPathForTest = getLegacySessionPath
 
 export interface SessionSummary {
+  /**
+   * orb rows: the orb session id. claude/codex rows: the external resume id
+   * (Claude sessionId / Codex threadId) passed to `--claude-session`/`--codex-thread`.
+   */
   id: string
   projectPath: string
   projectName: string
@@ -68,6 +73,8 @@ export interface SessionSummary {
   lastModified: string
   turnCount: number
   preview: string
+  /** Origin of the row. Omitted/`'orb'` for orb's own saved sessions. */
+  source?: SessionSource
 }
 
 interface SavedSessionV1 {
@@ -408,6 +415,7 @@ export async function listSessions(
       lastModified: session.lastModified,
       turnCount: session.history.length,
       preview: firstQuestion?.question.trim() ?? '',
+      source: 'orb',
     }
   })
 
