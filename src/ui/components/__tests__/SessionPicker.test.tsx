@@ -113,6 +113,26 @@ describe('SessionPicker', () => {
     app.unmount()
   })
 
+  it('ignores a raw DEL byte instead of polluting the filter', async () => {
+    const sessions = [
+      summary({ id: 'alpha', preview: 'alpha chat' }),
+      summary({ id: 'beta', preview: 'beta chat' }),
+    ]
+    const app = render(
+      <SessionPicker sessions={sessions} onSelect={() => {}} onCancel={() => {}} />,
+    )
+
+    // A raw DEL (0x7f) must not be appended to the filter, which would hide every row.
+    app.stdin.write('\x7f')
+    await flush()
+
+    const frame = normalizeFrame(app.lastFrame())
+    expect(frame).toContain('alpha chat')
+    expect(frame).toContain('beta chat')
+    expect(frame).not.toContain('No sessions match your filter')
+    app.unmount()
+  })
+
   it('cancels on escape', async () => {
     let cancelled = false
     const app = render(

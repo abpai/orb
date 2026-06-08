@@ -116,7 +116,9 @@ export function SessionPicker({
     // Printable characters filter the list live. Fast typing / paste can arrive
     // as a multi-char chunk, so keep every printable character in the input.
     if (input && !key.ctrl && !key.meta) {
-      const printable = [...input].filter((char) => char >= ' ' && char !== '').join('')
+      // Keep printable characters only: drop C0 control bytes (< space) and the
+      // raw DEL byte (0x7f) some terminals send for Backspace without setting key.delete.
+      const printable = [...input].filter((char) => char >= ' ' && char !== '\x7f').join('')
       if (printable.length > 0) {
         setFilter((prev) => prev + printable)
         setSelected(0)
