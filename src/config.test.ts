@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'bun:test'
 
-import { ORB_VERSION, parseCliArgs } from './config'
+import { buildHelpText, createProgram, ORB_VERSION, parseCliArgs } from './config'
 import { DEFAULT_CONFIG } from './types'
+
+const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
+const helpText = () => buildHelpText(createProgram({ config: DEFAULT_CONFIG }))
 
 describe('parseCliArgs', () => {
   it('supports provider:model shorthand for OpenAI', () => {
@@ -207,5 +210,83 @@ describe('parseCliArgs', () => {
     }
 
     expect(stdout.trim()).toBe(ORB_VERSION)
+  })
+})
+
+describe('buildHelpText', () => {
+  it('lists subcommands in a Commands section', () => {
+    const help = stripAnsi(helpText())
+    expect(help).toContain('Commands:')
+    expect(help).toContain('orb setup')
+    expect(help).toContain('orb sessions')
+  })
+
+  it('orders Commands, then Common options, then Advanced options', () => {
+    const help = stripAnsi(helpText())
+    const commands = help.indexOf('Commands:')
+    const common = help.indexOf('Common options:')
+    const advanced = help.indexOf('Advanced options:')
+    expect(commands).toBeGreaterThanOrEqual(0)
+    expect(common).toBeGreaterThan(commands)
+    expect(advanced).toBeGreaterThan(common)
+  })
+
+  it('keeps everyday flags in Common and the rest in Advanced', () => {
+    const help = stripAnsi(helpText())
+    const common = help.slice(help.indexOf('Common options:'), help.indexOf('Examples:'))
+    const advanced = help.slice(help.indexOf('Advanced options:'))
+    expect(common).toContain('--model')
+    expect(common).toContain('--no-tts')
+    expect(common).not.toContain('--reasoning-effort')
+    expect(advanced).toContain('--reasoning-effort')
+    expect(advanced).toContain('--yolo')
+    expect(advanced).toContain('--claude-session')
+  })
+
+  it('renders every registered flag plus version and help (anti-drift)', () => {
+    const program = createProgram({ config: DEFAULT_CONFIG })
+    const help = stripAnsi(buildHelpText(program))
+    for (const opt of program.options) {
+      if (opt.hidden) continue
+      expect(help).toContain(opt.flags)
+    }
+    expect(help).toContain('-V, --version')
+    expect(help).toContain('-h, --help')
+  })
+
+  it('keeps the Common allowlist in sync with registered flags', () => {
+    const program = createProgram({ config: DEFAULT_CONFIG })
+    const longs = new Set(program.options.map((o) => o.long).filter(Boolean))
+    // Everything we mark Common must still be a real, registered flag.
+    for (const flag of [
+      '--provider',
+      '--model',
+      '--voice',
+      '--new',
+      '--resume',
+      '--skip-intro',
+      '--no-tts',
+    ]) {
+      expect(longs.has(flag)).toBe(true)
+    }
+  })
+
+  it('uses cyan headers on an interactive TTY and none when NO_COLOR is set', () => {
+    const originalTTY = process.stdout.isTTY
+    const originalNoColor = process.env.NO_COLOR
+    const setTTY = (value: boolean) =>
+      Object.defineProperty(process.stdout, 'isTTY', { value, configurable: true })
+    try {
+      setTTY(true)
+      delete process.env.NO_COLOR
+      expect(helpText()).toContain('\x1b[36m')
+
+      process.env.NO_COLOR = '1'
+      expect(helpText()).not.toMatch(/\x1b\[/)
+    } finally {
+      setTTY(originalTTY as boolean)
+      if (originalNoColor === undefined) delete process.env.NO_COLOR
+      else process.env.NO_COLOR = originalNoColor
+    }
   })
 })

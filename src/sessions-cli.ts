@@ -52,7 +52,28 @@ export function formatSessionList(
   return [header, '', ...lines, ...footer].join('\n')
 }
 
+/** Short usage for `orb sessions --help`. Cyan header gated on an interactive TTY. */
+export function formatSessionsHelp(): string {
+  const color = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR
+  const heading = (s: string) => (color ? `\x1b[1m\x1b[36m${s}\x1b[0m` : s)
+  return [
+    `${heading('orb sessions')} — browse and resume saved conversations`,
+    '',
+    `${heading('Usage:')} orb sessions [--all]`,
+    '  Interactive picker in a TTY; plain list when piped.',
+    '  Pick a session to relaunch orb with --resume.',
+    '',
+    `${heading('Options:')}`,
+    '  --all    Also include this project’s Claude Code and Codex sessions',
+  ].join('\n')
+}
+
 export async function runSessionsCommand(args: string[]): Promise<void> {
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log(formatSessionsHelp())
+    return
+  }
+
   // `--all` also surfaces this project's Claude Code and Codex sessions, not
   // just orb's own saved conversations.
   const includeExternal = args.includes('--all')
