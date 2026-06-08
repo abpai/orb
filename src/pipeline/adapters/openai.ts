@@ -1,4 +1,5 @@
 import { buildProviderPrompt } from '../../services/prompts'
+import { warn } from '../../services/log'
 import type { Frame } from '../frames'
 import { createFrame } from '../frames'
 import { CodexAppServerClient } from './codex-client'
@@ -71,7 +72,18 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
               }),
             )
           } catch (err) {
+            // The full-history capability error is an expected retry signal
+            // (the caller retries with persistExtendedHistory:false), not a
+            // resume failure — re-throw it untouched.
             if (isOpenAiFullHistoryCapabilityError(err)) throw err
+            // Any other resume failure silently fell through to a fresh thread
+            // before, which looks exactly like the model "forgetting" the
+            // conversation. Surface it so a real failure is visible.
+            warn(
+              `Could not resume Codex thread ${threadId}; starting a fresh thread instead. ` +
+                `Prior conversation context will not be available. ` +
+                `(${err instanceof Error ? err.message : String(err)})`,
+            )
           }
         }
 
