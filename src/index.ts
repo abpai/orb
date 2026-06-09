@@ -3,11 +3,10 @@ import { randomUUID } from 'node:crypto'
 import { render } from 'ink'
 import { App } from './ui/App'
 import { DEFAULT_CONFIG, DEFAULT_MODEL_ALIAS_BY_PROVIDER, parseCliArgs } from './config'
-import type { ExplicitFlags } from './config'
 import type { AppConfig } from './types'
 import { applyGlobalConfig, loadGlobalConfig } from './services/global-config'
 import { resolveAppModelConfig } from './services/model-catalog'
-import { resolveSmartProvider } from './services/provider-defaults'
+import { applyOpenAiStreamingDefaults, resolveSmartProvider } from './services/provider-defaults'
 import { loadSession, loadSessionById } from './services/session'
 import { lookupExternalSessionMeta } from './services/external-sessions'
 import { relaunchOrb } from './services/relaunch'
@@ -19,35 +18,6 @@ import type { AgentSession, ResumeInfo, SavedSession } from './types'
 export { App } from './ui/App'
 export { parseCliArgs, DEFAULT_CONFIG } from './config'
 export type { AnthropicModel, AppConfig, LlmModelId, LlmProvider, Voice } from './types'
-
-const OPENAI_STREAMING_DEFAULTS = {
-  ttsBufferSentences: 3,
-  ttsMinChunkLength: 100,
-  ttsMaxWaitMs: 1200,
-  ttsGraceWindowMs: 300,
-  ttsClauseBoundaries: false,
-}
-
-function applyOpenAiStreamingDefaults(config: AppConfig, explicit: ExplicitFlags) {
-  if (config.llmProvider !== 'openai') return
-  if (!config.ttsEnabled || !config.ttsStreamingEnabled) return
-
-  if (!explicit.ttsBufferSentences) {
-    config.ttsBufferSentences = OPENAI_STREAMING_DEFAULTS.ttsBufferSentences
-  }
-  if (!explicit.ttsMinChunkLength) {
-    config.ttsMinChunkLength = OPENAI_STREAMING_DEFAULTS.ttsMinChunkLength
-  }
-  if (!explicit.ttsMaxWaitMs) {
-    config.ttsMaxWaitMs = OPENAI_STREAMING_DEFAULTS.ttsMaxWaitMs
-  }
-  if (!explicit.ttsGraceWindowMs) {
-    config.ttsGraceWindowMs = OPENAI_STREAMING_DEFAULTS.ttsGraceWindowMs
-  }
-  if (!explicit.ttsClauseBoundaries) {
-    config.ttsClauseBoundaries = OPENAI_STREAMING_DEFAULTS.ttsClauseBoundaries
-  }
-}
 
 function shouldHandleMetaFlag(args: string[]): boolean {
   return (
