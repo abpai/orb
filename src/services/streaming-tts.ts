@@ -39,7 +39,6 @@ export interface StreamingSpeechController {
   isActive(): boolean
 }
 
-
 export function createStreamingSpeechController(
   config: AppConfig,
   callbacks: StreamingSpeechCallbacks = {},

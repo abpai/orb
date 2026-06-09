@@ -20,35 +20,35 @@ that handles five distinct concerns simultaneously:
 5. **Lifecycle state machine** — `stopped`, `paused`, `completed`, `fatalError`,
    `markComplete`, `fail`, `checkCompletion` (lines 476-508)
 
-A reader must hold all 13+ mutable variables in mind simultaneously.  Small
+A reader must hold all 13+ mutable variables in mind simultaneously. Small
 changes to one concern can silently break another.
 
 ## Evidence
 
-| Lines | Concern |
-|-------|---------|
-| 115-142 | Large mutable local variable block |
+| Lines   | Concern                                  |
+| ------- | ---------------------------------------- |
+| 115-142 | Large mutable local variable block       |
 | 162-267 | Text reconciliation and chunk extraction |
-| 269-285 | Buffer compaction |
-| 291-335 | Flush timers and grace window |
-| 351-397 | Prefetch |
-| 399-435 | Stream/file fallback |
-| 437-474 | Queue processing |
-| 476-508 | Completion/error state |
-| 510-603 | Public control surface |
+| 269-285 | Buffer compaction                        |
+| 291-335 | Flush timers and grace window            |
+| 351-397 | Prefetch                                 |
+| 399-435 | Stream/file fallback                     |
+| 437-474 | Queue processing                         |
+| 476-508 | Completion/error state                   |
+| 510-603 | Public control surface                   |
 
 ## Remediation direction
 
 Extract pure, independently-testable pieces:
 
 - **`speech-chunker.ts`** — `extractStrongChunks`, `extractChunkAtBoundary`,
-  `reconcileProcessedOffset`, boundary constants.  Pure functions, no timers.
-- **`speech-scheduler.ts`** — timer policy (maxWait, grace window).  Takes a
+  `reconcileProcessedOffset`, boundary constants. Pure functions, no timers.
+- **`speech-scheduler.ts`** — timer policy (maxWait, grace window). Takes a
   `flush` callback; owns only `setTimeout` handles.
 - **`speech-queue.ts`** — `sentenceQueue`, `takeSpeechBatch`, `peekSpeechBatch`,
   `compactSettledBuffer`.
 - **`speech-player.ts`** — prefetch slot, `streamOrFallback`,
-  `generateAndPlayViaFile`.  Implements a `SpeechPlayer` interface.
+  `generateAndPlayViaFile`. Implements a `SpeechPlayer` interface.
 - **`streaming-tts.ts`** becomes a thin state machine (~80 lines) wiring the
   above together.
 

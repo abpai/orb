@@ -3,7 +3,12 @@ import { join } from 'node:path'
 import { unlink } from 'node:fs/promises'
 import { TTSError, type AppConfig, type TTSErrorType, type Voice } from '../types'
 import { cleanTextForSpeech } from '../ui/utils/markdown'
-import { detectPlayer, spawnAfplay, type FilePlayerProcess, type PlayerProcess } from './audio-player'
+import {
+  detectPlayer,
+  spawnAfplay,
+  type FilePlayerProcess,
+  type PlayerProcess,
+} from './audio-player'
 import { createGatewayClient, DEFAULT_SERVER_URL } from './gateway-client'
 import { splitIntoSentences } from './speech-text'
 
@@ -16,7 +21,6 @@ export interface StreamSession {
   resume: () => void
   readonly wasKilled: boolean
 }
-
 
 export function createStreamSession(
   audioStream: ReadableStream<Uint8Array>,

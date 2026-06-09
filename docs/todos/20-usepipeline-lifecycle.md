@@ -7,22 +7,22 @@
 
 `src/ui/hooks/usePipeline.ts` constructs `task` and `transport` once with an
 empty dependency array (lines 52-64), capturing `config`, `initialModel`,
-`initialSession`, and `createTask` at construction time.  Config changes are
+`initialSession`, and `createTask` at construction time. Config changes are
 then synced by mutating the task via `task.updateConfig(activeConfig)` (lines
-66-68).  The task itself just reassigns its local `config` variable (task.ts:285-287).
+66-68). The task itself just reassigns its local `config` variable (task.ts:285-287).
 
 The distinction between one-time inputs (initialModel, initialSession, createTask)
 and mutable inputs (config) is implicit and enforced only by hook implementation
-details.  A future reader cannot know which inputs are stable without reading
+details. A future reader cannot know which inputs are stable without reading
 both the hook and the task implementation.
 
 ## Evidence
 
-| Lines | Concern |
-|-------|---------|
+| Lines                               | Concern                                            |
+| ----------------------------------- | -------------------------------------------------- |
 | `src/ui/hooks/usePipeline.ts:52-64` | `useMemo` with empty deps, captures initial inputs |
 | `src/ui/hooks/usePipeline.ts:66-68` | `task.updateConfig(activeConfig)` for ongoing sync |
-| `src/pipeline/task.ts:285-287` | `updateConfig` just reassigns `config` variable |
+| `src/pipeline/task.ts:285-287`      | `updateConfig` just reassigns `config` variable    |
 
 ## Remediation direction
 
@@ -33,7 +33,11 @@ inputs are one-time and which are mutable:
 const taskRef = useRef<PipelineTask | null>(null)
 if (!taskRef.current) {
   // One-time inputs: initialModel, initialSession, createTask
-  taskRef.current = createTask({ appConfig: { ...config, llmModel: initialModel }, session: initialSession, transport })
+  taskRef.current = createTask({
+    appConfig: { ...config, llmModel: initialModel },
+    session: initialSession,
+    transport,
+  })
 }
 ```
 

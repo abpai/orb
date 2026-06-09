@@ -87,11 +87,11 @@ export const DEFAULT_MODEL_BY_PROVIDER: Record<LlmProvider, LlmModelId> = {
 
 interface ModelFamilyDescriptor {
   provider: LlmProvider
-  name: string               // alias name used on the CLI / in config
-  fallbackModel: LlmModelId  // concrete ID used when the catalog is unavailable
-  fallbackLabel: string      // display label for the fallback model
-  matches: (nativeId: string) => boolean  // family membership — drives matchesAlias + modelAliasFamily
-  label: (nativeId: string) => string     // display label — drives labelForModel + buildProviderModelChoices
+  name: string // alias name used on the CLI / in config
+  fallbackModel: LlmModelId // concrete ID used when the catalog is unavailable
+  fallbackLabel: string // display label for the fallback model
+  matches: (nativeId: string) => boolean // family membership — drives matchesAlias + modelAliasFamily
+  label: (nativeId: string) => string // display label — drives labelForModel + buildProviderModelChoices
 }
 
 function isGeminiImageModel(nativeId: string): boolean {
@@ -121,73 +121,101 @@ function anthropicFamilyLabel(familyName: string, nativeId: string): string {
 const PROVIDER_FAMILIES: Record<LlmProvider, ModelFamilyDescriptor[]> = {
   anthropic: [
     {
-      provider: 'anthropic', name: 'haiku',
-      fallbackModel: 'claude-haiku-4-5-20251001', fallbackLabel: 'Haiku 4.5',
+      provider: 'anthropic',
+      name: 'haiku',
+      fallbackModel: 'claude-haiku-4-5-20251001',
+      fallbackLabel: 'Haiku 4.5',
       matches: (id) => /^claude-haiku-/.test(id),
       label: (id) => anthropicFamilyLabel('Haiku', id),
     },
     {
-      provider: 'anthropic', name: 'sonnet',
-      fallbackModel: 'claude-sonnet-4-6', fallbackLabel: 'Sonnet 4.6',
+      provider: 'anthropic',
+      name: 'sonnet',
+      fallbackModel: 'claude-sonnet-4-6',
+      fallbackLabel: 'Sonnet 4.6',
       matches: (id) => /^claude-sonnet-/.test(id),
       label: (id) => anthropicFamilyLabel('Sonnet', id),
     },
     {
-      provider: 'anthropic', name: 'opus',
-      fallbackModel: 'claude-opus-4-7', fallbackLabel: 'Opus 4.7',
+      provider: 'anthropic',
+      name: 'opus',
+      fallbackModel: 'claude-opus-4-7',
+      fallbackLabel: 'Opus 4.7',
       matches: (id) => /^claude-opus-/.test(id),
       label: (id) => anthropicFamilyLabel('Opus', id),
     },
   ],
   openai: [
     {
-      provider: 'openai', name: 'gpt',
-      fallbackModel: 'gpt-5.5', fallbackLabel: 'GPT 5.5',
-      matches: (id) => /^gpt-\d/.test(id) && !/(?:mini|nano|pro|chat|codex|instant|thinking|oss)/.test(id),
+      provider: 'openai',
+      name: 'gpt',
+      fallbackModel: 'gpt-5.5',
+      fallbackLabel: 'GPT 5.5',
+      matches: (id) =>
+        /^gpt-\d/.test(id) && !/(?:mini|nano|pro|chat|codex|instant|thinking|oss)/.test(id),
       label: genericModelLabel,
     },
     {
-      provider: 'openai', name: 'mini',
-      fallbackModel: 'gpt-5.4-mini', fallbackLabel: 'GPT 5.4 Mini',
+      provider: 'openai',
+      name: 'mini',
+      fallbackModel: 'gpt-5.4-mini',
+      fallbackLabel: 'GPT 5.4 Mini',
       matches: (id) => /^gpt-\d/.test(id) && id.includes('mini'),
       label: genericModelLabel,
     },
     {
-      provider: 'openai', name: 'nano',
-      fallbackModel: 'gpt-5.4-nano', fallbackLabel: 'GPT 5.4 Nano',
+      provider: 'openai',
+      name: 'nano',
+      fallbackModel: 'gpt-5.4-nano',
+      fallbackLabel: 'GPT 5.4 Nano',
       matches: (id) => /^gpt-\d/.test(id) && id.includes('nano'),
       label: genericModelLabel,
     },
     {
-      provider: 'openai', name: 'pro',
-      fallbackModel: 'gpt-5.4-pro', fallbackLabel: 'GPT 5.4 Pro',
+      provider: 'openai',
+      name: 'pro',
+      fallbackModel: 'gpt-5.4-pro',
+      fallbackLabel: 'GPT 5.4 Pro',
       matches: (id) => /^gpt-\d/.test(id) && id.includes('pro'),
       label: genericModelLabel,
     },
     {
-      provider: 'openai', name: 'codex',
-      fallbackModel: 'gpt-5.3-codex', fallbackLabel: 'GPT 5.3 Codex',
+      provider: 'openai',
+      name: 'codex',
+      fallbackModel: 'gpt-5.3-codex',
+      fallbackLabel: 'GPT 5.3 Codex',
       matches: (id) => /^gpt-\d/.test(id) && id.includes('codex'),
       label: genericModelLabel,
     },
   ],
   gemini: [
     {
-      provider: 'gemini', name: 'pro',
-      fallbackModel: 'gemini-3.1-pro-preview', fallbackLabel: 'Gemini 3.1 Pro Preview',
+      provider: 'gemini',
+      name: 'pro',
+      fallbackModel: 'gemini-3.1-pro-preview',
+      fallbackLabel: 'Gemini 3.1 Pro Preview',
       matches: (id) => id.startsWith('gemini-') && !isGeminiImageModel(id) && id.includes('pro'),
       label: genericModelLabel,
     },
     {
-      provider: 'gemini', name: 'flash',
-      fallbackModel: 'gemini-3-flash', fallbackLabel: 'Gemini 3 Flash',
-      matches: (id) => id.startsWith('gemini-') && !isGeminiImageModel(id) && id.includes('flash') && !id.includes('lite'),
+      provider: 'gemini',
+      name: 'flash',
+      fallbackModel: 'gemini-3-flash',
+      fallbackLabel: 'Gemini 3 Flash',
+      matches: (id) =>
+        id.startsWith('gemini-') &&
+        !isGeminiImageModel(id) &&
+        id.includes('flash') &&
+        !id.includes('lite'),
       label: genericModelLabel,
     },
     {
-      provider: 'gemini', name: 'flash-lite',
-      fallbackModel: 'gemini-3.1-flash-lite-preview', fallbackLabel: 'Gemini 3.1 Flash Lite Preview',
-      matches: (id) => id.startsWith('gemini-') && !isGeminiImageModel(id) && id.includes('flash-lite'),
+      provider: 'gemini',
+      name: 'flash-lite',
+      fallbackModel: 'gemini-3.1-flash-lite-preview',
+      fallbackLabel: 'Gemini 3.1 Flash Lite Preview',
+      matches: (id) =>
+        id.startsWith('gemini-') && !isGeminiImageModel(id) && id.includes('flash-lite'),
       label: genericModelLabel,
     },
   ],

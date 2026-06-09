@@ -193,7 +193,10 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
         const run = createTtsRun(ttsCompletion, (err) => {
           if (runId === runCounter) {
             transport.sendOutbound(
-              createFrame('tts-error', { errorType: err.type, message: err.message }) as OutboundFrame,
+              createFrame('tts-error', {
+                errorType: err.type,
+                message: err.message,
+              }) as OutboundFrame,
             )
           }
         })
@@ -250,7 +253,10 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
       const run = createTtsRun(handle, (err) => {
         if (runId === runCounter) {
           transport.sendOutbound(
-            createFrame('tts-error', { errorType: err.type, message: err.message }) as OutboundFrame,
+            createFrame('tts-error', {
+              errorType: err.type,
+              message: err.message,
+            }) as OutboundFrame,
           )
         }
       })

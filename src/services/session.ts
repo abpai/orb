@@ -165,7 +165,9 @@ function normalizeLoaded(parsed: unknown, resolvedProjectPath: string): SavedSes
     if (path.resolve(parsed.projectPath) !== resolvedProjectPath) return null
     const provider = normalizeSessionProvider(parsed.llmProvider)
     if (!provider) {
-      warn(`Session skipped: unknown provider "${parsed.llmProvider}" — written by a newer version of Orb?`)
+      warn(
+        `Session skipped: unknown provider "${parsed.llmProvider}" — written by a newer version of Orb?`,
+      )
       return null
     }
     return {
@@ -338,7 +340,9 @@ async function pruneProject(projectDir: string, maxAgeMs: number, keep: number):
               typeof parsed === 'object' &&
               typeof (parsed as Record<string, unknown>).lastModified === 'string'
             ) {
-              const t = new Date((parsed as Record<string, unknown>).lastModified as string).getTime()
+              const t = new Date(
+                (parsed as Record<string, unknown>).lastModified as string,
+              ).getTime()
               if (!Number.isNaN(t)) ageMs = t
             }
           } catch {

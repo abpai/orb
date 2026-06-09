@@ -14,19 +14,19 @@ implementations with different storage contracts, freshness policies, and cost p
   line-by-line split per match (lines 420-444)
 
 Adding a third external source (e.g. Gemini CLI) means adding another branch
-rather than implementing a shared interface.  The Codex scan's 2000-file default
+rather than implementing a shared interface. The Codex scan's 2000-file default
 and sequential processing make it the most expensive startup path.
 
 ## Evidence
 
-| Lines | Concern |
-|-------|---------|
-| `src/services/external-sessions.ts:9-17` | single module for both vendors |
-| `src/services/external-sessions.ts:91-285` | Claude-specific logic |
-| `src/services/external-sessions.ts:289-527` | Codex-specific date-tree scan |
-| `src/services/external-sessions.ts:19-20` | `MAX_CODEX_FILES = 2000` |
-| `src/services/external-sessions.ts:465-470` | sequential file walk |
-| `src/services/external-sessions.ts:470-479` | sequential rollout processing |
+| Lines                                       | Concern                        |
+| ------------------------------------------- | ------------------------------ |
+| `src/services/external-sessions.ts:9-17`    | single module for both vendors |
+| `src/services/external-sessions.ts:91-285`  | Claude-specific logic          |
+| `src/services/external-sessions.ts:289-527` | Codex-specific date-tree scan  |
+| `src/services/external-sessions.ts:19-20`   | `MAX_CODEX_FILES = 2000`       |
+| `src/services/external-sessions.ts:465-470` | sequential file walk           |
+| `src/services/external-sessions.ts:470-479` | sequential rollout processing  |
 
 ## Remediation direction
 
@@ -40,7 +40,7 @@ interface SessionSource {
 ```
 
 Move Claude Code logic to `src/services/external-sessions/claude.ts` and Codex
-logic to `src/services/external-sessions/codex.ts`.  The top-level module
+logic to `src/services/external-sessions/codex.ts`. The top-level module
 becomes a registry that tries each source in order.
 
 For Codex performance: use a date-index or provider-level index file instead of

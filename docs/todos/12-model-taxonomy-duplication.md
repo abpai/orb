@@ -17,13 +17,13 @@ Every new model family or renamed alias requires edits across all of these sites
 
 ## Evidence
 
-| Lines | Concern |
-|-------|---------|
-| `src/services/model-catalog.ts:70-146` | alias/label definitions |
-| `src/services/model-catalog.ts:339-367` | `matchesAlias()` |
-| `src/services/model-catalog.ts:375-397` | `modelAliasFamily()` |
-| `src/services/model-catalog.ts:465-486` | label generation |
-| `src/services/model-catalog.ts:489-546` | choices/resolution |
+| Lines                                   | Concern                 |
+| --------------------------------------- | ----------------------- |
+| `src/services/model-catalog.ts:70-146`  | alias/label definitions |
+| `src/services/model-catalog.ts:339-367` | `matchesAlias()`        |
+| `src/services/model-catalog.ts:375-397` | `modelAliasFamily()`    |
+| `src/services/model-catalog.ts:465-486` | label generation        |
+| `src/services/model-catalog.ts:489-546` | choices/resolution      |
 
 ## Remediation direction
 
@@ -31,15 +31,15 @@ Define a **model family descriptor** per provider:
 
 ```ts
 interface ModelFamilyDescriptor {
-  name: string                  // 'opus', 'sonnet', …
-  aliases: string[]             // shorthand aliases
-  fallbackModel: string         // resolved concrete ID
+  name: string // 'opus', 'sonnet', …
+  aliases: string[] // shorthand aliases
+  fallbackModel: string // resolved concrete ID
   matcher: (id: string) => boolean
   label: (id: string) => string
-  order: number                 // sort position in picker
+  order: number // sort position in picker
 }
 ```
 
 Derive `matchesAlias`, `modelAliasFamily`, label generation, choices, and
-resolution from the descriptor array.  A new model family is one new descriptor;
+resolution from the descriptor array. A new model family is one new descriptor;
 all derived logic follows.
