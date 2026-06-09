@@ -63,8 +63,28 @@ describe('createGatewayClient', () => {
 
       expect(requestBody).toBeDefined()
       expect(requestBody!.get('text')).toBe('hello world')
-      expect(requestBody!.get('voice')).toBe('alba')
+      expect(requestBody!.get('voice')).toBe('af_heart')
       expect(requestBody!.get('speed')).toBeNull()
+    })
+
+    it('maps Orb voice presets to gateway voice ids', async () => {
+      const { createGatewayClient } = await importModule()
+      const voices: Array<string | null> = []
+
+      globalThis.fetch = mock(
+        async (_input: string | globalThis.URL | Request, init?: RequestInit) => {
+          const body = init?.body as globalThis.FormData
+          voices.push(body.get('voice') as string | null)
+          return new Response(new Uint8Array([1]).buffer, { status: 200 })
+        },
+      ) as unknown as typeof globalThis.fetch
+
+      const client = createGatewayClient('http://localhost:8000')
+      await client.speakSync('hello', 'alba')
+      await client.speakSync('hello', 'marius')
+      await client.speakSync('hello', 'jean')
+
+      expect(voices).toEqual(['af_heart', 'am_michael', 'am_puck'])
     })
 
     it('omits voice when not provided', async () => {
@@ -116,10 +136,10 @@ describe('createGatewayClient', () => {
         },
       ) as unknown as typeof globalThis.fetch
 
-      await createGatewayClient('http://localhost:8000').speakSync('hello', 'alba')
+      await createGatewayClient('http://localhost:8000').speakSync('hello', 'unknown_voice')
 
       expect(bodies).toHaveLength(2)
-      expect(bodies[0]!.get('voice')).toBe('alba')
+      expect(bodies[0]!.get('voice')).toBe('unknown_voice')
       expect(bodies[1]!.get('voice')).toBeNull()
     })
 
@@ -138,10 +158,10 @@ describe('createGatewayClient', () => {
         },
       ) as unknown as typeof globalThis.fetch
 
-      await createGatewayClient('http://localhost:8000').speakSync('hello', 'alba')
+      await createGatewayClient('http://localhost:8000').speakSync('hello', 'unknown_voice')
 
       expect(bodies).toHaveLength(2)
-      expect(bodies[0]!.get('voice')).toBe('alba')
+      expect(bodies[0]!.get('voice')).toBe('unknown_voice')
       expect(bodies[1]!.get('voice')).toBeNull()
     })
 
@@ -297,7 +317,7 @@ describe('createGatewayClient', () => {
 
       expect(parsedBody).toBeDefined()
       expect(parsedBody!.text).toBe('hello world')
-      expect(parsedBody!.voice).toBe('alba')
+      expect(parsedBody!.voice).toBe('af_heart')
       expect(requestHeaders).toEqual({ 'Content-Type': 'application/json' })
     })
 
@@ -341,10 +361,10 @@ describe('createGatewayClient', () => {
         },
       ) as unknown as typeof globalThis.fetch
 
-      await createGatewayClient('http://localhost:8000').speakStream('hello', 'alba')
+      await createGatewayClient('http://localhost:8000').speakStream('hello', 'unknown_voice')
 
       expect(bodies).toHaveLength(2)
-      expect(bodies[0]!.voice).toBe('alba')
+      expect(bodies[0]!.voice).toBe('unknown_voice')
       expect(bodies[1]!.voice).toBeUndefined()
     })
 

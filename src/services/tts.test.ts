@@ -65,7 +65,7 @@ describe('generateAudio', () => {
 
     expect(requestBody).toBeDefined()
     expect(requestBody!.get('text')).toBe('hello world')
-    expect(requestBody!.get('voice')).toBe('alba')
+    expect(requestBody!.get('voice')).toBe('af_heart')
     expect(requestBody!.get('voice_url')).toBeNull()
     expect(requestBody!.get('speed')).toBeNull()
 
@@ -104,7 +104,7 @@ describe('generateAudio', () => {
     )
 
     expect(requestBodies).toHaveLength(2)
-    expect(requestBodies[0]?.get('voice')).toBe('alba')
+    expect(requestBodies[0]?.get('voice')).toBe('af_heart')
     expect(requestBodies[1]?.get('voice')).toBeNull()
 
     await rm(tempDir, { recursive: true, force: true })

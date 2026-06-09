@@ -29,6 +29,13 @@ interface StreamingSpeechCallbacks {
   onError?: (error: TTSError) => void
 }
 
+interface PrefetchState {
+  text: string
+  abort: AbortController
+  stream: Promise<ReadableStream<Uint8Array>>
+  claimed: boolean
+}
+
 export interface StreamingSpeechController {
   feedText(chunk: string): void
   finalize(): void
@@ -65,8 +72,7 @@ export function createStreamingSpeechController(
   let isProcessing = false
   let currentSession: StreamSession | null = null
   let activeAbort: AbortController | null = null
-  let prefetchAbort: AbortController | null = null
-  let prefetchedStream: ReadableStream<Uint8Array> | null = null
+  let prefetch: PrefetchState | null = null
   let completionResolve: (() => void) | null = null
   let completionReject: ((error: TTSError) => void) | null = null
   let completionPromise: Promise<void> | null = null
@@ -280,10 +286,10 @@ export function createStreamingSpeechController(
   }
 
   function cancelPrefetch(): void {
-    prefetchAbort?.abort()
-    prefetchAbort = null
-    prefetchedStream?.cancel().catch(() => {})
-    prefetchedStream = null
+    const state = prefetch
+    prefetch = null
+    state?.abort.abort()
+    state?.stream.then((stream) => stream.cancel().catch(() => {})).catch(() => {})
   }
 
   function takeSpeechBatch(): string | null {
@@ -304,27 +310,55 @@ export function createStreamingSpeechController(
   }
 
   function startPrefetch(): void {
-    if (!client || prefetchAbort || stopped || sentenceQueue.length === 0) return
+    if (!client || prefetch || stopped || sentenceQueue.length === 0) return
 
     const nextSentence = peekSpeechBatch()
     if (!nextSentence) return
 
     const abort = new AbortController()
-    prefetchAbort = abort
-    client
+    const state: PrefetchState = {
+      text: nextSentence,
+      abort,
+      stream: Promise.resolve(null as unknown as ReadableStream<Uint8Array>),
+      claimed: false,
+    }
+
+    state.stream = client
       .speakStream(nextSentence, config.ttsVoice, abort.signal)
       .then((stream) => {
-        if (stopped || prefetchAbort !== abort) {
-          // stop() or cancelPrefetch() fired while fetch was in-flight
+        if (stopped || (!state.claimed && prefetch !== state)) {
           stream.cancel().catch(() => {})
-        } else {
-          prefetchedStream = stream
+          throw new TTSError('Prefetch canceled', 'generation_failed')
         }
+        return stream
       })
-      .catch(() => {
-        // Prefetch failure is non-fatal; will retry in processNextSentence
-        if (prefetchAbort === abort) prefetchAbort = null
-      })
+    prefetch = state
+    state.stream.catch(() => {
+      if (prefetch === state) prefetch = null
+    })
+  }
+
+  async function fetchSpeechStream(sentence: string): Promise<ReadableStream<Uint8Array>> {
+    const state = prefetch
+    if (state) {
+      prefetch = null
+      if (state.text === sentence) {
+        state.claimed = true
+        activeAbort = state.abort
+        try {
+          return await state.stream
+        } catch (err) {
+          if (stopped) throw err
+          activeAbort = null
+        }
+      } else {
+        state.abort.abort()
+        state.stream.then((stream) => stream.cancel().catch(() => {})).catch(() => {})
+      }
+    }
+
+    activeAbort = new AbortController()
+    return await client!.speakStream(sentence, config.ttsVoice, activeAbort.signal)
   }
 
   async function streamOrFallback(sentence: string): Promise<void> {
@@ -339,22 +373,7 @@ export function createStreamingSpeechController(
       throw err
     }
 
-    let audioStream: ReadableStream<Uint8Array>
-    if (prefetchedStream) {
-      audioStream = prefetchedStream
-      activeAbort = prefetchAbort
-      prefetchedStream = null
-      prefetchAbort = null
-    } else {
-      // A prefetch may still be in flight for this sentence. If we let it
-      // finish, its .then will populate prefetchedStream — then the *next*
-      // sentence in the queue will walk into the `if (prefetchedStream)`
-      // branch above and play the prior sentence's audio again. Cancel it
-      // before starting a fresh fetch so the prefetch slot is clean.
-      cancelPrefetch()
-      activeAbort = new AbortController()
-      audioStream = await client!.speakStream(sentence, config.ttsVoice, activeAbort.signal)
-    }
+    const audioStream = await fetchSpeechStream(sentence)
 
     const session = createStreamSession(audioStream, config.ttsSpeed)
     currentSession = session

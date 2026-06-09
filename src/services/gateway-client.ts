@@ -5,6 +5,11 @@ import { TTSError } from '../types'
 export const DEFAULT_SERVER_URL = 'http://localhost:8000'
 const DEFAULT_SPEECH_PATH = '/v1/speech'
 const DEFAULT_STREAM_PATH = '/tts/stream'
+const GATEWAY_VOICE_BY_ORB_VOICE: Record<string, string> = {
+  alba: 'af_heart',
+  marius: 'am_michael',
+  jean: 'am_puck',
+}
 
 interface GatewaySpeechResult {
   audio: Buffer
@@ -34,20 +39,27 @@ interface SpeechPayload {
 }
 
 function buildJsonPayload(text: string, voice?: string): SpeechPayload {
+  const gatewayVoice = resolveGatewayVoice(voice)
   const payload: SpeechPayload = { text }
-  if (voice) {
-    payload.voice = voice
+  if (gatewayVoice) {
+    payload.voice = gatewayVoice
   }
   return payload
 }
 
 function buildFormData(text: string, voice?: string): globalThis.FormData {
+  const gatewayVoice = resolveGatewayVoice(voice)
   const formData = new globalThis.FormData()
   formData.append('text', text)
-  if (voice) {
-    formData.append('voice', voice)
+  if (gatewayVoice) {
+    formData.append('voice', gatewayVoice)
   }
   return formData
+}
+
+function resolveGatewayVoice(voice: string | undefined): string | undefined {
+  if (!voice) return undefined
+  return GATEWAY_VOICE_BY_ORB_VOICE[voice] ?? voice
 }
 
 function mapStatusToMessage(status: number): string {
