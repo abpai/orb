@@ -1,5 +1,6 @@
 import { Command } from 'commander'
 import packageJson from '../package.json' with { type: 'json' }
+import { buildHelpText } from './cli/help'
 import {
   DEFAULT_MODEL_ALIAS_BY_PROVIDER,
   DEFAULT_MODEL_BY_PROVIDER,
