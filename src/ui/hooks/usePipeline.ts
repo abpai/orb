@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 
 import { createPipelineTask } from '../../pipeline/task'
 import type { RunResult, TaskState } from '../../pipeline/task'
@@ -49,19 +49,21 @@ export function usePipeline({
 }: UsePipelineConfig) {
   const activeConfig = useMemo(() => ({ ...config, llmModel: activeModel }), [config, activeModel])
 
-  const { task, transport } = useMemo(() => {
+  // One-time inputs (captured at mount): initialModel, initialSession, createTask.
+  // Mutable inputs (synced via updateConfig below): config / activeConfig.
+  const instanceRef = useRef<{ task: ReturnType<typeof createPipelineTask>; transport: Transport } | null>(null)
+  if (!instanceRef.current) {
     const nextTransport = createTerminalTextTransport()
-    const nextTask = createTask({
-      appConfig: { ...config, llmModel: initialModel },
-      session: initialSession,
-      transport: nextTransport,
-    })
-
-    return {
-      task: nextTask,
+    instanceRef.current = {
+      task: createTask({
+        appConfig: { ...config, llmModel: initialModel },
+        session: initialSession,
+        transport: nextTransport,
+      }),
       transport: nextTransport as Transport,
     }
-  }, []) as { task: ReturnType<typeof createPipelineTask>; transport: Transport }
+  }
+  const { task, transport } = instanceRef.current
 
   useEffect(() => {
     task.updateConfig(activeConfig)
