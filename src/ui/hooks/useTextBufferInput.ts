@@ -1,8 +1,5 @@
 import { useRef, useState } from 'react'
-import {
-  empty,
-  type TextBufferState,
-} from '../input/TextBuffer'
+import { empty, type TextBufferState } from '../input/TextBuffer'
 
 export interface CycleState {
   matches: string[]

@@ -1,5 +1,5 @@
 import { ToolLoopAgent, stepCountIs, type ToolSet } from 'ai'
-import type { GoogleGenerativeAIModelId } from '@ai-sdk/google'
+import type { GoogleGenerativeAIProvider } from '@ai-sdk/google'
 import { buildProviderPrompt } from '../../services/prompts'
 import type { Frame } from '../frames'
 import { createFrame } from '../frames'
@@ -9,6 +9,8 @@ import { resolveGeminiProvider } from '../../services/gemini-auth'
 import { warn } from '../../services/log'
 import { createSandbox } from '../sandbox/factory'
 import { bash, readFile, writeFile } from '../tools'
+
+type GoogleGenerativeAIModelId = Parameters<GoogleGenerativeAIProvider>[0]
 
 export function createGeminiAdapter(config: AgentAdapterConfig): AgentAdapter {
   return {
@@ -37,11 +39,15 @@ export function createGeminiAdapter(config: AgentAdapterConfig): AgentAdapter {
           stopWhen: stepCountIs(20),
         })
 
-        const agentStream = await agent.stream({
+        const streamOptions = {
           prompt,
           experimental_context: { sandbox, signal: abortController.signal },
           abortSignal: abortController.signal,
-        })
+        } as Parameters<typeof agent.stream>[0] & {
+          experimental_context: { sandbox: typeof sandbox; signal: AbortSignal }
+        }
+
+        const agentStream = await agent.stream(streamOptions)
 
         for await (const part of agentStream.fullStream) {
           switch (part.type) {

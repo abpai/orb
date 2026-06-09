@@ -194,9 +194,10 @@ export interface FilePlayerProcess {
 }
 
 export function spawnAfplay(filePath: string, speed?: number): FilePlayerProcess {
-  const args = typeof speed === 'number' && Number.isFinite(speed) && speed > 0
-    ? [filePath, '-r', String(speed)]
-    : [filePath]
+  const args =
+    typeof speed === 'number' && Number.isFinite(speed) && speed > 0
+      ? [filePath, '-r', String(speed)]
+      : [filePath]
 
   const proc = Bun.spawn(['afplay', ...args], { stdout: 'ignore', stderr: 'ignore' })
 
@@ -205,10 +206,18 @@ export function spawnAfplay(filePath: string, speed?: number): FilePlayerProcess
     exited: proc.exited,
     kill: () => proc.kill(),
     pause: () => {
-      try { process.kill(proc.pid!, 'SIGSTOP') } catch { /* already exited */ }
+      try {
+        process.kill(proc.pid!, 'SIGSTOP')
+      } catch {
+        /* already exited */
+      }
     },
     resume: () => {
-      try { process.kill(proc.pid!, 'SIGCONT') } catch { /* already exited */ }
+      try {
+        process.kill(proc.pid!, 'SIGCONT')
+      } catch {
+        /* already exited */
+      }
     },
   }
 }

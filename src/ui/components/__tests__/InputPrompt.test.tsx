@@ -365,9 +365,7 @@ describe('InputPrompt mention-search guard', () => {
     }))
 
     const { InputPrompt } = await importInputPrompt()
-    const app = render(
-      <InputPrompt state="idle" onSubmit={() => {}} projectPath="/fake/path" />,
-    )
+    const app = render(<InputPrompt state="idle" onSubmit={() => {}} projectPath="/fake/path" />)
     await flush()
 
     app.stdin.write('hello world this is normal typing without any mention')

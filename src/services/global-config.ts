@@ -223,16 +223,51 @@ const ROOT_FIELDS: RootField[] = [
 
 const TTS_FIELDS: TtsField[] = [
   { tomlKey: 'enabled', orbKey: 'enabled', appKey: 'ttsEnabled', validate: validateBoolean },
-  { tomlKey: 'streaming', orbKey: 'streaming', appKey: 'ttsStreamingEnabled', validate: validateBoolean },
+  {
+    tomlKey: 'streaming',
+    orbKey: 'streaming',
+    appKey: 'ttsStreamingEnabled',
+    validate: validateBoolean,
+  },
   { tomlKey: 'mode', orbKey: 'mode', appKey: 'ttsMode', validate: validateTtsMode },
   { tomlKey: 'server_url', orbKey: 'serverUrl', appKey: 'ttsServerUrl', validate: validateString },
   { tomlKey: 'voice', orbKey: 'voice', appKey: 'ttsVoice', validate: validateVoice },
   { tomlKey: 'speed', orbKey: 'speed', appKey: 'ttsSpeed', validate: validatePositiveNumber },
-  { tomlKey: 'buffer_sentences', orbKey: 'bufferSentences', appKey: 'ttsBufferSentences', validate: validatePositiveInt, explicitFlag: 'ttsBufferSentences' },
-  { tomlKey: 'clause_boundaries', orbKey: 'clauseBoundaries', appKey: 'ttsClauseBoundaries', validate: validateBoolean, explicitFlag: 'ttsClauseBoundaries' },
-  { tomlKey: 'min_chunk_length', orbKey: 'minChunkLength', appKey: 'ttsMinChunkLength', validate: validateNonNegativeInt, explicitFlag: 'ttsMinChunkLength' },
-  { tomlKey: 'max_wait_ms', orbKey: 'maxWaitMs', appKey: 'ttsMaxWaitMs', validate: validateNonNegativeInt, explicitFlag: 'ttsMaxWaitMs' },
-  { tomlKey: 'grace_window_ms', orbKey: 'graceWindowMs', appKey: 'ttsGraceWindowMs', validate: validateNonNegativeInt, explicitFlag: 'ttsGraceWindowMs' },
+  {
+    tomlKey: 'buffer_sentences',
+    orbKey: 'bufferSentences',
+    appKey: 'ttsBufferSentences',
+    validate: validatePositiveInt,
+    explicitFlag: 'ttsBufferSentences',
+  },
+  {
+    tomlKey: 'clause_boundaries',
+    orbKey: 'clauseBoundaries',
+    appKey: 'ttsClauseBoundaries',
+    validate: validateBoolean,
+    explicitFlag: 'ttsClauseBoundaries',
+  },
+  {
+    tomlKey: 'min_chunk_length',
+    orbKey: 'minChunkLength',
+    appKey: 'ttsMinChunkLength',
+    validate: validateNonNegativeInt,
+    explicitFlag: 'ttsMinChunkLength',
+  },
+  {
+    tomlKey: 'max_wait_ms',
+    orbKey: 'maxWaitMs',
+    appKey: 'ttsMaxWaitMs',
+    validate: validateNonNegativeInt,
+    explicitFlag: 'ttsMaxWaitMs',
+  },
+  {
+    tomlKey: 'grace_window_ms',
+    orbKey: 'graceWindowMs',
+    appKey: 'ttsGraceWindowMs',
+    validate: validateNonNegativeInt,
+    explicitFlag: 'ttsGraceWindowMs',
+  },
 ]
 
 export function parseGlobalConfigToml(
@@ -326,7 +361,7 @@ export function applyGlobalConfig(baseConfig: AppConfig, globalConfig: OrbGlobal
     for (const field of TTS_FIELDS) {
       const value = tts[field.orbKey]
       if (value !== undefined) {
-        ;(nextConfig as Record<string, unknown>)[field.appKey] = value
+        ;(nextConfig as unknown as Record<string, unknown>)[field.appKey] = value
       }
     }
   }

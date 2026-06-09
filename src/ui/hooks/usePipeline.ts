@@ -51,7 +51,10 @@ export function usePipeline({
 
   // One-time inputs (captured at mount): initialModel, initialSession, createTask.
   // Mutable inputs (synced via updateConfig below): config / activeConfig.
-  const instanceRef = useRef<{ task: ReturnType<typeof createPipelineTask>; transport: Transport } | null>(null)
+  const instanceRef = useRef<{
+    task: ReturnType<typeof createPipelineTask>
+    transport: Transport
+  } | null>(null)
   if (!instanceRef.current) {
     const nextTransport = createTerminalTextTransport()
     instanceRef.current = {

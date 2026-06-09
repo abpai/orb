@@ -20,12 +20,12 @@ Adding or renaming a flag touches all four sections.
 
 ## Evidence
 
-| Lines | Concern |
-|-------|---------|
-| `src/config.ts:184-335` | custom help renderer |
-| `src/config.ts:343-395` | Commander option registration |
+| Lines                   | Concern                              |
+| ----------------------- | ------------------------------------ |
+| `src/config.ts:184-335` | custom help renderer                 |
+| `src/config.ts:343-395` | Commander option registration        |
 | `src/config.ts:398-431` | explicit flags + parsed option types |
-| `src/config.ts:442-533` | runtime config normalization |
+| `src/config.ts:442-533` | runtime config normalization         |
 
 ## Remediation direction
 
@@ -33,7 +33,7 @@ Define a **flag metadata array** — one entry per CLI flag:
 
 ```ts
 interface FlagDescriptor {
-  flags: string          // '--voice <voice>'
+  flags: string // '--voice <voice>'
   description: string
   section: 'common' | 'advanced'
   defaultValue?: unknown
@@ -43,10 +43,11 @@ interface FlagDescriptor {
 ```
 
 Derive:
+
 - Commander `.option()` registration from `flags`, `description`, `defaultValue`, `parser`
 - Help section grouping from `section`
 - Config normalization from `applyToConfig`
 
-This reduces a flag change to one descriptor entry.  Split the resulting code
+This reduces a flag change to one descriptor entry. Split the resulting code
 into `src/cli/program.ts` (Commander setup), `src/cli/help.ts` (help renderer),
 and `src/config/resolve.ts` (normalization).

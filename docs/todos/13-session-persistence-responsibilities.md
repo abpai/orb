@@ -23,11 +23,11 @@ This means a session file written by a future Orb version with a new provider
 
 ## Evidence
 
-| Lines | Concern |
-|-------|---------|
-| `src/services/session.ts:102-113` | V2 guard only checks `typeof llmProvider === 'string'` |
-| `src/services/session.ts:169` | `normalizeSessionProvider(parsed.llmProvider) ?? 'anthropic'` |
-| `src/services/session.ts:442` | same fallback on save |
+| Lines                             | Concern                                                       |
+| --------------------------------- | ------------------------------------------------------------- |
+| `src/services/session.ts:102-113` | V2 guard only checks `typeof llmProvider === 'string'`        |
+| `src/services/session.ts:169`     | `normalizeSessionProvider(parsed.llmProvider) ?? 'anthropic'` |
+| `src/services/session.ts:442`     | same fallback on save                                         |
 
 ## Remediation direction
 
@@ -38,9 +38,9 @@ This means a session file written by a future Orb version with a new provider
    - `SessionSummaryProjector` — listing and picker display
 
 2. **Treat unknown providers as unreadable** unless an explicit migration path
-   exists.  Return `null` from `normalizeLoaded` for unknown providers and emit
+   exists. Return `null` from `normalizeLoaded` for unknown providers and emit
    a warning so the user knows a session was skipped, rather than silently
    loading it under the wrong provider.
 
    The V1→Anthropic fallback is intentional and should be kept; only
-   *post-migration* unknown providers need explicit handling.
+   _post-migration_ unknown providers need explicit handling.
