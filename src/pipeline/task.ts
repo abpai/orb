@@ -1,11 +1,12 @@
-import { TTSError, type AppState, type AgentSession, type AppConfig } from '../types'
+import type { AppState, AgentSession, AppConfig } from '../types'
 import type { Frame } from './frames'
 import { createFrame } from './frames'
 import { singleFrame } from './processor'
 import { createPipeline } from './pipeline'
 import { createAgentProcessor } from './processors/agent'
 import { createEditorMarkerProcessor } from './processors/editor-marker'
-import { createTTSProcessor, type TTSCompletionHandle } from './processors/tts'
+import { createTTSProcessor } from './processors/tts'
+import { createTtsRun, type TtsRun, type TTSCompletionHandle } from './processors/tts-run'
 import { openInEditor } from '../services/editor'
 import { warn } from '../services/log'
 import { pauseSpeaking, resumeSpeaking, speak, stopSpeaking } from '../services/tts'
@@ -63,7 +64,7 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
 
   let runCounter = 0
   let currentAbort: AbortController | null = null
-  let currentTtsCompletion: TTSCompletionHandle | null = null
+  let currentTtsRun: TtsRun | null = null
 
   function setState(next: TaskState): void {
     if (next === state) return
@@ -79,10 +80,10 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
 
   function stopActivePlayback(): void {
     const hasSpeakingState = state === 'speaking' || state === 'processing_speaking'
-    if (!currentTtsCompletion && !hasSpeakingState) return
+    if (!currentTtsRun && !hasSpeakingState) return
 
-    currentTtsCompletion?.stop()
-    currentTtsCompletion = null
+    currentTtsRun?.stop()
+    currentTtsRun = null
     stopSpeaking()
 
     if (state === 'speaking') {
@@ -139,7 +140,6 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
           createTTSProcessor(config, {
             setCompletion(handle) {
               ttsCompletion = handle
-              currentTtsCompletion = handle
             },
           }),
         ],
@@ -189,24 +189,17 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
 
       // Handle TTS pending work (speaking state after agent completes)
       if (ttsCompletion && runId === runCounter && !error) {
-        const completion = ttsCompletion as TTSCompletionHandle
         setState('speaking')
-        try {
-          await completion.waitForCompletion()
-        } catch (err) {
-          if (runId === runCounter && err instanceof TTSError) {
+        const run = createTtsRun(ttsCompletion, (err) => {
+          if (runId === runCounter) {
             transport.sendOutbound(
-              createFrame('tts-error', {
-                errorType: err.type,
-                message: err.message,
-              }) as OutboundFrame,
+              createFrame('tts-error', { errorType: err.type, message: err.message }) as OutboundFrame,
             )
           }
-        } finally {
-          if (currentTtsCompletion === completion) {
-            currentTtsCompletion = null
-          }
-        }
+        })
+        currentTtsRun = run
+        await run.done
+        if (currentTtsRun === run) currentTtsRun = null
       }
 
       // Final state transition
@@ -233,11 +226,11 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
     },
 
     pause(): void {
-      currentTtsCompletion?.pause()
+      currentTtsRun?.pause()
     },
 
     resume(): void {
-      currentTtsCompletion?.resume()
+      currentTtsRun?.resume()
     },
 
     async repeatTts(text: string): Promise<void> {
@@ -247,34 +240,24 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
       if (!trimmed) return
 
       const runId = ++runCounter
-      const completion: TTSCompletionHandle = {
+      const handle: TTSCompletionHandle = {
         waitForCompletion: () => speak(trimmed, config),
         stop: () => stopSpeaking(),
         pause: () => pauseSpeaking(),
         resume: () => resumeSpeaking(),
       }
-      currentTtsCompletion = completion
       setState('speaking')
-
-      try {
-        await completion.waitForCompletion()
-      } catch (err) {
-        if (runId === runCounter && err instanceof TTSError) {
+      const run = createTtsRun(handle, (err) => {
+        if (runId === runCounter) {
           transport.sendOutbound(
-            createFrame('tts-error', {
-              errorType: err.type,
-              message: err.message,
-            }) as OutboundFrame,
+            createFrame('tts-error', { errorType: err.type, message: err.message }) as OutboundFrame,
           )
         }
-      } finally {
-        if (currentTtsCompletion === completion) {
-          currentTtsCompletion = null
-        }
-        if (runId === runCounter) {
-          setState('idle')
-        }
-      }
+      })
+      currentTtsRun = run
+      await run.done
+      if (currentTtsRun === run) currentTtsRun = null
+      if (runId === runCounter) setState('idle')
     },
 
     stopPlayback(): void {

@@ -8,13 +8,9 @@ import {
   type StreamingSpeechController,
 } from '../../services/streaming-tts'
 import { pauseSpeaking, resumeSpeaking, speak, stopSpeaking } from '../../services/tts'
+import type { TTSCompletionHandle } from './tts-run'
 
-export interface TTSCompletionHandle {
-  waitForCompletion(): Promise<void>
-  stop(): void
-  pause(): void
-  resume(): void
-}
+export type { TTSCompletionHandle } from './tts-run'
 
 interface TTSRunControl {
   setCompletion(handle: TTSCompletionHandle | null): void
