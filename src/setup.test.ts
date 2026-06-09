@@ -158,6 +158,40 @@ describe('runSetup', () => {
     expect(written).toContain('reasoning_effort = "high"')
   })
 
+  it('preserves existing reasoningEffort when re-running setup', async () => {
+    setTTY(true)
+    const tempDir = await mkdtemp(join(tmpdir(), 'orb-setup-'))
+    tempDirs.push(tempDir)
+    const configPath = join(tempDir, 'config.toml')
+    await Bun.write(configPath, 'provider = "anthropic"\nreasoning_effort = "low"\n')
+    const setupCalls = { select: 0, text: 0, confirm: 0 }
+
+    mock.module('@clack/prompts', () => ({
+      intro: () => {},
+      outro: () => {},
+      cancel: () => {},
+      isCancel: () => false,
+      select: async () => {
+        const call = setupCalls.select++
+        return call === 0 ? 'anthropic' : call === 1 ? 'generate' : 'alba'
+      },
+      confirm: async () => {
+        const call = setupCalls.confirm++
+        return call < 4 ? true : false
+      },
+      text: async () => {
+        const call = setupCalls.text++
+        return call === 0 ? 'claude-haiku-4-5-20251001' : '1.5'
+      },
+    }))
+
+    const { runSetup } = await importSetupModule()
+    await runSetup({ configPath })
+
+    const written = await readFile(configPath, 'utf8')
+    expect(written).toContain('reasoning_effort = "low"')
+  })
+
   it('throws if setup is run without a TTY', async () => {
     setTTY(false)
     mock.module('@clack/prompts', () => ({

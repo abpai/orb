@@ -193,7 +193,7 @@ export async function runSetup(options: RunSetupOptions = {}): Promise<void> {
   const nextConfig = mergeSetupConfig(current, {
     provider,
     model,
-    reasoningEffort: DEFAULT_CONFIG.llmReasoningEffort,
+    reasoningEffort: current.reasoningEffort ?? DEFAULT_CONFIG.llmReasoningEffort,
     skipIntro,
     tts: {
       enabled: ttsEnabled,
