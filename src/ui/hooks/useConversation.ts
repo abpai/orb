@@ -165,12 +165,19 @@ export function useConversation({
 
   const handleFrame = useCallback(
     (frame: OutboundFrame) => {
+      // tts-error is global state — it can fire outside a live turn (e.g. repeatTts
+      // runs while idle), so handle it before the live-turn guard.
+      if (frame.kind === 'tts-error') {
+        setTtsError({ type: frame.errorType, message: frame.message })
+        return
+      }
+
       if (!liveTurnRef.current) return
       const cur = liveTurnRef.current
 
       // Any non-delta frame supersedes a coalesced delta; only agent-text-delta
       // re-arms the pending ref below.
-      if (frame.kind !== 'agent-text-delta' && frame.kind !== 'tts-error') {
+      if (frame.kind !== 'agent-text-delta') {
         pendingRenderTurnRef.current = null
       }
 
@@ -202,10 +209,6 @@ export function useConversation({
 
         case 'agent-error':
           updateLiveTurn({ ...cur, error: frame.error.message })
-          break
-
-        case 'tts-error':
-          setTtsError({ type: frame.errorType, message: frame.message })
           break
       }
     },

@@ -355,6 +355,32 @@ describe('useConversation', () => {
 
       app.unmount()
     })
+
+    it('surfaces tts-error even when there is no live turn (repeatTts path)', async () => {
+      let controls!: ReturnType<typeof useConversation>
+
+      function Harness() {
+        controls = useConversation({
+          config: makeConfig('/tmp/tts-error-idle-test'),
+          initialSession: null,
+          taskState: 'idle',
+        })
+        return null
+      }
+
+      const app = render(<Harness />)
+
+      // No active turn — simulates an error from repeatTts while idle
+      expect(controls.liveTurn).toBeNull()
+      controls.handleFrame(
+        frame({ kind: 'tts-error', errorType: 'player_not_found', message: 'mpv not found' }),
+      )
+      await flush()
+
+      expect(controls.ttsError).toEqual({ type: 'player_not_found', message: 'mpv not found' })
+
+      app.unmount()
+    })
   })
 
   describe('local submit errors', () => {
