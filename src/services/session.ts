@@ -163,10 +163,15 @@ function normalizeHistory(history: unknown): HistoryEntry[] {
 function normalizeLoaded(parsed: unknown, resolvedProjectPath: string): SavedSession | null {
   if (isSavedSessionV2(parsed)) {
     if (path.resolve(parsed.projectPath) !== resolvedProjectPath) return null
+    const provider = normalizeSessionProvider(parsed.llmProvider)
+    if (!provider) {
+      warn(`Session skipped: unknown provider "${parsed.llmProvider}" — written by a newer version of Orb?`)
+      return null
+    }
     return {
       ...parsed,
       id: typeof parsed.id === 'string' && parsed.id.length > 0 ? parsed.id : crypto.randomUUID(),
-      llmProvider: normalizeSessionProvider(parsed.llmProvider) ?? 'anthropic',
+      llmProvider: provider,
       agentSession: normalizeAgentSession(parsed.agentSession),
       history: normalizeHistory(parsed.history),
     }
@@ -460,7 +465,7 @@ async function writeSessionPayload(
     version: SESSION_VERSION,
     id,
     projectPath: resolved,
-    llmProvider: normalizeSessionProvider(session.llmProvider) ?? 'anthropic',
+    llmProvider: session.llmProvider,
     agentSession: normalizeAgentSession(session.agentSession),
     lastModified: refreshLastModified ? new Date().toISOString() : session.lastModified,
   }

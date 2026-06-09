@@ -361,4 +361,28 @@ describe('session persistence', () => {
     expect(loaded?.id).toBe('concurrent')
     expect(loaded?.history).toEqual(session.history)
   })
+
+  it('skips V2 session with unknown provider and emits a warning', async () => {
+    const home = await tempHome()
+    const projectPath = await tempProject()
+    const id = 'unknown-provider-session'
+    const filePath = getSessionFilePath(projectPath, id, home)
+    await mkdir(path.dirname(filePath), { recursive: true })
+    // Write a session with a provider not in the known set (simulates a future Orb version)
+    await Bun.write(
+      filePath,
+      JSON.stringify({
+        version: 2,
+        id,
+        projectPath,
+        llmProvider: 'mistral',
+        llmModel: 'mistral-large',
+        lastModified: new Date().toISOString(),
+        history: [],
+      }),
+    )
+
+    const loaded = await loadSessionById(projectPath, id, home)
+    expect(loaded).toBeNull()
+  })
 })
