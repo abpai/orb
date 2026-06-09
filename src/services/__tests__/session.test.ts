@@ -6,10 +6,12 @@ import path from 'node:path'
 import type { SavedSession } from '../../types'
 import {
   getLegacyPathForTest,
+  getProjectSessionDir,
   getSessionFilePath,
   listSessions,
   loadSession,
   loadSessionById,
+  pruneProjectForTest,
   saveSession,
 } from '../session'
 
@@ -299,6 +301,33 @@ describe('session persistence', () => {
     expect(summaries).toHaveLength(1)
     expect(summaries[0]?.turnCount).toBe(2)
     expect(summaries[0]?.preview).toBe('real question')
+  })
+
+  it('pruneProject uses payload lastModified, not filesystem mtime, for keep/age decisions', async () => {
+    const home = await tempHome()
+    const projectPath = await tempProject()
+    const projectDir = getProjectSessionDir(projectPath, home)
+
+    const old = makeSession(projectPath, {
+      id: 'session-old',
+      lastModified: new Date(Date.now() - 10_000).toISOString(),
+    })
+    const recent = makeSession(projectPath, {
+      id: 'session-recent',
+      lastModified: new Date(Date.now() - 1_000).toISOString(),
+    })
+
+    // Write old first so its mtime is older — but give the recent session an
+    // older lastModified only to the old one. Both have recent mtimes.
+    await writeSessionFile(old, home)
+    await writeSessionFile(recent, home)
+
+    // Keep only 1; pruneProject should remove the one with the older lastModified.
+    await pruneProjectForTest(projectDir, Infinity, 1)
+
+    const kept = await listSessions(home, projectPath)
+    expect(kept).toHaveLength(1)
+    expect(kept[0]?.id).toBe('session-recent')
   })
 
   it('uses a distinct temp file per concurrent save', async () => {
