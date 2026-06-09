@@ -1,5 +1,6 @@
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { DEFAULT_MODEL_BY_PROVIDER } from '../config'
+import type { ExplicitFlags } from '../config'
 import type { AppConfig, LlmProvider } from '../types'
 import { getGeminiApiKey } from './gemini-auth'
 import { warn } from './log'
@@ -103,6 +104,35 @@ async function detectCodexChatGptAuth(): Promise<boolean> {
     warn(`Codex credential detection failed: ${reason}`)
     proc.kill()
     return false
+  }
+}
+
+const OPENAI_STREAMING_DEFAULTS = {
+  ttsBufferSentences: 3,
+  ttsMinChunkLength: 100,
+  ttsMaxWaitMs: 1200,
+  ttsGraceWindowMs: 300,
+  ttsClauseBoundaries: false,
+}
+
+export function applyOpenAiStreamingDefaults(config: AppConfig, explicit: ExplicitFlags): void {
+  if (config.llmProvider !== 'openai') return
+  if (!config.ttsEnabled || !config.ttsStreamingEnabled) return
+
+  if (!explicit.ttsBufferSentences) {
+    config.ttsBufferSentences = OPENAI_STREAMING_DEFAULTS.ttsBufferSentences
+  }
+  if (!explicit.ttsMinChunkLength) {
+    config.ttsMinChunkLength = OPENAI_STREAMING_DEFAULTS.ttsMinChunkLength
+  }
+  if (!explicit.ttsMaxWaitMs) {
+    config.ttsMaxWaitMs = OPENAI_STREAMING_DEFAULTS.ttsMaxWaitMs
+  }
+  if (!explicit.ttsGraceWindowMs) {
+    config.ttsGraceWindowMs = OPENAI_STREAMING_DEFAULTS.ttsGraceWindowMs
+  }
+  if (!explicit.ttsClauseBoundaries) {
+    config.ttsClauseBoundaries = OPENAI_STREAMING_DEFAULTS.ttsClauseBoundaries
   }
 }
 

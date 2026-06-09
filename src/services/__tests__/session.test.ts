@@ -6,10 +6,12 @@ import path from 'node:path'
 import type { SavedSession } from '../../types'
 import {
   getLegacyPathForTest,
+  getProjectSessionDir,
   getSessionFilePath,
   listSessions,
   loadSession,
   loadSessionById,
+  pruneProjectForTest,
   saveSession,
 } from '../session'
 
@@ -301,6 +303,33 @@ describe('session persistence', () => {
     expect(summaries[0]?.preview).toBe('real question')
   })
 
+  it('pruneProject uses payload lastModified, not filesystem mtime, for keep/age decisions', async () => {
+    const home = await tempHome()
+    const projectPath = await tempProject()
+    const projectDir = getProjectSessionDir(projectPath, home)
+
+    const old = makeSession(projectPath, {
+      id: 'session-old',
+      lastModified: new Date(Date.now() - 10_000).toISOString(),
+    })
+    const recent = makeSession(projectPath, {
+      id: 'session-recent',
+      lastModified: new Date(Date.now() - 1_000).toISOString(),
+    })
+
+    // Write old first so its mtime is older — but give the recent session an
+    // older lastModified only to the old one. Both have recent mtimes.
+    await writeSessionFile(old, home)
+    await writeSessionFile(recent, home)
+
+    // Keep only 1; pruneProject should remove the one with the older lastModified.
+    await pruneProjectForTest(projectDir, Infinity, 1)
+
+    const kept = await listSessions(home, projectPath)
+    expect(kept).toHaveLength(1)
+    expect(kept[0]?.id).toBe('session-recent')
+  })
+
   it('uses a distinct temp file per concurrent save', async () => {
     const home = await tempHome()
     const projectPath = await tempProject()
@@ -331,5 +360,29 @@ describe('session persistence', () => {
     const loaded = await loadSessionById(projectPath, 'concurrent', home)
     expect(loaded?.id).toBe('concurrent')
     expect(loaded?.history).toEqual(session.history)
+  })
+
+  it('skips V2 session with unknown provider and emits a warning', async () => {
+    const home = await tempHome()
+    const projectPath = await tempProject()
+    const id = 'unknown-provider-session'
+    const filePath = getSessionFilePath(projectPath, id, home)
+    await mkdir(path.dirname(filePath), { recursive: true })
+    // Write a session with a provider not in the known set (simulates a future Orb version)
+    await Bun.write(
+      filePath,
+      JSON.stringify({
+        version: 2,
+        id,
+        projectPath,
+        llmProvider: 'mistral',
+        llmModel: 'mistral-large',
+        lastModified: new Date().toISOString(),
+        history: [],
+      }),
+    )
+
+    const loaded = await loadSessionById(projectPath, id, home)
+    expect(loaded).toBeNull()
   })
 })

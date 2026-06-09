@@ -103,11 +103,13 @@ export function createAnthropicAdapter(config: AgentAdapterConfig): AgentAdapter
         }
 
         if (typed.type === 'result' && typed.subtype === 'success') {
+          if (activeSessionId) {
+            yield createFrame('agent-session', {
+              session: { provider: 'anthropic', sessionId: activeSessionId },
+            })
+          }
           yield createFrame('agent-text-complete', {
             text: typed.result || accumulatedText,
-            session: activeSessionId
-              ? { provider: 'anthropic', sessionId: activeSessionId }
-              : undefined,
           })
         }
       }

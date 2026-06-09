@@ -33,7 +33,7 @@ describe('createGeminiAdapter', () => {
         async stream(args: Record<string, unknown>) {
           streamArgs = args
           return {
-            textStream: (async function* () {})(),
+            fullStream: (async function* () {})(),
           }
         }
       },
@@ -102,7 +102,7 @@ describe('createGeminiAdapter', () => {
           async stream(args: Record<string, unknown>) {
             streamArgs = args
             return {
-              textStream: (async function* () {})(),
+              fullStream: (async function* () {})(),
             }
           }
         },

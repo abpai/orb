@@ -191,9 +191,11 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
                 throw new Error(formatJson(params.turn.error ?? 'Codex turn failed.'))
               }
               turnCompleted = true
+              yield createFrame('agent-session', {
+                session: { provider: 'openai', threadId },
+              })
               yield createFrame('agent-text-complete', {
                 text: agentMessages.text,
-                session: { provider: 'openai', threadId },
               })
               break notifications
             }

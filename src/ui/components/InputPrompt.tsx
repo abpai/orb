@@ -1,9 +1,11 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback } from 'react'
 import { Box, Text, useInput } from 'ink'
 
-import { extractSlashCommandName, listAvailableSlashCommands } from '../../services/commands'
-import { searchProjectFiles } from '../../services/file-search'
+import { extractSlashCommandName } from '../../services/commands'
 import type { AppState } from '../../types'
+import { useFileMentionMenu } from '../hooks/useFileMentionMenu'
+import { useSlashCompletion } from '../hooks/useSlashCompletion'
+import { useTextBufferInput } from '../hooks/useTextBufferInput'
 import { keyToAction } from '../input/keymap'
 import { applyMention, findActiveMention } from '../input/mention'
 import { sanitizePaste } from '../input/paste'
@@ -40,17 +42,6 @@ interface InputPromptProps {
   onMenuOpenChange?: (open: boolean) => void
 }
 
-interface CycleState {
-  matches: string[]
-  index: number
-}
-
-/** Open `@`-file menu: the candidate paths and which row is highlighted. */
-interface MenuState {
-  items: string[]
-  index: number
-}
-
 function applyCompletion(buffer: TextBufferState, newCommand: string): TextBufferState {
   const line = buffer.lines[0] ?? ''
   const currentName = extractSlashCommandName(line) ?? ''
@@ -74,119 +65,28 @@ export const InputPrompt = memo(function InputPrompt({
   homeDir,
   onMenuOpenChange,
 }: InputPromptProps) {
-  const [buffer, setBuffer] = useState<TextBufferState>(() => empty())
-  // Mirror of `buffer` for the useInput callback. Ink can fire stdin events
-  // multiple times per tick (chunked paste), so the closure's `buffer` goes
-  // stale before React commits — and `submit` needs a synchronous read that a
-  // setState updater can't provide without doing side effects in the updater.
-  const bufferRef = useRef(buffer)
-  const desiredColRef = useRef(0)
-  const commandNamesRef = useRef<string[]>([])
-  const cycleRef = useRef<CycleState | null>(null)
+  const { buffer, bufferRef, desiredColRef, cycleRef, update } = useTextBufferInput()
 
-  // `@`-file menu. `menuRef` mirrors `menu` for the synchronous `useInput`
-  // closure (same reason as `bufferRef`); `searchSeqRef` discards stale async
-  // results — each new search/close bumps it.
-  const [menu, setMenu] = useState<MenuState | null>(null)
-  const menuRef = useRef<MenuState | null>(null)
-  const searchSeqRef = useRef(0)
+  const { menu, menuRef, setMenuState, closeMenu, refreshMenu } = useFileMentionMenu({
+    projectPath,
+    bufferRef,
+    onMenuOpenChange,
+  })
 
-  useEffect(() => {
-    let cancelled = false
-    commandNamesRef.current = []
+  const clearCycle = useCallback(() => {
     cycleRef.current = null
+  }, [cycleRef])
 
-    if (!projectPath) return
-
-    void listAvailableSlashCommands({ projectPath, homeDir })
-      .then((commands) => {
-        if (cancelled) return
-        commandNamesRef.current = commands.map((command) => command.name)
-      })
-      .catch(() => {
-        /* tab-complete is best-effort; ignore load failures */
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [projectPath, homeDir])
-
-  const setMenuState = useCallback(
-    (next: MenuState | null) => {
-      const wasOpen = menuRef.current !== null
-      const isOpen = next !== null
-      menuRef.current = next
-      // Let the global Esc handler know the menu owns Esc while it's open. Only
-      // fire on an actual open<->closed transition, not on every navigation.
-      if (isOpen !== wasOpen) onMenuOpenChange?.(isOpen)
-      setMenu(next)
-    },
-    [onMenuOpenChange],
-  )
-
-  // Reset the parent flag if we unmount with the menu still open.
-  useEffect(() => () => onMenuOpenChange?.(false), [onMenuOpenChange])
-
-  const closeMenu = useCallback(() => {
-    searchSeqRef.current++ // invalidate any in-flight search
-    if (menuRef.current !== null) setMenuState(null)
-  }, [setMenuState])
-
-  // Recompute the active `@`-mention from a buffer and refresh the menu. Runs
-  // off the synchronous `bufferRef` path (not a React effect) so the menu never
-  // lags the buffer between chunked stdin events. The only async step is the
-  // file search; its result is dropped unless the live mention still matches.
-  const refreshMenu = useCallback(
-    (buffer: TextBufferState) => {
-      if (!projectPath) {
-        closeMenu()
-        return
-      }
-      const line = buffer.lines[buffer.row] ?? ''
-      const mention = findActiveMention(line, buffer.col)
-      if (!mention) {
-        closeMenu()
-        return
-      }
-      const seq = ++searchSeqRef.current
-      const expected = { row: buffer.row, start: mention.start, query: mention.query }
-      void searchProjectFiles(mention.query, { projectPath })
-        .then((items) => {
-          if (seq !== searchSeqRef.current) return // superseded
-          const live = bufferRef.current
-          const liveLine = live.lines[live.row] ?? ''
-          const liveMention = findActiveMention(liveLine, live.col)
-          if (
-            !liveMention ||
-            live.row !== expected.row ||
-            liveMention.start !== expected.start ||
-            liveMention.query !== expected.query
-          ) {
-            return // cursor/query moved on; ignore this result
-          }
-          setMenuState(items.length > 0 ? { items, index: 0 } : null)
-        })
-        .catch(() => {
-          /* search is best-effort; leave the menu as-is */
-        })
-    },
-    [projectPath, closeMenu, setMenuState],
-  )
+  const { commandNamesRef } = useSlashCompletion({ projectPath, homeDir, onClearCycle: clearCycle })
 
   const apply = useCallback(
     (
-      update: (current: TextBufferState) => TextBufferState,
+      fn: (current: TextBufferState) => TextBufferState,
       options: { notifyEdit?: boolean; resetDesiredCol?: boolean } = {},
     ) => {
-      const next = update(bufferRef.current)
-      if (options.resetDesiredCol ?? true) desiredColRef.current = next.col
-      if (next === bufferRef.current) return false
       if (options.notifyEdit) onEdit?.()
-      bufferRef.current = next
-      setBuffer(next)
-      // Only pay for mention-search when the buffer actually contains `@` or a
-      // menu is already open — avoids a second synchronous render per keypress
-      // during normal (non-mention) typing.
+      const next = update(fn, { resetDesiredCol: options.resetDesiredCol })
+      if (!next) return false
       if (menuRef.current !== null || next.lines.some((l) => l.includes('@'))) {
         refreshMenu(next)
       } else {
@@ -194,7 +94,7 @@ export const InputPrompt = memo(function InputPrompt({
       }
       return true
     },
-    [onEdit, refreshMenu],
+    [onEdit, update, menuRef, refreshMenu, closeMenu],
   )
 
   const acceptMention = useCallback(() => {
@@ -211,14 +111,12 @@ export const InputPrompt = memo(function InputPrompt({
     }
     apply((b) => applyMention(b, mention.start, choice), { notifyEdit: true })
     closeMenu()
-  }, [apply, closeMenu])
+  }, [apply, closeMenu, menuRef, bufferRef])
 
   const handleComplete = useCallback(() => {
     const buf = bufferRef.current
     if (buf.row !== 0) return
 
-    // Cycling replaces the whole command name, so the cursor can sit anywhere —
-    // skip the cursor-position guard used for the initial completion below.
     const cycle = cycleRef.current
     if (cycle && cycle.matches.length > 1) {
       const nextIndex = (cycle.index + 1) % cycle.matches.length
@@ -239,14 +137,12 @@ export const InputPrompt = memo(function InputPrompt({
 
     apply((current) => applyCompletion(current, matches[0]!), { notifyEdit: true })
     cycleRef.current = matches.length > 1 ? { matches, index: 0 } : null
-  }, [apply])
+  }, [apply, bufferRef, commandNamesRef, cycleRef])
 
   useInput((input, key) => {
     const action = keyToAction(input, key)
     if (action.kind !== 'complete') cycleRef.current = null
 
-    // When the `@`-menu is open it owns the arrow keys, Enter/Tab, and Esc.
-    // Everything else falls through so editing keeps the menu live.
     const openMenu = menuRef.current
     if (openMenu && openMenu.items.length > 0) {
       const count = openMenu.items.length
@@ -262,7 +158,7 @@ export const InputPrompt = memo(function InputPrompt({
           return closeMenu()
       }
     } else if (action.kind === 'dismiss') {
-      return // Esc with no menu open: no-op
+      return
     }
 
     switch (action.kind) {

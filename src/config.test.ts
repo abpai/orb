@@ -126,6 +126,28 @@ describe('parseCliArgs', () => {
     expect(config.ttsSpeed).toBe(2)
   })
 
+  it('accepts valid --voice values', () => {
+    const { config } = parseCliArgs(['--voice=jean'])
+    expect(config.ttsVoice).toBe('jean')
+  })
+
+  it('rejects unknown --voice values', () => {
+    expect(() => parseCliArgs(['--voice=nosuchthing'])).toThrow(/nosuchthing/)
+  })
+
+  it('accepts valid --tts-mode values', () => {
+    expect(parseCliArgs(['--tts-mode=serve']).config.ttsMode).toBe('serve')
+    expect(parseCliArgs(['--tts-mode=generate']).config.ttsMode).toBe('generate')
+  })
+
+  it('normalizes --tts-mode=server to serve', () => {
+    expect(parseCliArgs(['--tts-mode=server']).config.ttsMode).toBe('serve')
+  })
+
+  it('rejects unknown --tts-mode values', () => {
+    expect(() => parseCliArgs(['--tts-mode=turbo'])).toThrow(/turbo/)
+  })
+
   it('detects explicit provider with space-separated syntax', () => {
     const { explicit } = parseCliArgs(['--provider', 'openai'])
     expect(explicit.provider).toBe(true)

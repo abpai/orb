@@ -79,80 +79,134 @@ export const DEFAULT_MODEL_BY_PROVIDER: Record<LlmProvider, LlmModelId> = {
   gemini: 'gemini-3.1-pro-preview',
 }
 
-const FALLBACK_ALIAS_MODEL_BY_PROVIDER = {
-  anthropic: {
-    haiku: 'claude-haiku-4-5-20251001',
-    sonnet: 'claude-sonnet-4-6',
-    opus: 'claude-opus-4-7',
-  },
-  openai: {
-    gpt: 'gpt-5.5',
-    mini: 'gpt-5.4-mini',
-    nano: 'gpt-5.4-nano',
-    pro: 'gpt-5.4-pro',
-    codex: 'gpt-5.3-codex',
-  },
-  gemini: {
-    pro: 'gemini-3.1-pro-preview',
-    flash: 'gemini-3-flash',
-    'flash-lite': 'gemini-3.1-flash-lite-preview',
-  },
-} satisfies Record<LlmProvider, Record<string, LlmModelId>>
+// ── Model family descriptors ─────────────────────────────────────────────────
+//
+// One descriptor per alias family. Adding or renaming a family is a single
+// entry; matchesAlias, modelAliasFamily, labelForModel, buildProviderModelChoices,
+// isModelAlias, and isForeignModelAlias are all derived from this array.
 
-const MODEL_ALIAS_ORDER = {
-  anthropic: ['haiku', 'sonnet', 'opus'],
-  openai: ['gpt', 'mini', 'nano', 'pro', 'codex'],
-  gemini: ['pro', 'flash', 'flash-lite'],
-} satisfies Record<LlmProvider, string[]>
+interface ModelFamilyDescriptor {
+  provider: LlmProvider
+  name: string               // alias name used on the CLI / in config
+  fallbackModel: LlmModelId  // concrete ID used when the catalog is unavailable
+  fallbackLabel: string      // display label for the fallback model
+  matches: (nativeId: string) => boolean  // family membership — drives matchesAlias + modelAliasFamily
+  label: (nativeId: string) => string     // display label — drives labelForModel + buildProviderModelChoices
+}
 
-export const FALLBACK_MODEL_CHOICES_BY_PROVIDER: Record<LlmProvider, LlmModelId[]> = {
+function isGeminiImageModel(nativeId: string): boolean {
+  return nativeId.includes('image') || nativeId.includes('imagen')
+}
+
+function genericModelLabel(nativeId: string): string {
+  return nativeId
+    .replace(/^gpt-/, 'GPT ')
+    .replace(/^gemini-/, 'Gemini ')
+    .split('-')
+    .map((part, index) =>
+      index === 0 && part === 'GPT'
+        ? part
+        : part.length <= 3 && /\d/.test(part)
+          ? part
+          : part.charAt(0).toUpperCase() + part.slice(1),
+    )
+    .join(' ')
+}
+
+function anthropicFamilyLabel(familyName: string, nativeId: string): string {
+  const version = nativeId.match(/-(\d)-(\d)(?:-|$)/)
+  return version ? `${familyName} ${version[1]}.${version[2]}` : familyName
+}
+
+const PROVIDER_FAMILIES: Record<LlmProvider, ModelFamilyDescriptor[]> = {
   anthropic: [
-    FALLBACK_ALIAS_MODEL_BY_PROVIDER.anthropic.haiku,
-    FALLBACK_ALIAS_MODEL_BY_PROVIDER.anthropic.sonnet,
-    FALLBACK_ALIAS_MODEL_BY_PROVIDER.anthropic.opus,
+    {
+      provider: 'anthropic', name: 'haiku',
+      fallbackModel: 'claude-haiku-4-5-20251001', fallbackLabel: 'Haiku 4.5',
+      matches: (id) => /^claude-haiku-/.test(id),
+      label: (id) => anthropicFamilyLabel('Haiku', id),
+    },
+    {
+      provider: 'anthropic', name: 'sonnet',
+      fallbackModel: 'claude-sonnet-4-6', fallbackLabel: 'Sonnet 4.6',
+      matches: (id) => /^claude-sonnet-/.test(id),
+      label: (id) => anthropicFamilyLabel('Sonnet', id),
+    },
+    {
+      provider: 'anthropic', name: 'opus',
+      fallbackModel: 'claude-opus-4-7', fallbackLabel: 'Opus 4.7',
+      matches: (id) => /^claude-opus-/.test(id),
+      label: (id) => anthropicFamilyLabel('Opus', id),
+    },
   ],
   openai: [
-    FALLBACK_ALIAS_MODEL_BY_PROVIDER.openai.gpt,
-    FALLBACK_ALIAS_MODEL_BY_PROVIDER.openai.mini,
-    FALLBACK_ALIAS_MODEL_BY_PROVIDER.openai.nano,
-    FALLBACK_ALIAS_MODEL_BY_PROVIDER.openai.pro,
-    FALLBACK_ALIAS_MODEL_BY_PROVIDER.openai.codex,
+    {
+      provider: 'openai', name: 'gpt',
+      fallbackModel: 'gpt-5.5', fallbackLabel: 'GPT 5.5',
+      matches: (id) => /^gpt-\d/.test(id) && !/(?:mini|nano|pro|chat|codex|instant|thinking|oss)/.test(id),
+      label: genericModelLabel,
+    },
+    {
+      provider: 'openai', name: 'mini',
+      fallbackModel: 'gpt-5.4-mini', fallbackLabel: 'GPT 5.4 Mini',
+      matches: (id) => /^gpt-\d/.test(id) && id.includes('mini'),
+      label: genericModelLabel,
+    },
+    {
+      provider: 'openai', name: 'nano',
+      fallbackModel: 'gpt-5.4-nano', fallbackLabel: 'GPT 5.4 Nano',
+      matches: (id) => /^gpt-\d/.test(id) && id.includes('nano'),
+      label: genericModelLabel,
+    },
+    {
+      provider: 'openai', name: 'pro',
+      fallbackModel: 'gpt-5.4-pro', fallbackLabel: 'GPT 5.4 Pro',
+      matches: (id) => /^gpt-\d/.test(id) && id.includes('pro'),
+      label: genericModelLabel,
+    },
+    {
+      provider: 'openai', name: 'codex',
+      fallbackModel: 'gpt-5.3-codex', fallbackLabel: 'GPT 5.3 Codex',
+      matches: (id) => /^gpt-\d/.test(id) && id.includes('codex'),
+      label: genericModelLabel,
+    },
   ],
   gemini: [
-    FALLBACK_ALIAS_MODEL_BY_PROVIDER.gemini.pro,
-    FALLBACK_ALIAS_MODEL_BY_PROVIDER.gemini.flash,
-    FALLBACK_ALIAS_MODEL_BY_PROVIDER.gemini['flash-lite'],
+    {
+      provider: 'gemini', name: 'pro',
+      fallbackModel: 'gemini-3.1-pro-preview', fallbackLabel: 'Gemini 3.1 Pro Preview',
+      matches: (id) => id.startsWith('gemini-') && !isGeminiImageModel(id) && id.includes('pro'),
+      label: genericModelLabel,
+    },
+    {
+      provider: 'gemini', name: 'flash',
+      fallbackModel: 'gemini-3-flash', fallbackLabel: 'Gemini 3 Flash',
+      matches: (id) => id.startsWith('gemini-') && !isGeminiImageModel(id) && id.includes('flash') && !id.includes('lite'),
+      label: genericModelLabel,
+    },
+    {
+      provider: 'gemini', name: 'flash-lite',
+      fallbackModel: 'gemini-3.1-flash-lite-preview', fallbackLabel: 'Gemini 3.1 Flash Lite Preview',
+      matches: (id) => id.startsWith('gemini-') && !isGeminiImageModel(id) && id.includes('flash-lite'),
+      label: genericModelLabel,
+    },
   ],
 }
 
-const FALLBACK_MODEL_LABELS: Record<LlmProvider, Record<LlmModelId, string>> = {
-  anthropic: {
-    'claude-haiku-4-5-20251001': 'Haiku 4.5',
-    'claude-sonnet-4-6': 'Sonnet 4.6',
-    'claude-opus-4-7': 'Opus 4.7',
-  },
-  openai: {
-    'gpt-5.5': 'GPT 5.5',
-    'gpt-5.4-mini': 'GPT 5.4 Mini',
-    'gpt-5.4-nano': 'GPT 5.4 Nano',
-    'gpt-5.4-pro': 'GPT 5.4 Pro',
-    'gpt-5.3-codex': 'GPT 5.3 Codex',
-  },
-  gemini: {
-    'gemini-3.1-pro-preview': 'Gemini 3.1 Pro Preview',
-    'gemini-3-flash': 'Gemini 3 Flash',
-    'gemini-3.1-flash-lite-preview': 'Gemini 3.1 Flash Lite Preview',
-  },
+export const FALLBACK_MODEL_CHOICES_BY_PROVIDER: Record<LlmProvider, LlmModelId[]> = {
+  anthropic: PROVIDER_FAMILIES.anthropic.map((f) => f.fallbackModel),
+  openai: PROVIDER_FAMILIES.openai.map((f) => f.fallbackModel),
+  gemini: PROVIDER_FAMILIES.gemini.map((f) => f.fallbackModel),
 }
 
-const FALLBACK_CATALOG_MODELS: CatalogModel[] = Object.entries(
-  FALLBACK_ALIAS_MODEL_BY_PROVIDER,
-).flatMap(([provider, models]) =>
-  Object.values(models).map((nativeId) => ({
-    gatewayId: `${PROVIDER_GATEWAY_PREFIX[provider as LlmProvider]}/${nativeId}`,
-    provider: provider as LlmProvider,
-    nativeId,
-    name: FALLBACK_MODEL_LABELS[provider as LlmProvider][nativeId],
+const FALLBACK_CATALOG_MODELS: CatalogModel[] = (
+  Object.entries(PROVIDER_FAMILIES) as [LlmProvider, ModelFamilyDescriptor[]][]
+).flatMap(([provider, families]) =>
+  families.map((f) => ({
+    gatewayId: `${PROVIDER_GATEWAY_PREFIX[provider]}/${f.fallbackModel}`,
+    provider,
+    nativeId: f.fallbackModel,
+    name: f.fallbackLabel,
     type: 'language',
     tags: ['tool-use'],
   })),
@@ -296,15 +350,14 @@ function normalizeModelToken(value: string): string {
 }
 
 export function isModelAlias(provider: LlmProvider, model: string): boolean {
-  return normalizeModelToken(model) in FALLBACK_ALIAS_MODEL_BY_PROVIDER[provider]
+  const normalized = normalizeModelToken(model)
+  return PROVIDER_FAMILIES[provider].some((f) => f.name === normalized)
 }
 
 export function isForeignModelAlias(provider: LlmProvider, model: string): boolean {
   const normalized = normalizeModelToken(model)
-  return (Object.keys(FALLBACK_ALIAS_MODEL_BY_PROVIDER) as LlmProvider[]).some(
-    (candidateProvider) =>
-      candidateProvider !== provider &&
-      normalized in FALLBACK_ALIAS_MODEL_BY_PROVIDER[candidateProvider],
+  return (Object.keys(PROVIDER_FAMILIES) as LlmProvider[]).some(
+    (p) => p !== provider && PROVIDER_FAMILIES[p].some((f) => f.name === normalized),
   )
 }
 
@@ -332,38 +385,10 @@ function isLanguageModel(model: CatalogModel): boolean {
   return model.type === undefined || model.type === 'language'
 }
 
-function isGeminiImageModel(nativeId: string): boolean {
-  return nativeId.includes('image') || nativeId.includes('imagen')
-}
-
 function matchesAlias(provider: LlmProvider, alias: string, model: CatalogModel): boolean {
   if (model.provider !== provider || !isLanguageModel(model)) return false
-
-  switch (provider) {
-    case 'anthropic':
-      return model.gatewayId.startsWith(`anthropic/claude-${alias}-`)
-
-    case 'openai': {
-      const id = model.nativeId
-      if (alias === 'gpt') {
-        return /^gpt-\d/.test(id) && !/(?:mini|nano|pro|chat|codex|instant|thinking|oss)/.test(id)
-      }
-      if (alias === 'mini') return /^gpt-\d/.test(id) && id.includes('mini')
-      if (alias === 'nano') return /^gpt-\d/.test(id) && id.includes('nano')
-      if (alias === 'pro') return /^gpt-\d/.test(id) && id.includes('pro')
-      if (alias === 'codex') return /^gpt-\d/.test(id) && id.includes('codex')
-      return false
-    }
-
-    case 'gemini': {
-      const id = model.nativeId
-      if (!id.startsWith('gemini-') || isGeminiImageModel(id)) return false
-      if (alias === 'pro') return id.includes('pro')
-      if (alias === 'flash-lite') return id.includes('flash-lite')
-      if (alias === 'flash') return id.includes('flash') && !id.includes('lite')
-      return false
-    }
-  }
+  const family = PROVIDER_FAMILIES[provider].find((f) => f.name === alias)
+  return family ? family.matches(model.nativeId) : false
 }
 
 /**
@@ -373,27 +398,7 @@ function matchesAlias(provider: LlmProvider, alias: string, model: CatalogModel)
  * model still maps onto a current choice.
  */
 export function modelAliasFamily(provider: LlmProvider, model: LlmModelId): string | null {
-  if (provider === 'anthropic') {
-    return model.match(/^claude-(haiku|sonnet|opus)-/)?.[1] ?? null
-  }
-
-  if (provider === 'openai') {
-    if (/^gpt-\d/.test(model) && model.includes('codex')) return 'codex'
-    if (/^gpt-\d/.test(model) && model.includes('mini')) return 'mini'
-    if (/^gpt-\d/.test(model) && model.includes('nano')) return 'nano'
-    if (/^gpt-\d/.test(model) && model.includes('pro')) return 'pro'
-    if (/^gpt-\d/.test(model)) return 'gpt'
-    return null
-  }
-
-  if (provider === 'gemini') {
-    if (!model.startsWith('gemini-') || model.includes('image')) return null
-    if (model.includes('flash-lite')) return 'flash-lite'
-    if (model.includes('flash')) return 'flash'
-    if (model.includes('pro')) return 'pro'
-  }
-
-  return null
+  return PROVIDER_FAMILIES[provider].find((f) => f.matches(model))?.name ?? null
 }
 
 function anthropicComparableTokens(value: string): string[] {
@@ -463,27 +468,8 @@ function labelFromGatewayName(provider: LlmProvider, name?: string): string | un
  * provider-specific naming rules live in exactly one place.
  */
 export function labelForModel(provider: LlmProvider, nativeId: string): string {
-  if (provider === 'anthropic') {
-    const family = nativeId.match(/^claude-(haiku|sonnet|opus)-/)?.[1]
-    if (family) {
-      const version = nativeId.match(/-(\d)-(\d)(?:-|$)/)
-      const labelFamily = family[0]!.toUpperCase() + family.slice(1)
-      return version ? `${labelFamily} ${version[1]}.${version[2]}` : labelFamily
-    }
-  }
-
-  return nativeId
-    .replace(/^gpt-/, 'GPT ')
-    .replace(/^gemini-/, 'Gemini ')
-    .split('-')
-    .map((part, index) =>
-      index === 0 && part === 'GPT'
-        ? part
-        : part.length <= 3 && /\d/.test(part)
-          ? part
-          : part.charAt(0).toUpperCase() + part.slice(1),
-    )
-    .join(' ')
+  const family = PROVIDER_FAMILIES[provider].find((f) => f.matches(nativeId))
+  return family ? family.label(nativeId) : genericModelLabel(nativeId)
 }
 
 export function buildProviderModelChoices(
@@ -492,22 +478,14 @@ export function buildProviderModelChoices(
 ): { choices: LlmModelId[]; labels: Record<LlmModelId, string> } {
   const choices: LlmModelId[] = []
   const labels: Record<LlmModelId, string> = {}
-  const fallbackAliasModels = FALLBACK_ALIAS_MODEL_BY_PROVIDER[provider] as Record<
-    string,
-    LlmModelId | undefined
-  >
 
-  for (const alias of MODEL_ALIAS_ORDER[provider]) {
-    const selected = selectLatestAliasModel(provider, alias, models)
-    const fallback = fallbackAliasModels[alias]
-    const nativeId = selected?.nativeId ?? fallback
+  for (const family of PROVIDER_FAMILIES[provider]) {
+    const selected = selectLatestAliasModel(provider, family.name, models)
+    const nativeId = selected?.nativeId ?? family.fallbackModel
     if (!nativeId || choices.includes(nativeId)) continue
 
     choices.push(nativeId)
-    labels[nativeId] =
-      labelFromGatewayName(provider, selected?.name) ??
-      FALLBACK_MODEL_LABELS[provider][nativeId] ??
-      labelForModel(provider, nativeId)
+    labels[nativeId] = labelFromGatewayName(provider, selected?.name) ?? family.label(nativeId)
   }
 
   return {
@@ -532,11 +510,8 @@ export function resolveModelForProvider(
 
   if (isModelAlias(provider, normalized)) {
     const selected = selectLatestAliasModel(provider, normalized, models)
-    const fallbackAliasModels = FALLBACK_ALIAS_MODEL_BY_PROVIDER[provider] as Record<
-      string,
-      LlmModelId | undefined
-    >
-    return selected?.nativeId ?? fallbackAliasModels[normalized] ?? normalized
+    const family = PROVIDER_FAMILIES[provider].find((f) => f.name === normalized)
+    return selected?.nativeId ?? family?.fallbackModel ?? normalized
   }
 
   const selected = selectExactProviderModel(provider, normalized, models)

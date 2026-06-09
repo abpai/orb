@@ -1,4 +1,5 @@
-import { ToolLoopAgent, stepCountIs, type ToolSet, type StepResult } from 'ai'
+import { ToolLoopAgent, stepCountIs, type ToolSet } from 'ai'
+import type { GoogleGenerativeAIModelId } from '@ai-sdk/google'
 import { buildProviderPrompt } from '../../services/prompts'
 import type { Frame } from '../frames'
 import { createFrame } from '../frames'
@@ -8,18 +9,6 @@ import { resolveGeminiProvider } from '../../services/gemini-auth'
 import { warn } from '../../services/log'
 import { createSandbox } from '../sandbox/factory'
 import { bash, readFile, writeFile } from '../tools'
-
-interface GeminiToolCall {
-  toolCallId: string
-  toolName: string
-  input: unknown
-}
-
-interface GeminiToolResult {
-  toolCallId: string
-  toolName: string
-  output: unknown
-}
 
 export function createGeminiAdapter(config: AgentAdapterConfig): AgentAdapter {
   return {
@@ -36,31 +25,9 @@ export function createGeminiAdapter(config: AgentAdapterConfig): AgentAdapter {
 
       let accumulatedText = ''
       const tools = createToolFrameTracker()
-      const pendingFrames: Frame[] = []
-
-      function registerToolCall(call: GeminiToolCall): void {
-        pendingFrames.push(
-          tools.start({
-            id: call.toolCallId,
-            name: call.toolName,
-            input: normalizeToolInput(call.input),
-          }),
-        )
-      }
-
-      function registerToolResult(result: GeminiToolResult): void {
-        pendingFrames.push(
-          ...tools.result(
-            result.toolCallId,
-            formatToolResult(result.output),
-            isToolError(result.output),
-            result.toolName,
-          ),
-        )
-      }
 
       const provider = await resolveGeminiProvider()
-      const model = provider(appConfig.llmModel as never)
+      const model = provider(appConfig.llmModel as GoogleGenerativeAIModelId)
 
       try {
         const agent = new ToolLoopAgent({
@@ -70,36 +37,48 @@ export function createGeminiAdapter(config: AgentAdapterConfig): AgentAdapter {
           stopWhen: stepCountIs(20),
         })
 
-        const streamArgs = {
+        const agentStream = await agent.stream({
           prompt,
           experimental_context: { sandbox, signal: abortController.signal },
-          onStepFinish: (stepResult: StepResult<ToolSet>) => {
-            for (const call of stepResult.toolCalls) {
-              registerToolCall(call)
-            }
-            for (const result of stepResult.toolResults) {
-              registerToolResult(result)
-            }
-          },
           abortSignal: abortController.signal,
-        } as Parameters<typeof agent.stream>[0]
+        })
 
-        const agentStream = await agent.stream(streamArgs)
+        for await (const part of agentStream.fullStream) {
+          switch (part.type) {
+            case 'text-delta':
+              accumulatedText += part.text
+              yield createFrame('agent-text-delta', { delta: part.text, accumulatedText })
+              break
 
-        for await (const chunk of agentStream.textStream) {
-          while (pendingFrames.length > 0) {
-            yield pendingFrames.shift()!
+            case 'tool-call':
+              yield tools.start({
+                id: part.toolCallId,
+                name: part.toolName,
+                input: normalizeToolInput(part.input),
+              })
+              break
+
+            case 'tool-result':
+              yield* tools.result(
+                part.toolCallId,
+                formatToolResult(part.output),
+                isToolError(part.output),
+                part.toolName,
+              )
+              break
+
+            case 'tool-error':
+              yield* tools.result(
+                part.toolCallId,
+                formatToolResult(part.error),
+                true,
+                part.toolName,
+              )
+              break
+
+            case 'error':
+              throw part.error instanceof Error ? part.error : new Error(String(part.error))
           }
-
-          accumulatedText += chunk
-          yield createFrame('agent-text-delta', {
-            delta: chunk,
-            accumulatedText,
-          })
-        }
-
-        while (pendingFrames.length > 0) {
-          yield pendingFrames.shift()!
         }
 
         yield createFrame('agent-text-complete', {

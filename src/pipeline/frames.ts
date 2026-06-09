@@ -26,7 +26,6 @@ export interface AgentTextDeltaFrame extends BaseFrame {
 export interface AgentTextCompleteFrame extends BaseFrame {
   kind: 'agent-text-complete'
   text: string
-  session?: AgentSession
 }
 
 export interface ToolCallStartFrame extends BaseFrame {

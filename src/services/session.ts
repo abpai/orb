@@ -163,10 +163,15 @@ function normalizeHistory(history: unknown): HistoryEntry[] {
 function normalizeLoaded(parsed: unknown, resolvedProjectPath: string): SavedSession | null {
   if (isSavedSessionV2(parsed)) {
     if (path.resolve(parsed.projectPath) !== resolvedProjectPath) return null
+    const provider = normalizeSessionProvider(parsed.llmProvider)
+    if (!provider) {
+      warn(`Session skipped: unknown provider "${parsed.llmProvider}" — written by a newer version of Orb?`)
+      return null
+    }
     return {
       ...parsed,
       id: typeof parsed.id === 'string' && parsed.id.length > 0 ? parsed.id : crypto.randomUUID(),
-      llmProvider: normalizeSessionProvider(parsed.llmProvider) ?? 'anthropic',
+      llmProvider: provider,
       agentSession: normalizeAgentSession(parsed.agentSession),
       history: normalizeHistory(parsed.history),
     }
@@ -321,21 +326,40 @@ async function pruneProject(projectDir: string, maxAgeMs: number, keep: number):
         const filePath = path.join(projectDir, name)
         try {
           const stats = await fs.stat(filePath)
-          return stats.isFile() ? { filePath, mtimeMs: stats.mtimeMs } : null
+          if (!stats.isFile()) return null
+
+          // Use payload lastModified to match the sort order in listSessions;
+          // fall back to mtime for files that can't be parsed (corrupted, migrating).
+          let ageMs = stats.mtimeMs
+          try {
+            const parsed = (await Bun.file(filePath).json()) as unknown
+            if (
+              parsed &&
+              typeof parsed === 'object' &&
+              typeof (parsed as Record<string, unknown>).lastModified === 'string'
+            ) {
+              const t = new Date((parsed as Record<string, unknown>).lastModified as string).getTime()
+              if (!Number.isNaN(t)) ageMs = t
+            }
+          } catch {
+            // keep mtime fallback
+          }
+
+          return { filePath, ageMs }
         } catch {
           return null
         }
       }),
   )
 
-  const live = files.filter((f): f is { filePath: string; mtimeMs: number } => f !== null)
+  const live = files.filter((f): f is { filePath: string; ageMs: number } => f !== null)
   const now = Date.now()
   // Newest first; delete anything stale or beyond the keep-N window.
-  live.sort((a, b) => b.mtimeMs - a.mtimeMs)
+  live.sort((a, b) => b.ageMs - a.ageMs)
 
   await Promise.all(
-    live.map(async ({ filePath, mtimeMs }, index) => {
-      if (now - mtimeMs > maxAgeMs || index >= keep) {
+    live.map(async ({ filePath, ageMs }, index) => {
+      if (now - ageMs > maxAgeMs || index >= keep) {
         await fs.unlink(filePath).catch(() => {})
       }
     }),
@@ -351,6 +375,8 @@ async function cleanupOldSessions(
   const projectDirs = await listProjectDirs(homeDir)
   await Promise.all(projectDirs.map((dir) => pruneProject(dir, maxAgeMs, keepPerProject)))
 }
+
+export const pruneProjectForTest = pruneProject
 
 /** Load the most recently modified saved session for a project. */
 export async function loadSession(
@@ -439,7 +465,7 @@ async function writeSessionPayload(
     version: SESSION_VERSION,
     id,
     projectPath: resolved,
-    llmProvider: normalizeSessionProvider(session.llmProvider) ?? 'anthropic',
+    llmProvider: session.llmProvider,
     agentSession: normalizeAgentSession(session.agentSession),
     lastModified: refreshLastModified ? new Date().toISOString() : session.lastModified,
   }

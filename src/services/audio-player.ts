@@ -183,3 +183,32 @@ export function detectPlayer(): PlayerConfig {
 export function resetDetectedPlayer(): void {
   detectedPlayer = undefined
 }
+
+/** Minimal process handle for file-based players (afplay). */
+export interface FilePlayerProcess {
+  pid: number | undefined
+  exited: Promise<number>
+  kill: () => void
+  pause: () => void
+  resume: () => void
+}
+
+export function spawnAfplay(filePath: string, speed?: number): FilePlayerProcess {
+  const args = typeof speed === 'number' && Number.isFinite(speed) && speed > 0
+    ? [filePath, '-r', String(speed)]
+    : [filePath]
+
+  const proc = Bun.spawn(['afplay', ...args], { stdout: 'ignore', stderr: 'ignore' })
+
+  return {
+    pid: proc.pid,
+    exited: proc.exited,
+    kill: () => proc.kill(),
+    pause: () => {
+      try { process.kill(proc.pid!, 'SIGSTOP') } catch { /* already exited */ }
+    },
+    resume: () => {
+      try { process.kill(proc.pid!, 'SIGCONT') } catch { /* already exited */ }
+    },
+  }
+}

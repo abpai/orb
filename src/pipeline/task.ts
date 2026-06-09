@@ -156,7 +156,6 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
           switch (frame.kind) {
             case 'agent-text-complete':
               finalText = frame.text
-              if (frame.session) finalSession = frame.session
               break
 
             case 'agent-session':
