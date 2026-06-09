@@ -184,7 +184,14 @@ export const InputPrompt = memo(function InputPrompt({
       if (options.notifyEdit) onEdit?.()
       bufferRef.current = next
       setBuffer(next)
-      refreshMenu(next)
+      // Only pay for mention-search when the buffer actually contains `@` or a
+      // menu is already open — avoids a second synchronous render per keypress
+      // during normal (non-mention) typing.
+      if (menuRef.current !== null || next.lines.some((l) => l.includes('@'))) {
+        refreshMenu(next)
+      } else {
+        closeMenu()
+      }
       return true
     },
     [onEdit, refreshMenu],
