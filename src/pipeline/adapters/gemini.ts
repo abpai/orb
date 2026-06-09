@@ -6,6 +6,7 @@ import { createFrame } from '../frames'
 import type { AgentAdapter, AgentAdapterConfig } from './types'
 import { createToolFrameTracker, normalizeToolInput, isToolError, formatToolResult } from './utils'
 import { resolveGeminiProvider } from '../../services/gemini-auth'
+import { buildGeminiCacheReport, reportGeminiCacheUsage } from './gemini-cache'
 import { warn } from '../../services/log'
 import { createSandbox } from '../sandbox/factory'
 import { bash, readFile, writeFile } from '../tools'
@@ -90,6 +91,20 @@ export function createGeminiAdapter(config: AgentAdapterConfig): AgentAdapter {
         yield createFrame('agent-text-complete', {
           text: accumulatedText,
         })
+
+        // Best-effort cache observability: warn once if the stable system prefix
+        // isn't being served from cache. Never let usage reads affect the turn.
+        try {
+          const [usage, providerMetadata] = await Promise.all([
+            agentStream.totalUsage,
+            agentStream.providerMetadata,
+          ])
+          reportGeminiCacheUsage(
+            buildGeminiCacheReport(usage, providerMetadata, { modelId: appConfig.llmModel }),
+          )
+        } catch (err) {
+          warn('failed to read Gemini cache usage', err)
+        }
       } finally {
         await sandbox.dispose().catch((err) => {
           warn('sandbox.dispose() failed', err)
