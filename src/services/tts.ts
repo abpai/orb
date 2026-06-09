@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { unlink } from 'node:fs/promises'
 import { TTSError, type AppConfig, type TTSErrorType, type Voice } from '../types'
 import { cleanTextForSpeech } from '../ui/utils/markdown'
-import { detectPlayer, type PlayerProcess } from './audio-player'
+import { detectPlayer, spawnAfplay, type FilePlayerProcess, type PlayerProcess } from './audio-player'
 import { createGatewayClient, DEFAULT_SERVER_URL } from './gateway-client'
 import { splitIntoSentences } from './speech-text'
 
@@ -17,14 +17,6 @@ export interface StreamSession {
   readonly wasKilled: boolean
 }
 
-function sendSignal(pid: number | undefined, signal: NodeJS.Signals): void {
-  if (!pid) return
-  try {
-    process.kill(pid, signal)
-  } catch {
-    /* process already exited */
-  }
-}
 
 export function createStreamSession(
   audioStream: ReadableStream<Uint8Array>,
@@ -130,7 +122,7 @@ function categorizeTTSError(err: unknown, context: 'generate' | 'playback'): TTS
   return new TTSError(error.message, type, error)
 }
 
-let currentPlayProcess: Bun.Subprocess | null = null
+let currentPlayProcess: FilePlayerProcess | null = null
 let playbackStoppedManually = false
 let playbackPaused = false
 let playbackControlVersion = 0
@@ -247,7 +239,6 @@ export async function generateAudio(
 }
 
 export async function playAudio(path: string, speed?: number): Promise<void> {
-  const args = isValidSpeed(speed) ? [path, '-r', String(speed)] : [path]
   const controlVersion = playbackControlVersion
 
   if (!(await waitForPlaybackReady(controlVersion))) {
@@ -255,7 +246,7 @@ export async function playAudio(path: string, speed?: number): Promise<void> {
   }
 
   try {
-    currentPlayProcess = Bun.spawn(['afplay', ...args], { stdout: 'ignore', stderr: 'ignore' })
+    currentPlayProcess = spawnAfplay(path, isValidSpeed(speed) ? speed : undefined)
   } catch (err) {
     currentPlayProcess = null
     throw categorizeTTSError(err, 'playback')
@@ -286,7 +277,7 @@ export function stopSpeaking(): void {
 
   if (currentPlayProcess) {
     playbackStoppedManually = true
-    sendSignal(currentPlayProcess.pid, 'SIGCONT')
+    currentPlayProcess.resume() // unblock if paused so kill takes effect
     currentPlayProcess.kill()
     currentPlayProcess = null
   }
@@ -294,17 +285,13 @@ export function stopSpeaking(): void {
 
 export function pauseSpeaking(): void {
   playbackPaused = true
-  if (currentPlayProcess) {
-    sendSignal(currentPlayProcess.pid, 'SIGSTOP')
-  }
+  currentPlayProcess?.pause()
 }
 
 export function resumeSpeaking(): void {
   playbackPaused = false
   flushPlaybackResumeWaiters()
-  if (currentPlayProcess) {
-    sendSignal(currentPlayProcess.pid, 'SIGCONT')
-  }
+  currentPlayProcess?.resume()
 }
 
 export async function speak(text: string, config: AppConfig): Promise<void> {
