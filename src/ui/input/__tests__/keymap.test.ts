@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 
-import { keyToAction } from '../keymap'
+import { keyToAction, keyToActions } from '../keymap'
 
 describe('keyToAction', () => {
   it('treats Ctrl+J as newline before the generic return branch', () => {
@@ -45,6 +45,20 @@ describe('keyToAction', () => {
   it('treats raw DEL / BS bytes as backspace', () => {
     expect(keyToAction('\u007f', {} as never)).toEqual({ kind: 'backspace' })
     expect(keyToAction('\b', {} as never)).toEqual({ kind: 'backspace' })
+  })
+
+  it('splits raw backspace bytes out of batched printable input', () => {
+    expect(keyToActions('abc\u007fd', {} as never)).toEqual([
+      { kind: 'insert', text: 'abc' },
+      { kind: 'backspace' },
+      { kind: 'insert', text: 'd' },
+    ])
+  })
+
+  it('keeps bracketed paste chunks as a single insert action', () => {
+    expect(keyToActions('[200~abc\u007fd[201~', {} as never)).toEqual([
+      { kind: 'insert', text: '[200~abc\u007fd[201~' },
+    ])
   })
 
   it('treats key.delete (what Ink reports for macOS Backspace) as backspace', () => {

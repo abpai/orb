@@ -18,6 +18,10 @@ describe('rankFiles', () => {
     expect(rankFiles('', files, 3)).toEqual(files.slice(0, 3))
   })
 
+  it('returns nothing for a non-positive limit', () => {
+    expect(rankFiles('src', files, 0)).toEqual([])
+  })
+
   it('ranks a basename match ahead of an incidental subsequence', () => {
     const ranked = rankFiles('inputprompt', files, 5)
     expect(ranked[0]).toBe('src/ui/components/InputPrompt.tsx')

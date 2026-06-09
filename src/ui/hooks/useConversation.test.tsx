@@ -26,6 +26,7 @@ function frame(partial: Record<string, unknown>): OutboundFrame {
 
 /** Let React flush state updates. */
 const flush = () => new Promise((r) => setTimeout(r, 0))
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 describe('useConversation', () => {
   const cleanupPaths = new Set<string>()
@@ -293,9 +294,45 @@ describe('useConversation', () => {
 
       controls.startEntry('test')
       controls.handleFrame(frame({ kind: 'agent-text-delta', accumulatedText: 'Hello world' }))
-      await flush()
+      await wait(60)
 
       expect(controls.liveTurn?.answer).toBe('Hello world')
+
+      app.unmount()
+    })
+
+    it('throttles rapid text-delta renders while preserving the latest answer', async () => {
+      let controls!: ReturnType<typeof useConversation>
+      const renderedAnswers: string[] = []
+
+      function Harness() {
+        controls = useConversation({
+          config: makeConfig('/tmp/frame-throttle-test'),
+          initialSession: null,
+          taskState: 'processing',
+        })
+        renderedAnswers.push(controls.liveTurn?.answer ?? '')
+        return null
+      }
+
+      const app = render(<Harness />)
+
+      controls.startEntry('test')
+      await flush()
+      renderedAnswers.length = 0
+
+      for (const answer of ['a', 'ab', 'abc', 'abcd']) {
+        controls.handleFrame(
+          frame({ kind: 'agent-text-delta', delta: answer.at(-1), accumulatedText: answer }),
+        )
+        await wait(5)
+      }
+      await wait(80)
+
+      expect(controls.liveTurn?.answer).toBe('abcd')
+      const liveAnswerRenders = renderedAnswers.filter((answer) => answer.length > 0)
+      expect(liveAnswerRenders.at(-1)).toBe('abcd')
+      expect(liveAnswerRenders.length).toBeLessThan(4)
 
       app.unmount()
     })

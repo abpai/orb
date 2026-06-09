@@ -65,17 +65,37 @@ function subsequenceScore(query: string, candidate: string): number | null {
  * can be tested without touching the filesystem.
  */
 export function rankFiles(query: string, files: string[], limit: number): string[] {
+  if (limit <= 0) return []
   if (query.trim().length === 0) return files.slice(0, limit)
 
-  const scored: Array<{ path: string; score: number; index: number }> = []
+  const best: Array<{ path: string; score: number; index: number }> = []
   for (let index = 0; index < files.length; index++) {
     const file = files[index]!
     const score = subsequenceScore(query, file)
-    if (score !== null) scored.push({ path: file, score, index })
+    if (score === null) continue
+
+    const entry = { path: file, score, index }
+    if (best.length < limit) {
+      best.push(entry)
+      best.sort(compareRankedFiles)
+      continue
+    }
+
+    const worst = best[best.length - 1]!
+    if (compareRankedFiles(entry, worst) < 0) {
+      best[best.length - 1] = entry
+      best.sort(compareRankedFiles)
+    }
   }
 
-  scored.sort((a, b) => b.score - a.score || a.index - b.index)
-  return scored.slice(0, limit).map((entry) => entry.path)
+  return best.map((entry) => entry.path)
+}
+
+function compareRankedFiles(
+  a: { score: number; index: number },
+  b: { score: number; index: number },
+): number {
+  return b.score - a.score || a.index - b.index
 }
 
 /** Run `git ls-files` for tracked + untracked-not-ignored files, NUL-delimited. */
