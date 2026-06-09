@@ -217,7 +217,7 @@ export function createEditorMarkerProcessor(options: EditorMarkerOptions): Proce
       if (frame.kind === 'agent-text-complete') {
         const stripped = stripBlocks(frame.text)
         if (stripped.refs.length > 0) options.open(stripped.refs)
-        yield createFrame('agent-text-complete', { text: stripped.text, session: frame.session })
+        yield createFrame('agent-text-complete', { text: stripped.text })
         reset()
         continue
       }
