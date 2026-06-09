@@ -179,6 +179,7 @@ export async function run(args: string[]): Promise<void> {
     }),
     {
       patchConsole: true,
+      concurrent: true,
     },
   )
 }
