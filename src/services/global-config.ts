@@ -158,6 +158,83 @@ export function getGlobalConfigPath(homeDir = os.homedir()): string {
   return globalConfigPath(homeDir)
 }
 
+// ── Field descriptors ────────────────────────────────────────────────────────
+//
+// A single descriptor entry drives parse, apply, and serialize for each field.
+// Adding a new config key is one new entry; the three functions below never need
+// to be touched.
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ValidateFn = (raw: unknown, label: string, warnings: string[]) => any
+
+interface RootField {
+  tomlKey: string
+  orbKey: keyof OrbGlobalConfig
+  validate: ValidateFn
+  explicitFlag?: keyof ExplicitFlags
+  apply(appConfig: AppConfig, value: unknown, orbConfig: OrbGlobalConfig): void
+}
+
+interface TtsField {
+  tomlKey: string
+  orbKey: keyof OrbGlobalTtsConfig
+  appKey: keyof AppConfig
+  validate: ValidateFn
+  explicitFlag?: keyof ExplicitFlags
+}
+
+const ROOT_FIELDS: RootField[] = [
+  {
+    tomlKey: 'provider',
+    orbKey: 'provider',
+    validate: validateProvider,
+    explicitFlag: 'provider',
+    apply(c, v, orb) {
+      c.llmProvider = v as LlmProvider
+      if (!orb.model) c.llmModel = DEFAULT_MODEL_ALIAS_BY_PROVIDER[v as LlmProvider]
+    },
+  },
+  {
+    tomlKey: 'model',
+    orbKey: 'model',
+    validate: validateString,
+    explicitFlag: 'model',
+    apply(c, v) {
+      c.llmModel = v as string
+    },
+  },
+  {
+    tomlKey: 'reasoning_effort',
+    orbKey: 'reasoningEffort',
+    validate: validateReasoningEffort,
+    apply(c, v) {
+      c.llmReasoningEffort = v as ReasoningEffort
+    },
+  },
+  {
+    tomlKey: 'skip_intro',
+    orbKey: 'skipIntro',
+    validate: validateBoolean,
+    apply(c, v) {
+      c.skipIntro = v as boolean
+    },
+  },
+]
+
+const TTS_FIELDS: TtsField[] = [
+  { tomlKey: 'enabled', orbKey: 'enabled', appKey: 'ttsEnabled', validate: validateBoolean },
+  { tomlKey: 'streaming', orbKey: 'streaming', appKey: 'ttsStreamingEnabled', validate: validateBoolean },
+  { tomlKey: 'mode', orbKey: 'mode', appKey: 'ttsMode', validate: validateTtsMode },
+  { tomlKey: 'server_url', orbKey: 'serverUrl', appKey: 'ttsServerUrl', validate: validateString },
+  { tomlKey: 'voice', orbKey: 'voice', appKey: 'ttsVoice', validate: validateVoice },
+  { tomlKey: 'speed', orbKey: 'speed', appKey: 'ttsSpeed', validate: validatePositiveNumber },
+  { tomlKey: 'buffer_sentences', orbKey: 'bufferSentences', appKey: 'ttsBufferSentences', validate: validatePositiveInt, explicitFlag: 'ttsBufferSentences' },
+  { tomlKey: 'clause_boundaries', orbKey: 'clauseBoundaries', appKey: 'ttsClauseBoundaries', validate: validateBoolean, explicitFlag: 'ttsClauseBoundaries' },
+  { tomlKey: 'min_chunk_length', orbKey: 'minChunkLength', appKey: 'ttsMinChunkLength', validate: validateNonNegativeInt, explicitFlag: 'ttsMinChunkLength' },
+  { tomlKey: 'max_wait_ms', orbKey: 'maxWaitMs', appKey: 'ttsMaxWaitMs', validate: validateNonNegativeInt, explicitFlag: 'ttsMaxWaitMs' },
+  { tomlKey: 'grace_window_ms', orbKey: 'graceWindowMs', appKey: 'ttsGraceWindowMs', validate: validateNonNegativeInt, explicitFlag: 'ttsGraceWindowMs' },
+]
+
 export function parseGlobalConfigToml(
   contents: string,
   configPath = getGlobalConfigPath(),
@@ -182,37 +259,12 @@ export function parseGlobalConfigToml(
     return { config, explicit, warnings }
   }
 
-  if ('provider' in root) {
-    const provider = validateProvider(root.provider, 'provider', warnings)
-    if (provider) {
-      config.provider = provider
-      explicit.provider = true
-    }
-  }
-
-  if ('model' in root) {
-    const model = validateString(root.model, 'model', warnings)
-    if (model) {
-      config.model = model
-      explicit.model = true
-    }
-  }
-
-  if ('reasoning_effort' in root) {
-    const reasoningEffort = validateReasoningEffort(
-      root.reasoning_effort,
-      'reasoning_effort',
-      warnings,
-    )
-    if (reasoningEffort) {
-      config.reasoningEffort = reasoningEffort
-    }
-  }
-
-  if ('skip_intro' in root) {
-    const skipIntro = validateBoolean(root.skip_intro, 'skip_intro', warnings)
-    if (skipIntro !== undefined) {
-      config.skipIntro = skipIntro
+  for (const field of ROOT_FIELDS) {
+    if (!(field.tomlKey in root)) continue
+    const value = field.validate(root[field.tomlKey], field.tomlKey, warnings)
+    if (value !== undefined) {
+      ;(config as Record<string, unknown>)[field.orbKey] = value
+      if (field.explicitFlag) explicit[field.explicitFlag] = true
     }
   }
 
@@ -222,78 +274,15 @@ export function parseGlobalConfigToml(
       warnings.push('tts must be a table.')
     } else {
       const tts: OrbGlobalTtsConfig = {}
-
-      if ('enabled' in rawTts) {
-        const value = validateBoolean(rawTts.enabled, 'tts.enabled', warnings)
-        if (value !== undefined) tts.enabled = value
-      }
-      if ('streaming' in rawTts) {
-        const value = validateBoolean(rawTts.streaming, 'tts.streaming', warnings)
-        if (value !== undefined) tts.streaming = value
-      }
-      if ('mode' in rawTts) {
-        const value = validateTtsMode(rawTts.mode, 'tts.mode', warnings)
-        if (value) tts.mode = value
-      }
-      if ('server_url' in rawTts) {
-        const value = validateString(rawTts.server_url, 'tts.server_url', warnings)
-        if (value) tts.serverUrl = value
-      }
-      if ('voice' in rawTts) {
-        const value = validateVoice(rawTts.voice, 'tts.voice', warnings)
-        if (value) tts.voice = value
-      }
-      if ('speed' in rawTts) {
-        const value = validatePositiveNumber(rawTts.speed, 'tts.speed', warnings)
-        if (value !== undefined) tts.speed = value
-      }
-      if ('buffer_sentences' in rawTts) {
-        const value = validatePositiveInt(rawTts.buffer_sentences, 'tts.buffer_sentences', warnings)
+      for (const field of TTS_FIELDS) {
+        if (!(field.tomlKey in rawTts)) continue
+        const value = field.validate(rawTts[field.tomlKey], `tts.${field.tomlKey}`, warnings)
         if (value !== undefined) {
-          tts.bufferSentences = value
-          explicit.ttsBufferSentences = true
+          ;(tts as Record<string, unknown>)[field.orbKey] = value
+          if (field.explicitFlag) explicit[field.explicitFlag] = true
         }
       }
-      if ('clause_boundaries' in rawTts) {
-        const value = validateBoolean(rawTts.clause_boundaries, 'tts.clause_boundaries', warnings)
-        if (value !== undefined) {
-          tts.clauseBoundaries = value
-          explicit.ttsClauseBoundaries = true
-        }
-      }
-      if ('min_chunk_length' in rawTts) {
-        const value = validateNonNegativeInt(
-          rawTts.min_chunk_length,
-          'tts.min_chunk_length',
-          warnings,
-        )
-        if (value !== undefined) {
-          tts.minChunkLength = value
-          explicit.ttsMinChunkLength = true
-        }
-      }
-      if ('max_wait_ms' in rawTts) {
-        const value = validateNonNegativeInt(rawTts.max_wait_ms, 'tts.max_wait_ms', warnings)
-        if (value !== undefined) {
-          tts.maxWaitMs = value
-          explicit.ttsMaxWaitMs = true
-        }
-      }
-      if ('grace_window_ms' in rawTts) {
-        const value = validateNonNegativeInt(
-          rawTts.grace_window_ms,
-          'tts.grace_window_ms',
-          warnings,
-        )
-        if (value !== undefined) {
-          tts.graceWindowMs = value
-          explicit.ttsGraceWindowMs = true
-        }
-      }
-
-      if (Object.keys(tts).length > 0) {
-        config.tts = tts
-      }
+      if (Object.keys(tts).length > 0) config.tts = tts
     }
   }
 
@@ -327,30 +316,19 @@ export async function loadGlobalConfig(
 export function applyGlobalConfig(baseConfig: AppConfig, globalConfig: OrbGlobalConfig): AppConfig {
   const nextConfig: AppConfig = { ...baseConfig }
 
-  if (globalConfig.provider) {
-    nextConfig.llmProvider = globalConfig.provider
-    if (!globalConfig.model) {
-      nextConfig.llmModel = DEFAULT_MODEL_ALIAS_BY_PROVIDER[globalConfig.provider]
-    }
+  for (const field of ROOT_FIELDS) {
+    const value = globalConfig[field.orbKey]
+    if (value !== undefined) field.apply(nextConfig, value, globalConfig)
   }
-
-  if (globalConfig.model) nextConfig.llmModel = globalConfig.model
-  if (globalConfig.reasoningEffort) nextConfig.llmReasoningEffort = globalConfig.reasoningEffort
-  if (globalConfig.skipIntro !== undefined) nextConfig.skipIntro = globalConfig.skipIntro
 
   if (globalConfig.tts) {
     const tts = globalConfig.tts
-    if (tts.enabled !== undefined) nextConfig.ttsEnabled = tts.enabled
-    if (tts.streaming !== undefined) nextConfig.ttsStreamingEnabled = tts.streaming
-    if (tts.mode) nextConfig.ttsMode = tts.mode
-    if (tts.serverUrl) nextConfig.ttsServerUrl = tts.serverUrl
-    if (tts.voice) nextConfig.ttsVoice = tts.voice
-    if (tts.speed !== undefined) nextConfig.ttsSpeed = tts.speed
-    if (tts.bufferSentences !== undefined) nextConfig.ttsBufferSentences = tts.bufferSentences
-    if (tts.clauseBoundaries !== undefined) nextConfig.ttsClauseBoundaries = tts.clauseBoundaries
-    if (tts.minChunkLength !== undefined) nextConfig.ttsMinChunkLength = tts.minChunkLength
-    if (tts.maxWaitMs !== undefined) nextConfig.ttsMaxWaitMs = tts.maxWaitMs
-    if (tts.graceWindowMs !== undefined) nextConfig.ttsGraceWindowMs = tts.graceWindowMs
+    for (const field of TTS_FIELDS) {
+      const value = tts[field.orbKey]
+      if (value !== undefined) {
+        ;(nextConfig as Record<string, unknown>)[field.appKey] = value
+      }
+    }
   }
 
   return nextConfig
@@ -359,29 +337,20 @@ export function applyGlobalConfig(baseConfig: AppConfig, globalConfig: OrbGlobal
 export function serializeGlobalConfig(config: OrbGlobalConfig): string {
   const document: RawObject = {}
 
-  if (config.provider) document.provider = config.provider
-  if (config.model) document.model = config.model
-  if (config.reasoningEffort) document.reasoning_effort = config.reasoningEffort
-  if (config.skipIntro !== undefined) document.skip_intro = config.skipIntro
+  for (const field of ROOT_FIELDS) {
+    const value = config[field.orbKey]
+    if (value !== undefined) document[field.tomlKey] = value
+  }
 
   if (config.tts) {
     const tts: RawObject = {}
-    if (config.tts.enabled !== undefined) tts.enabled = config.tts.enabled
-    if (config.tts.streaming !== undefined) tts.streaming = config.tts.streaming
-    if (config.tts.mode) tts.mode = config.tts.mode
-    if (config.tts.serverUrl) tts.server_url = config.tts.serverUrl
-    if (config.tts.voice) tts.voice = config.tts.voice
-    if (config.tts.speed !== undefined) tts.speed = config.tts.speed
-    if (config.tts.bufferSentences !== undefined) tts.buffer_sentences = config.tts.bufferSentences
-    if (config.tts.clauseBoundaries !== undefined)
-      tts.clause_boundaries = config.tts.clauseBoundaries
-    if (config.tts.minChunkLength !== undefined) tts.min_chunk_length = config.tts.minChunkLength
-    if (config.tts.maxWaitMs !== undefined) tts.max_wait_ms = config.tts.maxWaitMs
-    if (config.tts.graceWindowMs !== undefined) tts.grace_window_ms = config.tts.graceWindowMs
+    for (const field of TTS_FIELDS) {
+      const value = config.tts[field.orbKey]
+      if (value !== undefined) tts[field.tomlKey] = value
+    }
     if (Object.keys(tts).length > 0) document.tts = tts
   }
 
-  // @iarna/toml expects JsonMap; our RawObject is structurally compatible at runtime.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return stringify(document as any)
 }
