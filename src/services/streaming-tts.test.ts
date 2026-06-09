@@ -315,14 +315,7 @@ describe('createStreamingSpeechController', () => {
   })
 
   describe('prefetch race', () => {
-    // Regression: when the prefetch for sentence N+1 had not yet resolved by
-    // the time sentence N finished playing, streamOrFallback would fall back
-    // to a fresh fetch — but leave the in-flight prefetch dangling. The stale
-    // prefetch would later populate `prefetchedStream`, and sentence N+2
-    // would play it instead of its own audio, sounding like "last sentence
-    // repeats." The fix cancels the in-flight prefetch before starting the
-    // fresh fetch; this test pins that behavior.
-    it('aborts an in-flight prefetch when it has to fall back to a fresh fetch', async () => {
+    it('reuses an in-flight prefetch for the matching next chunk', async () => {
       const signals: AbortSignal[] = []
       const deferreds: Array<{
         resolve: (r: Response) => void
@@ -364,22 +357,24 @@ describe('createStreamingSpeechController', () => {
       controller.feedText('Gamma. ')
       controller.finalize()
 
-      // Wait for Alpha's fetch to fire.
       await waitFor(() => deferreds.length >= 1)
       expect(deferreds[0]!.text).toContain('Alpha')
-      // Resolve Alpha with an empty stream so its playback completes quickly.
-      // Alpha's streamOrFallback will schedule a prefetch for Beta, then
-      // session.done resolves; the controller recurses, sees Beta's prefetch
-      // has not yet resolved, and must start a fresh fetch for Beta. The fix
-      // aborts the dangling prefetch along the way.
       deferreds[0]!.resolve(emptyStreamResponse())
 
-      await waitFor(() => deferreds.length >= 3)
-
-      // deferreds[1] is Beta's prefetch; deferreds[2] is Beta's fresh fetch.
+      await waitFor(() => deferreds.length >= 2)
       expect(deferreds[1]!.text).toContain('Beta')
-      expect(deferreds[2]!.text).toContain('Beta')
-      expect(signals[1]!.aborted).toBe(true)
+      await new Promise((resolve) => setTimeout(resolve, 25))
+
+      const betaRequestsBeforeResolve = deferreds.filter(({ text }) => text.includes('Beta'))
+      expect(betaRequestsBeforeResolve).toHaveLength(1)
+      expect(signals[1]!.aborted).toBe(false)
+
+      deferreds[1]!.resolve(emptyStreamResponse())
+      await waitFor(() => deferreds.length >= 3)
+      expect(deferreds[2]!.text).toContain('Gamma')
+      deferreds[2]!.resolve(emptyStreamResponse())
+
+      await controller.waitForCompletion()
 
       controller.stop()
     })
