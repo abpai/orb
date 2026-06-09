@@ -2,9 +2,9 @@ import type { LanguageModelUsage, ProviderMetadata } from 'ai'
 import { warn } from '../../services/log'
 
 // Minimum prompt-prefix size at which Gemini implicit caching can engage. Google's
-// docs (2026) list 4,096 tokens for Gemini 3.x and 2,048 for 2.5; we use the smaller
-// value so "should have cached" stays true across every model we ship.
-export const GEMINI_IMPLICIT_CACHE_MIN_TOKENS = 2048
+// current docs list 1,024 tokens for Flash models and 4,096 for Pro models; use
+// the smaller value so cache-eligible Flash requests are included in the signal.
+export const GEMINI_IMPLICIT_CACHE_MIN_TOKENS = 1024
 
 export interface GeminiCacheReport {
   /** Total input (prompt) tokens billed for the turn. */
