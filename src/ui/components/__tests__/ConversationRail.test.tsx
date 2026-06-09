@@ -75,4 +75,34 @@ describe('ConversationRail', () => {
     const frame = normalizeFrame(lastFrame())
     expect(frame).toBe('')
   })
+
+  it('shows a hint when older resumed turns are hidden', () => {
+    const turns = [fixtures.historyEntry.simple()]
+    const { lastFrame } = render(
+      <ConversationRail
+        completedTurns={turns}
+        hiddenTurnCount={120}
+        liveTurn={null}
+        detailMode="compact"
+        assistantLabel="claude"
+      />,
+    )
+    const frame = normalizeFrame(lastFrame())
+    expect(frame).toContain('120 earlier turns hidden')
+    expect(frame).toContain('you:')
+  })
+
+  it('omits the hidden-turns hint when nothing is hidden', () => {
+    const turns = [fixtures.historyEntry.simple()]
+    const { lastFrame } = render(
+      <ConversationRail
+        completedTurns={turns}
+        hiddenTurnCount={0}
+        liveTurn={null}
+        detailMode="compact"
+        assistantLabel="claude"
+      />,
+    )
+    expect(normalizeFrame(lastFrame())).not.toContain('hidden')
+  })
 })
