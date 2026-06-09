@@ -351,3 +351,29 @@ describe('InputPrompt @-file menu', () => {
     await fixture.cleanup()
   })
 })
+
+describe('InputPrompt mention-search guard', () => {
+  it('does not call searchProjectFiles when no @ is present', async () => {
+    let callCount = 0
+    mock.module('../../../services/file-search', () => ({
+      searchProjectFiles: async () => {
+        callCount++
+        return []
+      },
+      invalidateFileList: () => {},
+      listProjectFiles: async () => [],
+    }))
+
+    const { InputPrompt } = await importInputPrompt()
+    const app = render(
+      <InputPrompt state="idle" onSubmit={() => {}} projectPath="/fake/path" />,
+    )
+    await flush()
+
+    app.stdin.write('hello world this is normal typing without any mention')
+    await settle()
+
+    expect(callCount).toBe(0)
+    app.unmount()
+  })
+})

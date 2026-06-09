@@ -96,7 +96,7 @@ export async function runSessionsCommand(args: string[]): Promise<void> {
         void relaunchOrb(buildResumeArgsForSession(session), () => instance.unmount()),
       onCancel: () => instance.unmount(),
     }),
-    { patchConsole: true },
+    { patchConsole: true, concurrent: true },
   )
 
   await instance.waitUntilExit()
