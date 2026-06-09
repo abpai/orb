@@ -384,7 +384,10 @@ export function createProgram({ config: defaults }: ProgramDefaults): Command {
     .option('--no-tts', 'Disable text-to-speech')
     .option('--streaming-tts', 'Enable streaming TTS (default: true)')
     .option('--no-streaming-tts', 'Disable streaming (batch mode)')
-    .option('--yolo', 'Bypass permission prompts and write clamping (dangerous)')
+    .option(
+      '--yolo',
+      'Bypass all permission checks (dangerous). Without --yolo, structured file-write tools (Write/Edit/MultiEdit) are path-clamped to the project root, but Bash/shell is not restricted — use Codex provider for full shell sandboxing.',
+    )
     .configureHelp({ formatHelp: (cmd) => buildHelpText(cmd) })
     .configureOutput({
       writeOut: (str) => process.stdout.write(str),
