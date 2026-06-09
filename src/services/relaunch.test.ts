@@ -44,4 +44,13 @@ describe('buildResumeArgsForSession', () => {
       'thr',
     ])
   })
+
+  it('appends caller-provided runtime flags after the resume target', () => {
+    expect(
+      buildResumeArgsForSession(summary({ id: 'thr', source: 'codex' }), [
+        '--provider=openai',
+        '--model=gpt-5.5',
+      ]),
+    ).toEqual(['/p', '--codex-thread', 'thr', '--provider=openai', '--model=gpt-5.5'])
+  })
 })

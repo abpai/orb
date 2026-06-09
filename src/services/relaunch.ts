@@ -9,8 +9,12 @@ export function resolveEntryPath(): string {
 }
 
 /** Build the argv that resumes a specific orb saved session. */
-export function buildResumeArgs(projectPath: string, id: string): string[] {
-  return [projectPath, '--resume', id]
+export function buildResumeArgs(
+  projectPath: string,
+  id: string,
+  extraArgs: string[] = [],
+): string[] {
+  return [projectPath, '--resume', id, ...extraArgs]
 }
 
 /**
@@ -22,20 +26,29 @@ export function buildExternalResumeArgs(
   projectPath: string,
   source: SessionSource,
   externalId: string,
+  extraArgs: string[] = [],
 ): string[] {
   switch (source) {
     case 'claude':
-      return [projectPath, '--claude-session', externalId]
+      return [projectPath, '--claude-session', externalId, ...extraArgs]
     case 'codex':
-      return [projectPath, '--codex-thread', externalId]
+      return [projectPath, '--codex-thread', externalId, ...extraArgs]
     default:
-      return buildResumeArgs(projectPath, externalId)
+      return buildResumeArgs(projectPath, externalId, extraArgs)
   }
 }
 
 /** Pick the right resume argv for a picker row regardless of its source. */
-export function buildResumeArgsForSession(session: SessionSummary): string[] {
-  return buildExternalResumeArgs(session.projectPath, session.source ?? 'orb', session.id)
+export function buildResumeArgsForSession(
+  session: SessionSummary,
+  extraArgs: string[] = [],
+): string[] {
+  return buildExternalResumeArgs(
+    session.projectPath,
+    session.source ?? 'orb',
+    session.id,
+    extraArgs,
+  )
 }
 
 /**

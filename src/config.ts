@@ -33,7 +33,7 @@ function normalizeModelForProvider(provider: LlmProvider, value: string): LlmMod
   return isModelAlias(provider, lower) ? lower : normalized
 }
 
-function resolveModelForConfig(provider: LlmProvider, modelId: string): LlmModelId {
+export function resolveModelForConfig(provider: LlmProvider, modelId: string): LlmModelId {
   const normalized = normalizeModelForProvider(provider, modelId)
   if (isForeignModelAlias(provider, normalized)) {
     return DEFAULT_MODEL_ALIAS_BY_PROVIDER[provider]
@@ -281,6 +281,11 @@ interface ParsedOpts {
 interface ParseResult {
   config: AppConfig
   explicit: ExplicitFlags
+  cliExplicit: ExplicitFlags
+  cliOverrides: {
+    provider?: LlmProvider
+    model?: string
+  }
 }
 
 export interface ExplicitFlags {
@@ -367,21 +372,40 @@ export function parseCliArgs(args: string[], options: ParseCliOptions = {}): Par
   }
   config.resumeSession = sessionOverride?.session
 
-  const explicit: ExplicitFlags = {
+  const cliExplicit: ExplicitFlags = {
     provider:
-      baseExplicit.provider === true ||
       isUserSet(program, 'provider') ||
       isUserSet(program, 'llmProvider') ||
+      Boolean(modelOverride?.provider) ||
       Boolean(sessionOverride),
-    model: baseExplicit.model === true || isUserSet(program, 'model'),
-    ttsBufferSentences: baseExplicit.ttsBufferSentences === true,
-    ttsMinChunkLength: baseExplicit.ttsMinChunkLength === true,
-    ttsMaxWaitMs: baseExplicit.ttsMaxWaitMs === true,
-    ttsGraceWindowMs: baseExplicit.ttsGraceWindowMs === true,
-    ttsClauseBoundaries: baseExplicit.ttsClauseBoundaries === true,
+    model: isUserSet(program, 'model'),
+    ttsBufferSentences: false,
+    ttsMinChunkLength: false,
+    ttsMaxWaitMs: false,
+    ttsGraceWindowMs: false,
+    ttsClauseBoundaries: false,
   }
 
-  return { config, explicit }
+  const explicit: ExplicitFlags = {
+    provider: baseExplicit.provider === true || cliExplicit.provider,
+    model: baseExplicit.model === true || cliExplicit.model,
+    ttsBufferSentences: baseExplicit.ttsBufferSentences === true || cliExplicit.ttsBufferSentences,
+    ttsMinChunkLength: baseExplicit.ttsMinChunkLength === true || cliExplicit.ttsMinChunkLength,
+    ttsMaxWaitMs: baseExplicit.ttsMaxWaitMs === true || cliExplicit.ttsMaxWaitMs,
+    ttsGraceWindowMs: baseExplicit.ttsGraceWindowMs === true || cliExplicit.ttsGraceWindowMs,
+    ttsClauseBoundaries:
+      baseExplicit.ttsClauseBoundaries === true || cliExplicit.ttsClauseBoundaries,
+  }
+
+  return {
+    config,
+    explicit,
+    cliExplicit,
+    cliOverrides: {
+      provider: providerOverride ?? modelOverride?.provider,
+      model: modelOverride?.id,
+    },
+  }
 }
 
 export { DEFAULT_CONFIG, DEFAULT_MODEL_ALIAS_BY_PROVIDER, DEFAULT_MODEL_BY_PROVIDER }

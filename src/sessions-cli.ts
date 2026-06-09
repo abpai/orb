@@ -22,14 +22,37 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`
 }
 
-function formatResumeCommand(session: SessionSummary): string {
-  return `orb ${buildResumeArgsForSession(session).map(shellQuote).join(' ')}`
+function formatResumeCommand(session: SessionSummary, extraArgs: string[] = []): string {
+  return `orb ${buildResumeArgsForSession(session, extraArgs).map(shellQuote).join(' ')}`
+}
+
+export function parseSessionsArgs(args: string[]): {
+  includeExternal: boolean
+  resumeExtraArgs: string[]
+} {
+  const resumeExtraArgs: string[] = []
+  let includeExternal = false
+
+  for (const arg of args) {
+    if (arg === '--all') {
+      includeExternal = true
+      continue
+    }
+    if (arg.startsWith('--all=')) {
+      const value = arg.slice('--all='.length).trim().toLowerCase()
+      includeExternal = value !== 'false' && value !== '0'
+      continue
+    }
+    resumeExtraArgs.push(arg)
+  }
+
+  return { includeExternal, resumeExtraArgs }
 }
 
 /** Plain, non-interactive listing — used when stdout is piped or not a TTY. */
 export function formatSessionList(
   sessions: SessionSummary[],
-  { capped = false }: { capped?: boolean } = {},
+  { capped = false, resumeExtraArgs = [] }: { capped?: boolean; resumeExtraArgs?: string[] } = {},
 ): string {
   if (sessions.length === 0) {
     // A capped scan may have hidden matching sessions, so say so even when the
@@ -43,7 +66,7 @@ export function formatSessionList(
     return [
       title,
       `  ${formatSourceTag(session.source)} · ${abbreviateHome(session.projectPath)} · ${provider} · ${formatRelativeTime(session.lastModified)} · ${pluralizeTurns(session.turnCount)}`,
-      `  resume: ${formatResumeCommand(session)}`,
+      `  resume: ${formatResumeCommand(session, resumeExtraArgs)}`,
     ].join('\n')
   })
 
@@ -59,12 +82,13 @@ export function formatSessionsHelp(): string {
   return [
     `${heading('orb sessions')} — browse and resume saved conversations`,
     '',
-    `${heading('Usage:')} orb sessions [--all]`,
+    `${heading('Usage:')} orb sessions [--all] [orb options]`,
     '  Interactive picker in a TTY; plain list when piped.',
     '  Pick a session to relaunch orb with the right resume flag.',
     '',
     `${heading('Options:')}`,
     '  --all    Also include this project’s Claude Code and Codex sessions',
+    '  Orb runtime options like --provider, --model, and --reasoning-effort are kept for the resumed session.',
   ].join('\n')
 }
 
@@ -74,9 +98,10 @@ export async function runSessionsCommand(args: string[]): Promise<void> {
     return
   }
 
+  const { includeExternal, resumeExtraArgs } = parseSessionsArgs(args)
+
   // `--all` also surfaces this project's Claude Code and Codex sessions, not
   // just orb's own saved conversations.
-  const includeExternal = args.includes('--all')
   const cwd = process.cwd()
 
   const { sessions, capped } = includeExternal
@@ -84,7 +109,7 @@ export async function runSessionsCommand(args: string[]): Promise<void> {
     : { sessions: await listSessions(undefined, cwd), capped: false }
 
   if (!process.stdout.isTTY || sessions.length === 0) {
-    console.log(formatSessionList(sessions, { capped }))
+    console.log(formatSessionList(sessions, { capped, resumeExtraArgs }))
     return
   }
 
@@ -93,7 +118,9 @@ export async function runSessionsCommand(args: string[]): Promise<void> {
       sessions,
       note: capped ? CODEX_CAPPED_NOTE : undefined,
       onSelect: (session: SessionSummary) =>
-        void relaunchOrb(buildResumeArgsForSession(session), () => instance.unmount()),
+        void relaunchOrb(buildResumeArgsForSession(session, resumeExtraArgs), () =>
+          instance.unmount(),
+        ),
       onCancel: () => instance.unmount(),
     }),
     { patchConsole: true, concurrent: true },
