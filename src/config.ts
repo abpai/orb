@@ -177,6 +177,21 @@ function reasoningEffort(value: string): ReasoningEffort {
   throw new Error(`Expected one of ${REASONING_EFFORTS.join(', ')}, got "${value}"`)
 }
 
+function voiceParser(value: string): Voice {
+  const v = value.trim()
+  if (VOICES.includes(v as Voice)) return v as Voice
+  throw new Error(`Expected one of ${VOICES.join(', ')}, got "${value}"`)
+}
+
+const TTS_MODES = ['serve', 'generate', 'server'] as const
+
+function ttsModeParser(value: string): 'serve' | 'generate' {
+  const v = value.trim()
+  if (v === 'serve' || v === 'server') return 'serve'
+  if (v === 'generate') return 'generate'
+  throw new Error(`Expected one of ${TTS_MODES.join(', ')}, got "${value}"`)
+}
+
 interface ProgramDefaults {
   config: AppConfig
 }
@@ -358,11 +373,12 @@ export function createProgram({ config: defaults }: ProgramDefaults): Command {
       reasoningEffort,
       defaults.llmReasoningEffort,
     )
-    .option('--voice <voice>', `TTS voice: ${VOICES.join(', ')}`, defaults.ttsVoice)
+    .option('--voice <voice>', `TTS voice: ${VOICES.join(', ')}`, voiceParser, defaults.ttsVoice)
     .option(
       '--tts-mode <mode>',
-      'TTS mode: serve (tts-gateway HTTP server), generate (local macOS say), server',
-      defaults.ttsMode,
+      'TTS mode: serve (tts-gateway HTTP server), generate (local macOS say), server (alias for serve)',
+      ttsModeParser,
+      defaults.ttsMode as 'serve' | 'generate',
     )
     .option('--tts-server-url <url>', 'Serve-mode tts-gateway URL (default: http://localhost:8000)')
     .option(
@@ -403,8 +419,8 @@ interface ParsedOpts {
   llmProvider?: string
   model?: string
   reasoningEffort: ReasoningEffort
-  voice: string
-  ttsMode: string
+  voice: Voice
+  ttsMode: 'serve' | 'generate'
   ttsServerUrl?: string
   ttsSpeed: number
   resumeSession?: string
@@ -462,21 +478,10 @@ export function parseCliArgs(args: string[], options: ParseCliOptions = {}): Par
       ? opts.streamingTts !== false
       : baseConfig.ttsStreamingEnabled,
     ttsSpeed: opts.ttsSpeed,
+    ttsVoice: opts.voice,
+    ttsMode: opts.ttsMode,
     llmReasoningEffort: opts.reasoningEffort,
     yolo: isUserSet(program, 'yolo') ? opts.yolo === true : baseConfig.yolo,
-  }
-
-  // Voice validation
-  if (VOICES.includes(opts.voice as Voice)) {
-    config.ttsVoice = opts.voice as Voice
-  }
-
-  // TTS mode (normalize "server" → "serve")
-  const ttsMode = opts.ttsMode
-  if (ttsMode === 'generate' || ttsMode === 'serve') {
-    config.ttsMode = ttsMode
-  } else if (ttsMode === 'server') {
-    config.ttsMode = 'serve'
   }
 
   // TTS server URL
