@@ -50,6 +50,16 @@ function mapStateToAnimationMode(state: AppState): AnimationMode {
 
 const FIXED_UI_OVERHEAD = 8
 
+// On resume, the saved history is seeded into `completedTurns` all at once and
+// flushed into Ink's <Static> on mount. That first flush reconciles + lays out
+// + serializes every historical TurnRow, so its cost is O(turns × answer size)
+// — hundreds of ms to several seconds for a long session, which freezes input
+// right after resuming. Steady-state typing is unaffected (Static prunes), so
+// we only need to bound what the *initial* render materializes: keep the most
+// recent turns visible and leave older ones to terminal scrollback. The full
+// history is retained for `focusRefs`, model context, and persistence.
+const MAX_RESUMED_RENDERED_TURNS = 50
+
 export function App({
   config,
   initialSession,
@@ -73,6 +83,19 @@ export function App({
     orbSessionId,
     taskState: state,
   })
+
+  // Fixed at mount: how many resumed turns to skip rendering. Using a stable
+  // start index (not `slice(-N)`) keeps <Static> append-only — new turns this
+  // session always render, while the older resumed tail stays in scrollback.
+  const [renderStartIndex] = useState(() => {
+    const restoredCount =
+      initialSession?.llmProvider === config.llmProvider ? (initialSession.history?.length ?? 0) : 0
+    return Math.max(0, restoredCount - MAX_RESUMED_RENDERED_TURNS)
+  })
+  const renderedCompletedTurns = useMemo(
+    () => conversation.completedTurns.slice(renderStartIndex),
+    [conversation.completedTurns, renderStartIndex],
+  )
 
   const isPickerOpen = pickerSessions !== null
 
@@ -257,7 +280,8 @@ export function App({
         />
       ) : (
         <ConversationRail
-          completedTurns={conversation.completedTurns}
+          completedTurns={renderedCompletedTurns}
+          hiddenTurnCount={renderStartIndex}
           liveTurn={conversation.liveTurn}
           detailMode={detailMode}
           maxAnswerLines={maxAnswerLines}
