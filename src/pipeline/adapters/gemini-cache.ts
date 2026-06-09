@@ -2,9 +2,14 @@ import type { LanguageModelUsage, ProviderMetadata } from 'ai'
 import { warn } from '../../services/log'
 
 // Minimum prompt-prefix size at which Gemini implicit caching can engage. Google's
-// current docs list 1,024 tokens for Flash models and 4,096 for Pro models; use
-// the smaller value so cache-eligible Flash requests are included in the signal.
-export const GEMINI_IMPLICIT_CACHE_MIN_TOKENS = 1024
+// docs list model-specific thresholds; use the selected model so the warning
+// stays observational instead of firing for prompts that could not have cached.
+export const GEMINI_IMPLICIT_CACHE_DEFAULT_MIN_TOKENS = 4096
+export const GEMINI_2_5_IMPLICIT_CACHE_MIN_TOKENS = 2048
+
+export interface GeminiCacheReportOptions {
+  modelId?: string
+}
 
 export interface GeminiCacheReport {
   /** Total input (prompt) tokens billed for the turn. */
@@ -13,6 +18,8 @@ export interface GeminiCacheReport {
   cachedInputTokens: number
   /** Fraction of input tokens served from cache, in [0, 1]. */
   hitRate: number
+  /** Model-specific input token threshold used for the implicit-cache signal. */
+  implicitCacheMinTokens: number
   /**
    * Heuristic: the request was large enough to benefit from caching, yet zero
    * input tokens were served from cache. Because `inputTokens` is the whole
@@ -34,6 +41,7 @@ export interface GeminiCacheReport {
 export function buildGeminiCacheReport(
   usage: LanguageModelUsage | undefined,
   providerMetadata?: ProviderMetadata,
+  options: GeminiCacheReportOptions = {},
 ): GeminiCacheReport {
   const inputTokens = usage?.inputTokens ?? 0
   const cachedInputTokens =
@@ -42,9 +50,15 @@ export function buildGeminiCacheReport(
     readGoogleCachedTokens(providerMetadata) ??
     0
   const hitRate = inputTokens > 0 ? cachedInputTokens / inputTokens : 0
-  const cacheLikelyDisabled =
-    inputTokens >= GEMINI_IMPLICIT_CACHE_MIN_TOKENS && cachedInputTokens === 0
-  return { inputTokens, cachedInputTokens, hitRate, cacheLikelyDisabled }
+  const implicitCacheMinTokens = geminiImplicitCacheMinTokens(options.modelId)
+  const cacheLikelyDisabled = inputTokens >= implicitCacheMinTokens && cachedInputTokens === 0
+  return { inputTokens, cachedInputTokens, hitRate, implicitCacheMinTokens, cacheLikelyDisabled }
+}
+
+export function geminiImplicitCacheMinTokens(modelId: string | undefined): number {
+  const normalized = (modelId ?? '').toLowerCase()
+  if (normalized.includes('gemini-2.5-')) return GEMINI_2_5_IMPLICIT_CACHE_MIN_TOKENS
+  return GEMINI_IMPLICIT_CACHE_DEFAULT_MIN_TOKENS
 }
 
 function readGoogleCachedTokens(providerMetadata?: ProviderMetadata): number | undefined {
@@ -70,10 +84,10 @@ export function reportGeminiCacheUsage(report: GeminiCacheReport): boolean {
   if (!report.cacheLikelyDisabled || warnedCacheDisabled) return false
   warnedCacheDisabled = true
   warn(
-    `Gemini served 0 of ${report.inputTokens} input tokens from cache on a request large enough to ` +
-      'benefit. Tool-using requests can silently disable implicit caching (vercel/ai#11513); if this ' +
-      'persists, the stable system prefix is being re-billed at full input price each turn. This ' +
-      'warning is shown once per session.',
+    `Gemini served 0 of ${report.inputTokens} input tokens from cache on a request that met the ` +
+      `${report.implicitCacheMinTokens}-token implicit caching threshold. Tool-using requests can ` +
+      'silently disable implicit caching (vercel/ai#11513); if this persists, the stable system ' +
+      'prefix is being re-billed at full input price each turn. This warning is shown once per session.',
   )
   return true
 }

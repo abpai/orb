@@ -99,7 +99,9 @@ export function createGeminiAdapter(config: AgentAdapterConfig): AgentAdapter {
             agentStream.totalUsage,
             agentStream.providerMetadata,
           ])
-          reportGeminiCacheUsage(buildGeminiCacheReport(usage, providerMetadata))
+          reportGeminiCacheUsage(
+            buildGeminiCacheReport(usage, providerMetadata, { modelId: appConfig.llmModel }),
+          )
         } catch (err) {
           warn('failed to read Gemini cache usage', err)
         }

@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import type { LanguageModelUsage, ProviderMetadata } from 'ai'
 import {
-  GEMINI_IMPLICIT_CACHE_MIN_TOKENS,
+  GEMINI_2_5_IMPLICIT_CACHE_MIN_TOKENS,
+  GEMINI_IMPLICIT_CACHE_DEFAULT_MIN_TOKENS,
   buildGeminiCacheReport,
+  geminiImplicitCacheMinTokens,
   reportGeminiCacheUsage,
   resetGeminiCacheWarnings,
 } from './gemini-cache'
@@ -54,14 +56,53 @@ describe('buildGeminiCacheReport', () => {
   })
 
   it('flags a large prefix with zero cache reads as likely disabled', () => {
-    const report = buildGeminiCacheReport(usage({ inputTokens: GEMINI_IMPLICIT_CACHE_MIN_TOKENS }))
+    const report = buildGeminiCacheReport(
+      usage({ inputTokens: GEMINI_IMPLICIT_CACHE_DEFAULT_MIN_TOKENS }),
+    )
     expect(report.cachedInputTokens).toBe(0)
     expect(report.cacheLikelyDisabled).toBe(true)
   })
 
+  it('does not flag a newer Gemini prompt below its implicit-cache threshold', () => {
+    const report = buildGeminiCacheReport(
+      usage({ inputTokens: GEMINI_IMPLICIT_CACHE_DEFAULT_MIN_TOKENS - 1 }),
+      undefined,
+      { modelId: 'gemini-3.1-pro-preview' },
+    )
+    expect(report.implicitCacheMinTokens).toBe(GEMINI_IMPLICIT_CACHE_DEFAULT_MIN_TOKENS)
+    expect(report.cacheLikelyDisabled).toBe(false)
+  })
+
+  it('uses the lower Gemini 2.5 implicit-cache threshold', () => {
+    const report = buildGeminiCacheReport(
+      usage({ inputTokens: GEMINI_2_5_IMPLICIT_CACHE_MIN_TOKENS }),
+      undefined,
+      { modelId: 'gemini-2.5-flash' },
+    )
+    expect(report.implicitCacheMinTokens).toBe(GEMINI_2_5_IMPLICIT_CACHE_MIN_TOKENS)
+    expect(report.cacheLikelyDisabled).toBe(true)
+  })
+
+  it('classifies implicit-cache thresholds by Gemini model', () => {
+    expect(geminiImplicitCacheMinTokens('gemini-3.5-flash')).toBe(
+      GEMINI_IMPLICIT_CACHE_DEFAULT_MIN_TOKENS,
+    )
+    expect(geminiImplicitCacheMinTokens('gemini-3.1-pro-preview')).toBe(
+      GEMINI_IMPLICIT_CACHE_DEFAULT_MIN_TOKENS,
+    )
+    expect(geminiImplicitCacheMinTokens('gemini-2.5-flash')).toBe(
+      GEMINI_2_5_IMPLICIT_CACHE_MIN_TOKENS,
+    )
+    expect(geminiImplicitCacheMinTokens('models/gemini-2.5-pro')).toBe(
+      GEMINI_2_5_IMPLICIT_CACHE_MIN_TOKENS,
+    )
+  })
+
   it('does not flag a small prefix below the implicit-cache threshold', () => {
     const report = buildGeminiCacheReport(
-      usage({ inputTokens: GEMINI_IMPLICIT_CACHE_MIN_TOKENS - 1 }),
+      usage({ inputTokens: GEMINI_2_5_IMPLICIT_CACHE_MIN_TOKENS - 1 }),
+      undefined,
+      { modelId: 'gemini-2.5-flash' },
     )
     expect(report.cacheLikelyDisabled).toBe(false)
   })
@@ -72,6 +113,7 @@ describe('buildGeminiCacheReport', () => {
       inputTokens: 0,
       cachedInputTokens: 0,
       hitRate: 0,
+      implicitCacheMinTokens: GEMINI_IMPLICIT_CACHE_DEFAULT_MIN_TOKENS,
       cacheLikelyDisabled: false,
     })
   })
