@@ -5,6 +5,7 @@ import { TTSError, type AppConfig, type TTSErrorType, type Voice } from '../type
 import { cleanTextForSpeech } from '../ui/utils/markdown'
 import { detectPlayer, type PlayerProcess } from './audio-player'
 import { createGatewayClient, DEFAULT_SERVER_URL } from './gateway-client'
+import { splitIntoSentences } from './speech-text'
 
 export { detectPlayer, resetDetectedPlayer } from './audio-player'
 
@@ -161,36 +162,6 @@ export function wasPlaybackStopped(): boolean {
 
 export function resetPlaybackStoppedFlag(): void {
   playbackStoppedManually = false
-}
-
-function splitIntoSentences(text: string): string[] {
-  const sentences: string[] = []
-  let current = ''
-
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i]
-    if (char === undefined) continue
-
-    current += char
-
-    if (['.', '!', '?'].includes(char)) {
-      const next = text[i + 1]
-      if (next === undefined || next === ' ' || next === '\n') {
-        const trimmed = current.trim()
-        if (trimmed.length > 0) {
-          sentences.push(trimmed)
-        }
-        current = ''
-      }
-    }
-  }
-
-  const trimmed = current.trim()
-  if (trimmed.length > 0) {
-    sentences.push(trimmed)
-  }
-
-  return sentences
 }
 
 function isValidSpeed(speed: number | undefined): speed is number {

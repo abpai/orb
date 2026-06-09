@@ -14,6 +14,7 @@ import {
 } from './tts'
 import { cleanTextForSpeech } from '../ui/utils/markdown'
 import { createGatewayClient, DEFAULT_SERVER_URL } from './gateway-client'
+import { hasOpenCodeDelimiter } from './speech-text'
 
 interface StreamingSpeechCallbacks {
   onSpeakingStart?: () => void
@@ -86,26 +87,6 @@ function extractChunkAtBoundary(
   }
 
   return { chunk: trimmed, consumed: boundary }
-}
-
-/**
- * Is a code delimiter left open in `text`? An unclosed ``` fence or inline `
- * makes earlier cleaning non-final — closing it later retroactively rewrites
- * the text (see cleanTextForSpeech) — so the buffer prefix is not yet settled
- * and must not be compacted away. Mirrors replaceDelimited's non-overlapping
- * pairing: count ``` fences first, then inline backticks in the fence-free
- * remainder.
- */
-function hasOpenCodeDelimiter(text: string): boolean {
-  let fences = 0
-  let index = text.indexOf('```')
-  while (index !== -1) {
-    fences += 1
-    index = text.indexOf('```', index + 3)
-  }
-  if (fences % 2 !== 0) return true
-  const inlineTicks = (text.replace(/```/g, '').match(/`/g) ?? []).length
-  return inlineTicks % 2 !== 0
 }
 
 export function createStreamingSpeechController(
