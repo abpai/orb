@@ -29,7 +29,10 @@ export function useTimerSlot() {
     [clear],
   )
 
+  /** True while a timer is armed (false once its callback has started). */
+  const isScheduled = useCallback(() => timerRef.current !== null, [])
+
   useEffect(() => clear, [clear])
 
-  return { schedule, clear }
+  return { schedule, clear, isScheduled }
 }

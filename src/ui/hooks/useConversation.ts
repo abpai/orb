@@ -19,8 +19,6 @@ import { getModelChoices } from '../utils/model-choices'
 import { useSyncedRef } from './useSyncedRef'
 import { useTimerSlot } from './useTimerSlot'
 
-export { getModelChoices }
-
 interface UseConversationConfig {
   config: AppConfig
   initialSession?: SavedSession | null
@@ -85,23 +83,19 @@ export function useConversation({
   const agentSessionRef = useRef<AgentSession | undefined>(initialAgentSession)
   const pendingSaveRef = useRef(false)
   const pendingRenderTurnRef = useRef<HistoryEntry | null>(null)
-  const renderFlushPendingRef = useRef(false)
   const lastRenderFlushAtRef = useRef(0)
 
   const renderFlushTimer = useTimerSlot()
 
-  const clearScheduledRenderFlush = useCallback(() => {
-    renderFlushPendingRef.current = false
-    renderFlushTimer.clear()
-  }, [renderFlushTimer])
+  const clearScheduledRenderFlush = renderFlushTimer.clear
 
   const flushPendingLiveTurn = useCallback(() => {
-    renderFlushPendingRef.current = false
     lastRenderFlushAtRef.current = Date.now()
     const pending = pendingRenderTurnRef.current
     pendingRenderTurnRef.current = null
+    // The delta handler already wrote `pending` into liveTurnRef; this flush
+    // exists to let the lagging state (and so the render) catch up to the ref.
     if (pending && liveTurnRef.current !== null) {
-      // Bypass updateLiveTurn: the ref already holds `pending`; only state lags.
       updateLiveTurn(pending)
     }
   }, [liveTurnRef, updateLiveTurn])
@@ -112,10 +106,9 @@ export function useConversation({
    * reconcile the whole terminal almost continuously, which crowds out typing.
    */
   const scheduleRenderFlush = useCallback(() => {
-    if (renderFlushPendingRef.current) return
+    if (renderFlushTimer.isScheduled()) return
     const elapsed = Date.now() - lastRenderFlushAtRef.current
     const delay = Math.max(0, renderIntervalMs - elapsed)
-    renderFlushPendingRef.current = true
     renderFlushTimer.schedule(flushPendingLiveTurn, delay)
   }, [flushPendingLiveTurn, renderFlushTimer, renderIntervalMs])
 
