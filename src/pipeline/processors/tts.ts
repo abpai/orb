@@ -3,11 +3,7 @@ import { createFrame } from '../frames'
 import type { Processor } from '../processor'
 import type { AppConfig } from '../../types'
 import { TTSError } from '../../types'
-import {
-  createStreamingSpeechController,
-  type StreamingSpeechController,
-} from '../../services/streaming-tts'
-import { pauseSpeaking, resumeSpeaking, speak, stopSpeaking } from '../../services/tts'
+import { createStreamingSpeechController } from '../../services/streaming-tts'
 import type { TTSCompletionHandle } from './tts-run'
 
 export type { TTSCompletionHandle } from './tts-run'
@@ -17,14 +13,14 @@ interface TTSRunControl {
 }
 
 /**
- * TTSProcessor: intercepts agent text frames to drive TTS.
+ * TTSProcessor: intercepts agent text frames to drive TTS through a single
+ * StreamingSpeechController, then hands its control surface
+ * (wait/stop/pause/resume) to the PipelineTask.
  *
- * Streaming mode: wraps StreamingSpeechController, feeds text deltas,
- * emits speaking start/end/error frames, and hands a completion handle
- * to the PipelineTask to await.
- *
- * Batch mode: hands a completion handle to the PipelineTask on completion
- * that speaks the full text.
+ * Streaming mode feeds text deltas as they arrive so audio starts mid-response;
+ * batch mode withholds the deltas and feeds the whole text once the response
+ * completes. Both then finalize the same controller — there is no longer a
+ * separate file-by-file batch path.
  *
  * All frames pass through to downstream (transport sees them for UI updates).
  */
@@ -36,29 +32,25 @@ export function createTTSProcessor(appConfig: AppConfig, runControl?: TTSRunCont
       return
     }
 
-    const useStreaming = appConfig.ttsStreamingEnabled
-    let controller: StreamingSpeechController | null = null
-    let controllerHandedOff = false
+    const feedDeltas = appConfig.ttsStreamingEnabled
     const pendingTTSFrames: Frame[] = []
-
-    if (useStreaming) {
-      controller = createStreamingSpeechController(appConfig, {
-        onSpeakingStart: () => {
-          pendingTTSFrames.push(createFrame('tts-speaking-start'))
-        },
-        onSpeakingEnd: () => {
-          pendingTTSFrames.push(createFrame('tts-speaking-end'))
-        },
-        onError: (err: TTSError) => {
-          pendingTTSFrames.push(
-            createFrame('tts-error', {
-              errorType: err.type,
-              message: err.message,
-            }),
-          )
-        },
-      })
-    }
+    const controller = createStreamingSpeechController(appConfig, {
+      onSpeakingStart: () => {
+        pendingTTSFrames.push(createFrame('tts-speaking-start'))
+      },
+      onSpeakingEnd: () => {
+        pendingTTSFrames.push(createFrame('tts-speaking-end'))
+      },
+      onError: (err: TTSError) => {
+        pendingTTSFrames.push(
+          createFrame('tts-error', {
+            errorType: err.type,
+            message: err.message,
+          }),
+        )
+      },
+    })
+    let controllerHandedOff = false
 
     function* drainPending(): Iterable<Frame> {
       while (pendingTTSFrames.length > 0) {
@@ -66,46 +58,32 @@ export function createTTSProcessor(appConfig: AppConfig, runControl?: TTSRunCont
       }
     }
 
-    let completedText = ''
-
     try {
       for await (const frame of upstream) {
-        // Feed text deltas to streaming TTS controller
-        if (frame.kind === 'agent-text-delta' && controller) {
+        // Streaming mode: feed deltas as they arrive. Batch mode waits for the
+        // complete text below.
+        if (frame.kind === 'agent-text-delta' && feedDeltas) {
           controller.feedText(frame.delta)
         }
 
-        // On agent completion, finalize TTS
+        // On agent completion, finalize TTS and hand off the playback session.
         if (frame.kind === 'agent-text-complete') {
-          completedText = frame.text
-
-          if (controller) {
-            // Streaming mode: finalize and yield pending frame
-            controller.finalize()
-            yield frame
-            yield* drainPending()
-
-            if (controller.isActive()) {
-              const ctrl = controller
-              controllerHandedOff = true
-              runControl?.setCompletion({
-                waitForCompletion: () => ctrl.waitForCompletion(),
-                stop: () => ctrl.stop(),
-                pause: () => ctrl.pause(),
-                resume: () => ctrl.resume(),
-              })
-            }
-            continue
-          }
-
-          // Batch mode: hand the synthesized playback work to the task layer.
+          // Batch mode withheld the deltas; feed the whole text now so both
+          // modes converge on the same finalize + handoff.
+          if (!feedDeltas) controller.feedText(frame.text)
+          controller.finalize()
           yield frame
-          runControl?.setCompletion({
-            waitForCompletion: () => speak(completedText, appConfig),
-            stop: () => stopSpeaking(),
-            pause: () => pauseSpeaking(),
-            resume: () => resumeSpeaking(),
-          })
+          yield* drainPending()
+
+          if (controller.isActive()) {
+            controllerHandedOff = true
+            runControl?.setCompletion({
+              waitForCompletion: () => controller.waitForCompletion(),
+              stop: () => controller.stop(),
+              pause: () => controller.pause(),
+              resume: () => controller.resume(),
+            })
+          }
           continue
         }
 
@@ -115,7 +93,7 @@ export function createTTSProcessor(appConfig: AppConfig, runControl?: TTSRunCont
       }
     } finally {
       if (!controllerHandedOff) {
-        controller?.stop()
+        controller.stop()
       }
     }
   }
