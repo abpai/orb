@@ -281,7 +281,11 @@ interface ParsedOpts {
 interface ParseResult {
   config: AppConfig
   explicit: ExplicitFlags
-  cliExplicit: ExplicitFlags
+  /**
+   * Provider/model that were explicitly requested on this invocation's argv
+   * (never from config-file defaults). `--provider`/`--model` have no Commander
+   * defaults, so their presence here means the user typed them.
+   */
   cliOverrides: {
     provider?: LlmProvider
     model?: string
@@ -372,37 +376,26 @@ export function parseCliArgs(args: string[], options: ParseCliOptions = {}): Par
   }
   config.resumeSession = sessionOverride?.session
 
-  const cliExplicit: ExplicitFlags = {
+  const explicit: ExplicitFlags = {
     provider:
+      baseExplicit.provider === true ||
       isUserSet(program, 'provider') ||
       isUserSet(program, 'llmProvider') ||
       Boolean(modelOverride?.provider) ||
       Boolean(sessionOverride),
-    model: isUserSet(program, 'model'),
-    ttsBufferSentences: false,
-    ttsMinChunkLength: false,
-    ttsMaxWaitMs: false,
-    ttsGraceWindowMs: false,
-    ttsClauseBoundaries: false,
-  }
-
-  const explicit: ExplicitFlags = {
-    provider: baseExplicit.provider === true || cliExplicit.provider,
-    model: baseExplicit.model === true || cliExplicit.model,
-    ttsBufferSentences: baseExplicit.ttsBufferSentences === true || cliExplicit.ttsBufferSentences,
-    ttsMinChunkLength: baseExplicit.ttsMinChunkLength === true || cliExplicit.ttsMinChunkLength,
-    ttsMaxWaitMs: baseExplicit.ttsMaxWaitMs === true || cliExplicit.ttsMaxWaitMs,
-    ttsGraceWindowMs: baseExplicit.ttsGraceWindowMs === true || cliExplicit.ttsGraceWindowMs,
-    ttsClauseBoundaries:
-      baseExplicit.ttsClauseBoundaries === true || cliExplicit.ttsClauseBoundaries,
+    model: baseExplicit.model === true || isUserSet(program, 'model'),
+    ttsBufferSentences: baseExplicit.ttsBufferSentences === true,
+    ttsMinChunkLength: baseExplicit.ttsMinChunkLength === true,
+    ttsMaxWaitMs: baseExplicit.ttsMaxWaitMs === true,
+    ttsGraceWindowMs: baseExplicit.ttsGraceWindowMs === true,
+    ttsClauseBoundaries: baseExplicit.ttsClauseBoundaries === true,
   }
 
   return {
     config,
     explicit,
-    cliExplicit,
     cliOverrides: {
-      provider: providerOverride ?? modelOverride?.provider,
+      provider: providerOverride ?? modelOverride?.provider ?? sessionOverride?.provider,
       model: modelOverride?.id,
     },
   }

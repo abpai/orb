@@ -90,7 +90,7 @@ export async function resolveRuntimeConfig(
   }
 
   const baseConfig = applyGlobalConfig(DEFAULT_CONFIG, globalConfig.config)
-  const { config, explicit, cliExplicit, cliOverrides } = parseCliArgs(args, {
+  const { config, explicit, cliOverrides } = parseCliArgs(args, {
     baseConfig,
     baseExplicit: globalConfig.explicit,
   })
@@ -105,11 +105,14 @@ export async function resolveRuntimeConfig(
         code: 1,
       }
     }
+    // Explicit CLI flags win over the saved session; config-file defaults do
+    // not. A provider-only override drops the saved model (it may not exist on
+    // the new provider) and falls through to that provider's default alias.
     const resumeProvider = cliOverrides.provider ?? resumeById.llmProvider
     config.llmProvider = resumeProvider
-    if (cliExplicit.model && cliOverrides.model) {
+    if (cliOverrides.model) {
       config.llmModel = resolveModelForConfig(resumeProvider, cliOverrides.model)
-    } else if (!cliExplicit.provider) {
+    } else if (!cliOverrides.provider) {
       config.llmModel = resumeById.llmModel
     }
   }
