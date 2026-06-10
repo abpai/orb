@@ -16,3 +16,13 @@ export function truncateLines(
     truncatedCount: lines.length - maxLines,
   }
 }
+
+/**
+ * Collapse all runs of whitespace (including newlines) to single spaces, trim,
+ * and clip to `max` characters with a trailing ellipsis. Used for one-line
+ * previews where multi-line content must render on a single row.
+ */
+export function collapseToSingleLine(value: string, max: number): string {
+  const collapsed = value.replace(/\s+/g, ' ').trim()
+  return collapsed.length > max ? `${collapsed.slice(0, max - 1)}…` : collapsed
+}
