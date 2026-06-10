@@ -15,7 +15,7 @@ import type { Key } from 'ink'
  *   - Ink has no bracketed-paste state machine. Multi-char `input` with no
  *     modifier flags is treated as a paste; `paste.ts` strips the markers.
  */
-type Action =
+export type Action =
   | { kind: 'submit' }
   | { kind: 'newline' }
   | { kind: 'backspace' }
@@ -37,6 +37,7 @@ type Action =
 
 const RAW_MODIFIED_ENTER = /^(?:\u001b)?\[(?:27;\d+;13~|13;\d+u)$/
 const RAW_BACKSPACE = new Set(['\u007f', '\b'])
+const BRACKETED_PASTE_MARKER = /\[20[01]~/
 
 export const keyToAction = (input: string, key: Key): Action => {
   if (key.ctrl && input === 'j') return { kind: 'newline' }
@@ -87,4 +88,38 @@ export const keyToAction = (input: string, key: Key): Action => {
   if (input.length === 0) return { kind: 'ignore' }
 
   return { kind: 'insert', text: input }
+}
+
+export const keyToActions = (input: string, key: Key): Action[] => {
+  const action = keyToAction(input, key)
+  if (action.kind !== 'insert' || action.text.length <= 1) return [action]
+  if (BRACKETED_PASTE_MARKER.test(action.text)) return [action]
+
+  return splitRawBackspaces(action.text) ?? [action]
+}
+
+function splitRawBackspaces(text: string): Action[] | null {
+  if (!text.includes('\u007f') && !text.includes('\b')) return null
+
+  const actions: Action[] = []
+  let pending = ''
+
+  const pushPending = () => {
+    if (pending.length === 0) return
+    actions.push({ kind: 'insert', text: pending })
+    pending = ''
+  }
+
+  for (const char of text) {
+    if (RAW_BACKSPACE.has(char)) {
+      pushPending()
+      actions.push({ kind: 'backspace' })
+    } else {
+      pending += char
+    }
+  }
+  pushPending()
+
+  // text contained at least one raw backspace byte, so actions is non-empty.
+  return actions
 }

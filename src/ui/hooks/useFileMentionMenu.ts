@@ -16,6 +16,8 @@ export interface FileMentionMenu {
   refreshMenu: (buffer: TextBufferState) => void
 }
 
+const FILE_MENTION_SEARCH_DELAY_MS = 40
+
 export function useFileMentionMenu({
   projectPath,
   bufferRef,
@@ -28,6 +30,14 @@ export function useFileMentionMenu({
   const [menu, setMenu] = useState<MenuState | null>(null)
   const menuRef = useRef<MenuState | null>(null)
   const searchSeqRef = useRef(0)
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearSearchTimer = useCallback(() => {
+    const timer = searchTimerRef.current
+    if (timer === null) return
+    clearTimeout(timer)
+    searchTimerRef.current = null
+  }, [])
 
   const setMenuState = useCallback(
     (next: MenuState | null) => {
@@ -40,12 +50,19 @@ export function useFileMentionMenu({
     [onMenuOpenChange],
   )
 
-  useEffect(() => () => onMenuOpenChange?.(false), [onMenuOpenChange])
+  useEffect(
+    () => () => {
+      clearSearchTimer()
+      onMenuOpenChange?.(false)
+    },
+    [clearSearchTimer, onMenuOpenChange],
+  )
 
   const closeMenu = useCallback(() => {
+    clearSearchTimer()
     searchSeqRef.current++
     if (menuRef.current !== null) setMenuState(null)
-  }, [setMenuState])
+  }, [clearSearchTimer, setMenuState])
 
   const refreshMenu = useCallback(
     (buffer: TextBufferState) => {
@@ -61,27 +78,31 @@ export function useFileMentionMenu({
       }
       const seq = ++searchSeqRef.current
       const expected = { row: buffer.row, start: mention.start, query: mention.query }
-      void searchProjectFiles(mention.query, { projectPath })
-        .then((items) => {
-          if (seq !== searchSeqRef.current) return
-          const live = bufferRef.current
-          const liveLine = live.lines[live.row] ?? ''
-          const liveMention = findActiveMention(liveLine, live.col)
-          if (
-            !liveMention ||
-            live.row !== expected.row ||
-            liveMention.start !== expected.start ||
-            liveMention.query !== expected.query
-          ) {
-            return
-          }
-          setMenuState(items.length > 0 ? { items, index: 0 } : null)
-        })
-        .catch(() => {
-          /* search is best-effort; leave the menu as-is */
-        })
+      clearSearchTimer()
+      searchTimerRef.current = setTimeout(() => {
+        searchTimerRef.current = null
+        void searchProjectFiles(mention.query, { projectPath })
+          .then((items) => {
+            if (seq !== searchSeqRef.current) return
+            const live = bufferRef.current
+            const liveLine = live.lines[live.row] ?? ''
+            const liveMention = findActiveMention(liveLine, live.col)
+            if (
+              !liveMention ||
+              live.row !== expected.row ||
+              liveMention.start !== expected.start ||
+              liveMention.query !== expected.query
+            ) {
+              return
+            }
+            setMenuState(items.length > 0 ? { items, index: 0 } : null)
+          })
+          .catch(() => {
+            /* search is best-effort; leave the menu as-is */
+          })
+      }, FILE_MENTION_SEARCH_DELAY_MS)
     },
-    [projectPath, closeMenu, setMenuState, bufferRef],
+    [projectPath, closeMenu, clearSearchTimer, setMenuState, bufferRef],
   )
 
   return { menu, menuRef, setMenuState, closeMenu, refreshMenu }

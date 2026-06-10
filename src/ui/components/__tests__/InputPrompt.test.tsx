@@ -74,6 +74,22 @@ describe('InputPrompt', () => {
     app.unmount()
   })
 
+  it('applies raw backspace bytes inside a batched input chunk', async () => {
+    const { InputPrompt } = await importInputPrompt()
+    const submitted: string[] = []
+    const app = render(
+      <InputPrompt state="idle" onSubmit={(value: string) => submitted.push(value)} />,
+    )
+
+    app.stdin.write('abc\u007fd')
+    app.stdin.write('\r')
+    await flush()
+
+    expect(submitted).toEqual(['abd'])
+
+    app.unmount()
+  })
+
   it('completes a slash-command prefix on Tab and submits the expanded name', async () => {
     const fixture = await createCommandFixture(['explain', 'explore'])
     const { InputPrompt } = await importInputPrompt()

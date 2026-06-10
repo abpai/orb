@@ -6,7 +6,7 @@ import type { AppState } from '../../types'
 import { useFileMentionMenu } from '../hooks/useFileMentionMenu'
 import { useSlashCompletion } from '../hooks/useSlashCompletion'
 import { useTextBufferInput } from '../hooks/useTextBufferInput'
-import { keyToAction } from '../input/keymap'
+import { keyToActions, type Action } from '../input/keymap'
 import { applyMention, findActiveMention } from '../input/mention'
 import { sanitizePaste } from '../input/paste'
 import {
@@ -139,75 +139,94 @@ export const InputPrompt = memo(function InputPrompt({
     cycleRef.current = matches.length > 1 ? { matches, index: 0 } : null
   }, [apply, bufferRef, commandNamesRef, cycleRef])
 
-  useInput((input, key) => {
-    const action = keyToAction(input, key)
-    if (action.kind !== 'complete') cycleRef.current = null
+  const handleAction = useCallback(
+    (action: Action) => {
+      if (action.kind !== 'complete') cycleRef.current = null
 
-    const openMenu = menuRef.current
-    if (openMenu && openMenu.items.length > 0) {
-      const count = openMenu.items.length
+      const openMenu = menuRef.current
+      if (openMenu && openMenu.items.length > 0) {
+        const count = openMenu.items.length
+        switch (action.kind) {
+          case 'move-up':
+            return setMenuState({ ...openMenu, index: (openMenu.index - 1 + count) % count })
+          case 'move-down':
+            return setMenuState({ ...openMenu, index: (openMenu.index + 1) % count })
+          case 'submit':
+          case 'complete':
+            return acceptMention()
+          case 'dismiss':
+            return closeMenu()
+        }
+      } else if (action.kind === 'dismiss') {
+        return
+      }
+
       switch (action.kind) {
+        case 'submit': {
+          const text = toString(bufferRef.current).trim()
+          if (text.length === 0) return
+          onSubmit(text)
+          apply(empty)
+          return
+        }
+        case 'newline':
+          return apply(newline, { notifyEdit: true })
+        case 'backspace':
+          return apply(backspace, { notifyEdit: true })
+        case 'move-left':
+          return apply(moveLeft)
+        case 'move-right':
+          return apply(moveRight)
+        case 'move-word-left':
+          return apply(moveWordLeft)
+        case 'move-word-right':
+          return apply(moveWordRight)
         case 'move-up':
-          return setMenuState({ ...openMenu, index: (openMenu.index - 1 + count) % count })
+          return apply((current) => moveUp(current, desiredColRef.current), {
+            resetDesiredCol: false,
+          })
         case 'move-down':
-          return setMenuState({ ...openMenu, index: (openMenu.index + 1) % count })
-        case 'submit':
+          return apply((current) => moveDown(current, desiredColRef.current), {
+            resetDesiredCol: false,
+          })
+        case 'move-home':
+          return apply(moveHome)
+        case 'move-end':
+          return apply(moveEnd)
+        case 'delete-word-left':
+          return apply(deleteWordLeft, { notifyEdit: true })
+        case 'kill-to-line-end':
+          return apply(killToLineEnd, { notifyEdit: true })
+        case 'kill-line':
+          return apply(killLine, { notifyEdit: true })
         case 'complete':
-          return acceptMention()
-        case 'dismiss':
-          return closeMenu()
+          return handleComplete()
+        case 'insert': {
+          const text = action.text.length > 1 ? sanitizePaste(action.text) : action.text
+          if (text.length === 0) return
+          return apply((current) => insert(current, text), { notifyEdit: true })
+        }
+        case 'ignore':
+          return
       }
-    } else if (action.kind === 'dismiss') {
-      return
-    }
+    },
+    [
+      acceptMention,
+      apply,
+      bufferRef,
+      closeMenu,
+      cycleRef,
+      desiredColRef,
+      handleComplete,
+      menuRef,
+      onSubmit,
+      setMenuState,
+    ],
+  )
 
-    switch (action.kind) {
-      case 'submit': {
-        const text = toString(bufferRef.current).trim()
-        if (text.length === 0) return
-        onSubmit(text)
-        apply(empty)
-        return
-      }
-      case 'newline':
-        return apply(newline, { notifyEdit: true })
-      case 'backspace':
-        return apply(backspace, { notifyEdit: true })
-      case 'move-left':
-        return apply(moveLeft)
-      case 'move-right':
-        return apply(moveRight)
-      case 'move-word-left':
-        return apply(moveWordLeft)
-      case 'move-word-right':
-        return apply(moveWordRight)
-      case 'move-up':
-        return apply((current) => moveUp(current, desiredColRef.current), {
-          resetDesiredCol: false,
-        })
-      case 'move-down':
-        return apply((current) => moveDown(current, desiredColRef.current), {
-          resetDesiredCol: false,
-        })
-      case 'move-home':
-        return apply(moveHome)
-      case 'move-end':
-        return apply(moveEnd)
-      case 'delete-word-left':
-        return apply(deleteWordLeft, { notifyEdit: true })
-      case 'kill-to-line-end':
-        return apply(killToLineEnd, { notifyEdit: true })
-      case 'kill-line':
-        return apply(killLine, { notifyEdit: true })
-      case 'complete':
-        return handleComplete()
-      case 'insert': {
-        const text = action.text.length > 1 ? sanitizePaste(action.text) : action.text
-        if (text.length === 0) return
-        return apply((current) => insert(current, text), { notifyEdit: true })
-      }
-      case 'ignore':
-        return
+  useInput((input, key) => {
+    for (const action of keyToActions(input, key)) {
+      handleAction(action)
     }
   })
 

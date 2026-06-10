@@ -55,6 +55,8 @@ function createLocalEntry(
   }
 }
 
+const LIVE_DELTA_RENDER_INTERVAL_MS = 50
+
 export function useConversation({
   config,
   initialSession,
@@ -80,7 +82,8 @@ export function useConversation({
   const agentSessionRef = useRef<AgentSession | undefined>(initialAgentSession)
   const pendingSaveRef = useRef(false)
   const pendingRenderTurnRef = useRef<HistoryEntry | null>(null)
-  const flushScheduledRef = useRef(false)
+  const renderFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastRenderFlushAtRef = useRef(0)
 
   /** Update both ref (synchronous, for archive guards) and state (async, for render). */
   const updateLiveTurn = useCallback((turn: HistoryEntry | null) => {
@@ -88,23 +91,36 @@ export function useConversation({
     setLiveTurn(turn)
   }, [])
 
+  const clearScheduledRenderFlush = useCallback(() => {
+    const timer = renderFlushTimerRef.current
+    if (timer === null) return
+    clearTimeout(timer)
+    renderFlushTimerRef.current = null
+  }, [])
+
+  const flushPendingLiveTurn = useCallback(() => {
+    renderFlushTimerRef.current = null
+    lastRenderFlushAtRef.current = Date.now()
+    const pending = pendingRenderTurnRef.current
+    pendingRenderTurnRef.current = null
+    if (pending && liveTurnRef.current !== null) {
+      setLiveTurn(pending)
+    }
+  }, [])
+
   /**
-   * Coalesce rapid agent-text-delta updates into one render per event-loop tick.
-   * Without this, 20–50 Hz token bursts reconcile the whole tree and crowd out
-   * keystroke-driven renders, making typing feel laggy during streaming.
+   * Keep the ref updated for every token, but cap React/Ink rendering to a
+   * human-visible frame budget. A one-tick coalesce still lets fast providers
+   * reconcile the whole terminal almost continuously, which crowds out typing.
    */
   const scheduleRenderFlush = useCallback(() => {
-    if (flushScheduledRef.current) return
-    flushScheduledRef.current = true
-    setImmediate(() => {
-      flushScheduledRef.current = false
-      const pending = pendingRenderTurnRef.current
-      pendingRenderTurnRef.current = null
-      if (pending && liveTurnRef.current !== null) {
-        setLiveTurn(pending)
-      }
-    })
-  }, [])
+    if (renderFlushTimerRef.current !== null) return
+    const elapsed = Date.now() - lastRenderFlushAtRef.current
+    const delay = Math.max(0, LIVE_DELTA_RENDER_INTERVAL_MS - elapsed)
+    renderFlushTimerRef.current = setTimeout(flushPendingLiveTurn, delay)
+  }, [flushPendingLiveTurn])
+
+  useEffect(() => clearScheduledRenderFlush, [clearScheduledRenderFlush])
 
   const getHistorySnapshot = useCallback(
     () => [...completedTurns, ...(liveTurnRef.current ? [liveTurnRef.current] : [])],
@@ -141,27 +157,32 @@ export function useConversation({
     void persistSession()
   }, [completedTurns, persistSession, taskState])
 
-  const startEntry = useCallback((query: string) => {
-    const trimmed = query.trim()
-    if (!trimmed) return null
+  const startEntry = useCallback(
+    (query: string) => {
+      const trimmed = query.trim()
+      if (!trimmed) return null
 
-    // Archive any existing live turn (safety net for edge cases)
-    const existingLiveTurn = liveTurnRef.current
-    if (existingLiveTurn !== null) {
-      liveTurnRef.current = null
+      // Archive any existing live turn (safety net for edge cases)
+      const existingLiveTurn = liveTurnRef.current
+      if (existingLiveTurn !== null) {
+        liveTurnRef.current = null
+        pendingRenderTurnRef.current = null
+        setCompletedTurns((prev) => [...prev, existingLiveTurn])
+      }
+
+      const newTurn = createLocalEntry(trimmed)
+      const entryId = newTurn.id
+
+      activeEntryIdRef.current = entryId
       pendingRenderTurnRef.current = null
-      setCompletedTurns((prev) => [...prev, existingLiveTurn])
-    }
+      clearScheduledRenderFlush()
+      updateLiveTurn(newTurn)
+      setTtsError(null)
 
-    const newTurn = createLocalEntry(trimmed)
-    const entryId = newTurn.id
-
-    activeEntryIdRef.current = entryId
-    updateLiveTurn(newTurn)
-    setTtsError(null)
-
-    return { entryId, query: trimmed }
-  }, [])
+      return { entryId, query: trimmed }
+    },
+    [clearScheduledRenderFlush, updateLiveTurn],
+  )
 
   const handleFrame = useCallback(
     (frame: OutboundFrame) => {
@@ -179,6 +200,7 @@ export function useConversation({
       // re-arms the pending ref below.
       if (frame.kind !== 'agent-text-delta') {
         pendingRenderTurnRef.current = null
+        clearScheduledRenderFlush()
       }
 
       switch (frame.kind) {
@@ -212,7 +234,7 @@ export function useConversation({
           break
       }
     },
-    [scheduleRenderFlush, updateLiveTurn],
+    [clearScheduledRenderFlush, scheduleRenderFlush, updateLiveTurn],
   )
 
   const handleRunComplete = useCallback(
@@ -229,6 +251,7 @@ export function useConversation({
       const turnToArchive = liveTurnRef.current
       activeEntryIdRef.current = null
       pendingRenderTurnRef.current = null
+      clearScheduledRenderFlush()
       setCompletedTurns((prev) => [...prev, turnToArchive])
       updateLiveTurn(null)
 
@@ -236,7 +259,7 @@ export function useConversation({
         pendingSaveRef.current = true
       }
     },
-    [updateLiveTurn],
+    [clearScheduledRenderFlush, updateLiveTurn],
   )
 
   const cycleModel = useCallback(() => {
