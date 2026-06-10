@@ -1,5 +1,4 @@
 import { promises as fs } from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 
 import type { AppConfig, LlmModelId, LlmProvider } from '../types'
@@ -240,16 +239,18 @@ const FALLBACK_CATALOG_MODELS: CatalogModel[] = (
   })),
 )
 
-function modelCachePath(homeDir = os.homedir()): string {
-  return orbModelCachePath(homeDir)
-}
+// Inverse of PROVIDER_GATEWAY_PREFIX: gateway prefix → provider. Derived from the
+// forward table so the two mappings can never drift apart.
+const PROVIDER_BY_GATEWAY_PREFIX: Record<string, LlmProvider> = Object.fromEntries(
+  (Object.entries(PROVIDER_GATEWAY_PREFIX) as [LlmProvider, string][]).map(([provider, prefix]) => [
+    prefix,
+    provider,
+  ]),
+)
 
 function getGatewayProvider(id: string): LlmProvider | null {
-  const [prefix] = id.split('/', 1)
-  if (prefix === 'anthropic') return 'anthropic'
-  if (prefix === 'openai') return 'openai'
-  if (prefix === 'google') return 'gemini'
-  return null
+  const prefix = id.split('/', 1)[0] ?? ''
+  return PROVIDER_BY_GATEWAY_PREFIX[prefix] ?? null
 }
 
 function gatewayToNativeId(provider: LlmProvider, gatewayId: string): LlmModelId {
@@ -352,7 +353,7 @@ export async function loadModelCatalog(
 ): Promise<LoadedModelCatalog> {
   const now = options.now ?? Date.now()
   const ttlMs = options.ttlMs ?? MODEL_CATALOG_TTL_MS
-  const cachePath = options.cachePath ?? modelCachePath()
+  const cachePath = options.cachePath ?? orbModelCachePath()
   const cached = await readCachedCatalog(cachePath)
 
   if (cached && now - cached.fetchedAt < ttlMs) {

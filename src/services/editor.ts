@@ -1,7 +1,7 @@
 import { promises as fsp } from 'node:fs'
 import * as path from 'node:path'
 
-import { resolveWithDeepestAncestor } from '../pipeline/sandbox/path-clamp'
+import { resolveWithDeepestAncestor } from './path-clamp'
 import type { FileRef } from './file-refs'
 
 const DEFAULT_MAX_FILES = 4

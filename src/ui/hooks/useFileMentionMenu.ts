@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { searchProjectFiles } from '../../services/file-search'
 import { findActiveMention } from '../input/mention'
 import type { TextBufferState } from '../input/TextBuffer'
+import { useSyncedRef } from './useSyncedRef'
+import { useTimerSlot } from './useTimerSlot'
 
 export interface MenuState {
   items: string[]
@@ -27,42 +29,33 @@ export function useFileMentionMenu({
   bufferRef: React.RefObject<TextBufferState>
   onMenuOpenChange?: (open: boolean) => void
 }): FileMentionMenu {
-  const [menu, setMenu] = useState<MenuState | null>(null)
-  const menuRef = useRef<MenuState | null>(null)
+  const [menu, menuRef, setMenuValue] = useSyncedRef<MenuState | null>(null)
   const searchSeqRef = useRef(0)
-  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const { schedule: scheduleSearch, clear: clearSearchTimer } = useTimerSlot()
 
-  const clearSearchTimer = useCallback(() => {
-    const timer = searchTimerRef.current
-    if (timer === null) return
-    clearTimeout(timer)
-    searchTimerRef.current = null
-  }, [])
-
+  // Wrap the synced setter so opening/closing the menu fires onMenuOpenChange.
   const setMenuState = useCallback(
     (next: MenuState | null) => {
       const wasOpen = menuRef.current !== null
       const isOpen = next !== null
-      menuRef.current = next
+      setMenuValue(next)
       if (isOpen !== wasOpen) onMenuOpenChange?.(isOpen)
-      setMenu(next)
     },
-    [onMenuOpenChange],
+    [menuRef, setMenuValue, onMenuOpenChange],
   )
 
   useEffect(
     () => () => {
-      clearSearchTimer()
       onMenuOpenChange?.(false)
     },
-    [clearSearchTimer, onMenuOpenChange],
+    [onMenuOpenChange],
   )
 
   const closeMenu = useCallback(() => {
     clearSearchTimer()
     searchSeqRef.current++
     if (menuRef.current !== null) setMenuState(null)
-  }, [clearSearchTimer, setMenuState])
+  }, [clearSearchTimer, menuRef, setMenuState])
 
   const refreshMenu = useCallback(
     (buffer: TextBufferState) => {
@@ -78,9 +71,7 @@ export function useFileMentionMenu({
       }
       const seq = ++searchSeqRef.current
       const expected = { row: buffer.row, start: mention.start, query: mention.query }
-      clearSearchTimer()
-      searchTimerRef.current = setTimeout(() => {
-        searchTimerRef.current = null
+      scheduleSearch(() => {
         void searchProjectFiles(mention.query, { projectPath })
           .then((items) => {
             if (seq !== searchSeqRef.current) return
@@ -102,7 +93,7 @@ export function useFileMentionMenu({
           })
       }, FILE_MENTION_SEARCH_DELAY_MS)
     },
-    [projectPath, closeMenu, clearSearchTimer, setMenuState, bufferRef],
+    [projectPath, closeMenu, scheduleSearch, setMenuState, bufferRef],
   )
 
   return { menu, menuRef, setMenuState, closeMenu, refreshMenu }

@@ -1,11 +1,22 @@
+import type { LlmProvider } from '../../types'
 import type { Frame } from '../frames'
 import { createFrame } from '../frames'
 import type { Processor } from '../processor'
-import type { AgentAdapterConfig } from '../adapters/types'
+import type { AgentAdapter, AgentAdapterConfig } from '../adapters/types'
 import { createAnthropicAdapter } from '../adapters/anthropic'
 import { createOpenAiAdapter } from '../adapters/openai'
 import { createGeminiAdapter } from '../adapters/gemini'
 import { isAbortError } from '../adapters/utils'
+
+/**
+ * Provider → adapter factory. A Record keyed by LlmProvider gives compile-time
+ * exhaustiveness: adding a provider to the union forces a new entry here.
+ */
+const ADAPTER_FACTORIES: Record<LlmProvider, (config: AgentAdapterConfig) => AgentAdapter> = {
+  anthropic: createAnthropicAdapter,
+  openai: createOpenAiAdapter,
+  gemini: createGeminiAdapter,
+}
 
 /**
  * AgentProcessor: receives UserTextFrame, dispatches to the appropriate adapter,
@@ -20,12 +31,7 @@ export function createAgentProcessor(adapterConfig: AgentAdapterConfig): Process
         continue
       }
 
-      const adapter =
-        adapterConfig.appConfig.llmProvider === 'openai'
-          ? createOpenAiAdapter(adapterConfig)
-          : adapterConfig.appConfig.llmProvider === 'gemini'
-            ? createGeminiAdapter(adapterConfig)
-            : createAnthropicAdapter(adapterConfig)
+      const adapter = ADAPTER_FACTORIES[adapterConfig.appConfig.llmProvider](adapterConfig)
 
       try {
         yield* adapter.stream(frame.text)

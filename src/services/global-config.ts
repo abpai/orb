@@ -12,6 +12,15 @@ import {
   type ReasoningEffort,
   type Voice,
 } from '../types'
+import {
+  isLlmProvider,
+  isNonNegativeInt,
+  isPositiveInt,
+  isPositiveNumber,
+  isReasoningEffort,
+  isTtsMode,
+  isVoice,
+} from './config-values'
 import { globalConfigPath, isFileNotFoundError } from './orb-paths'
 
 interface OrbGlobalTtsConfig {
@@ -74,85 +83,34 @@ function validateBoolean(value: unknown, label: string, warnings: string[]): boo
   return value
 }
 
-function validatePositiveNumber(
-  value: unknown,
-  label: string,
-  warnings: string[],
-): number | undefined {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-    warnings.push(`${label} must be a positive number.`)
+/**
+ * Adapt a shared type guard into a TOML validator: on a bad value it pushes a
+ * `${label} must <expected>.` warning (the existing format that
+ * global-config.test.ts asserts on) and returns undefined; otherwise it returns
+ * the narrowed value. Unlike the CLI parsers, the TOML path never throws and
+ * never normalizes aliases — only canonical values are accepted.
+ */
+function tomlValidator<T>(guard: (value: unknown) => value is T, expected: string) {
+  return (value: unknown, label: string, warnings: string[]): T | undefined => {
+    if (guard(value)) return value
+    warnings.push(`${label} must ${expected}.`)
     return undefined
   }
-
-  return value
 }
 
-function validatePositiveInt(
-  value: unknown,
-  label: string,
-  warnings: string[],
-): number | undefined {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
-    warnings.push(`${label} must be a positive integer.`)
-    return undefined
-  }
-
-  return value
-}
-
-function validateNonNegativeInt(
-  value: unknown,
-  label: string,
-  warnings: string[],
-): number | undefined {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-    warnings.push(`${label} must be a non-negative integer.`)
-    return undefined
-  }
-
-  return value
-}
-
-function validateProvider(
-  value: unknown,
-  label: string,
-  warnings: string[],
-): LlmProvider | undefined {
-  if (value === 'anthropic' || value === 'openai' || value === 'gemini') return value
-  warnings.push(`${label} must be "anthropic", "openai", or "gemini".`)
-  return undefined
-}
-
-function validateTtsMode(
-  value: unknown,
-  label: string,
-  warnings: string[],
-): AppConfig['ttsMode'] | undefined {
-  if (value === 'generate' || value === 'serve') return value
-  warnings.push(`${label} must be "generate" or "serve".`)
-  return undefined
-}
-
-function validateVoice(value: unknown, label: string, warnings: string[]): Voice | undefined {
-  if (typeof value !== 'string' || !VOICES.includes(value as Voice)) {
-    warnings.push(`${label} must be one of: ${VOICES.join(', ')}.`)
-    return undefined
-  }
-
-  return value as Voice
-}
-
-function validateReasoningEffort(
-  value: unknown,
-  label: string,
-  warnings: string[],
-): ReasoningEffort | undefined {
-  if (typeof value === 'string' && REASONING_EFFORTS.includes(value as ReasoningEffort)) {
-    return value as ReasoningEffort
-  }
-  warnings.push(`${label} must be one of: ${REASONING_EFFORTS.join(', ')}.`)
-  return undefined
-}
+const validatePositiveNumber = tomlValidator(isPositiveNumber, 'be a positive number')
+const validatePositiveInt = tomlValidator(isPositiveInt, 'be a positive integer')
+const validateNonNegativeInt = tomlValidator(isNonNegativeInt, 'be a non-negative integer')
+const validateProvider = tomlValidator<LlmProvider>(
+  isLlmProvider,
+  'be "anthropic", "openai", or "gemini"',
+)
+const validateTtsMode = tomlValidator<AppConfig['ttsMode']>(isTtsMode, 'be "generate" or "serve"')
+const validateVoice = tomlValidator<Voice>(isVoice, `be one of: ${VOICES.join(', ')}`)
+const validateReasoningEffort = tomlValidator<ReasoningEffort>(
+  isReasoningEffort,
+  `be one of: ${REASONING_EFFORTS.join(', ')}`,
+)
 
 export function getGlobalConfigPath(homeDir = os.homedir()): string {
   return globalConfigPath(homeDir)
@@ -386,8 +344,9 @@ export function serializeGlobalConfig(config: OrbGlobalConfig): string {
     if (Object.keys(tts).length > 0) document.tts = tts
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return stringify(document as any)
+  // `document` is a RawObject (Record<string, unknown>); cast to the TOML
+  // library's documented JsonMap input type rather than `any`.
+  return stringify(document as Parameters<typeof stringify>[0])
 }
 
 export async function writeGlobalConfig(

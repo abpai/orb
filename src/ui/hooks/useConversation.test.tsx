@@ -286,6 +286,7 @@ describe('useConversation', () => {
           config: makeConfig('/tmp/frame-test'),
           initialSession: null,
           taskState: 'processing',
+          renderIntervalMs: 10,
         })
         return null
       }
@@ -294,7 +295,7 @@ describe('useConversation', () => {
 
       controls.startEntry('test')
       controls.handleFrame(frame({ kind: 'agent-text-delta', accumulatedText: 'Hello world' }))
-      await wait(60)
+      await wait(20)
 
       expect(controls.liveTurn?.answer).toBe('Hello world')
 
@@ -310,6 +311,7 @@ describe('useConversation', () => {
           config: makeConfig('/tmp/frame-throttle-test'),
           initialSession: null,
           taskState: 'processing',
+          renderIntervalMs: 10,
         })
         renderedAnswers.push(controls.liveTurn?.answer ?? '')
         return null
@@ -321,13 +323,14 @@ describe('useConversation', () => {
       await flush()
       renderedAnswers.length = 0
 
+      // Fire deltas faster than the (injected) render interval so they coalesce.
       for (const answer of ['a', 'ab', 'abc', 'abcd']) {
         controls.handleFrame(
           frame({ kind: 'agent-text-delta', delta: answer.at(-1), accumulatedText: answer }),
         )
-        await wait(5)
+        await wait(1)
       }
-      await wait(80)
+      await wait(20)
 
       expect(controls.liveTurn?.answer).toBe('abcd')
       const liveAnswerRenders = renderedAnswers.filter((answer) => answer.length > 0)
