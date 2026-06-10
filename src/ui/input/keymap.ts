@@ -120,5 +120,6 @@ function splitRawBackspaces(text: string): Action[] | null {
   }
   pushPending()
 
-  return actions.length > 0 ? actions : [{ kind: 'ignore' }]
+  // text contained at least one raw backspace byte, so actions is non-empty.
+  return actions
 }
