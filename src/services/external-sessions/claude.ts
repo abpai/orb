@@ -4,6 +4,7 @@ import os from 'node:os'
 
 import { isFileNotFoundError } from '../orb-paths'
 import type { SessionSummary } from '../session'
+import { asFiniteNumber, asString, isObject } from './coerce'
 import type { ExternalSessionMeta } from './types'
 
 interface ClaudeIndexEntry {
@@ -32,18 +33,6 @@ interface ScannedSession {
   messageCount: number
   preview: string
   lastModified: string
-}
-
-function isObject(value: unknown): boolean {
-  return typeof value === 'object' && value !== null
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined
-}
-
-function asFiniteNumber(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
 function isoFromUnixSecs(value: unknown): string {
@@ -136,7 +125,6 @@ function claudeRow(projectPath: string, scanned: ScannedSession): SessionSummary
     projectPath,
     projectName: path.basename(projectPath) || projectPath,
     llmProvider: 'anthropic',
-    llmModel: '',
     lastModified: scanned.lastModified,
     turnCount: scanned.messageCount,
     preview: scanned.preview,
@@ -154,7 +142,6 @@ function claudeRowFromIndex(
     projectPath,
     projectName: path.basename(projectPath) || projectPath,
     llmProvider: 'anthropic',
-    llmModel: '',
     lastModified:
       asString(entry.session?.last_message_time) ?? isoFromUnixSecs(entry.modified_time),
     turnCount: asFiniteNumber(entry.session?.message_count) ?? 0,

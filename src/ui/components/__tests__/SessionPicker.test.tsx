@@ -17,8 +17,9 @@ function summary(overrides: Partial<SessionSummary> = {}): SessionSummary {
     lastModified: new Date().toISOString(),
     turnCount: 3,
     preview: 'how do I list sessions',
+    source: 'orb',
     ...overrides,
-  }
+  } as SessionSummary
 }
 
 describe('SessionPicker', () => {

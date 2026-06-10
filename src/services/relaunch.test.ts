@@ -13,8 +13,9 @@ function summary(overrides: Partial<SessionSummary> = {}): SessionSummary {
     lastModified: '',
     turnCount: 0,
     preview: '',
+    source: 'orb',
     ...overrides,
-  }
+  } as SessionSummary
 }
 
 describe('buildExternalResumeArgs', () => {
@@ -26,8 +27,8 @@ describe('buildExternalResumeArgs', () => {
 })
 
 describe('buildResumeArgsForSession', () => {
-  it('defaults an undefined source to the orb --resume path', () => {
-    expect(buildResumeArgsForSession(summary({ id: 'orb1', source: undefined }))).toEqual(
+  it('routes orb rows through the orb --resume path', () => {
+    expect(buildResumeArgsForSession(summary({ id: 'orb1', source: 'orb' }))).toEqual(
       buildResumeArgs('/p', 'orb1'),
     )
   })
