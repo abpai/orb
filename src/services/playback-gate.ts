@@ -38,8 +38,6 @@ export interface PlaybackGate {
   /** Track the active afplay process so stopAll()/pause()/resume() can drive it. */
   setCurrentProcess(proc: FilePlayerProcess | null): void
   getCurrentProcess(): FilePlayerProcess | null
-  pauseCurrentProcess(): void
-  resumeCurrentProcess(): void
   /** Whether playback is currently paused (drives the streaming loop's wait). */
   isPaused(): boolean
   /** True after stopAll() killed a live process; cleared by resetStopped(). */
@@ -109,14 +107,6 @@ export function createPlaybackGate(): PlaybackGate {
 
     getCurrentProcess() {
       return currentProcess
-    },
-
-    pauseCurrentProcess() {
-      currentProcess?.pause()
-    },
-
-    resumeCurrentProcess() {
-      currentProcess?.resume()
     },
 
     isPaused() {
