@@ -80,10 +80,17 @@ export function createStreamingSpeechController(
   }
 
   const sentenceQueue: string[] = []
-  const client =
-    config.ttsMode === 'serve'
-      ? createGatewayClient(config.ttsServerUrl ?? DEFAULT_SERVER_URL)
-      : null
+
+  // Lazily built so a malformed ttsServerUrl surfaces during playback (inside
+  // processNextSentence's try/catch, routed through the completion handle) rather
+  // than throwing synchronously at controller construction and aborting the whole
+  // agent turn. Serve mode only; null in generate mode.
+  let gatewayClient: ReturnType<typeof createGatewayClient> | null = null
+  const getClient = (): ReturnType<typeof createGatewayClient> | null => {
+    if (config.ttsMode !== 'serve') return null
+    gatewayClient ??= createGatewayClient(config.ttsServerUrl ?? DEFAULT_SERVER_URL)
+    return gatewayClient
+  }
 
   /**
    * The currently-playing audio attempt and its cancellation handles.
@@ -354,6 +361,7 @@ export function createStreamingSpeechController(
   }
 
   function startPrefetch(): void {
+    const client = getClient()
     if (!client || playback.prefetch || lifecycle.stopped || sentenceQueue.length === 0) return
 
     const nextSentence = peekSpeechBatch()
@@ -402,7 +410,7 @@ export function createStreamingSpeechController(
     }
 
     playback.activeAbort = new AbortController()
-    return await client!.speakStream(sentence, config.ttsVoice, playback.activeAbort.signal)
+    return await getClient()!.speakStream(sentence, config.ttsVoice, playback.activeAbort.signal)
   }
 
   async function streamOrFallback(sentence: string): Promise<void> {
@@ -445,7 +453,11 @@ export function createStreamingSpeechController(
     }
 
     try {
-      if (config.ttsMode === 'generate') {
+      // Generate mode always renders to a file. Serve mode streams only when
+      // streaming is enabled; with --no-streaming-tts it stays on the batch
+      // /v1/speech endpoint (speakSync + afplay) so gateways that lack the
+      // streaming endpoint keep working.
+      if (config.ttsMode === 'generate' || !config.ttsStreamingEnabled) {
         await generateAndPlayViaFile(sentence)
       } else {
         await streamOrFallback(sentence)
@@ -595,4 +607,22 @@ export function createStreamingSpeechController(
       return !lifecycle.stopped && (hasWorkRemaining() || lifecycle.speakingStarted)
     },
   }
+}
+
+/**
+ * Speak an already-complete string through a fresh streaming controller.
+ *
+ * Feeds the whole text in one shot and finalizes immediately, so there is no
+ * separate "batch" playback path: the controller renders it through the same
+ * machinery it uses for live deltas (streaming + prefetch when streaming is
+ * enabled in serve mode, file-by-file otherwise), the only difference being
+ * that nothing arrives incrementally. The returned controller exposes
+ * waitForCompletion/stop/pause/resume for the caller to drive — used for
+ * replays and non-streaming batch playback.
+ */
+export function speakText(text: string, config: AppConfig): StreamingSpeechController {
+  const controller = createStreamingSpeechController(config)
+  controller.feedText(text)
+  controller.finalize()
+  return controller
 }

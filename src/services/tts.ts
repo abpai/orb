@@ -1,12 +1,9 @@
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { unlink } from 'node:fs/promises'
 import { TTSError, type AppConfig, type TTSErrorType, type Voice } from '../types'
-import { cleanTextForSpeech } from '../ui/utils/markdown'
 import { detectPlayer, spawnAfplay, type PlayerProcess } from './audio-player'
 import { createGatewayClient, DEFAULT_SERVER_URL } from './gateway-client'
 import { createPlaybackGate, type PlaybackGate } from './playback-gate'
-import { splitIntoSentences } from './speech-text'
 
 // Single process-global playback control owner. createStreamSession's playback
 // loop and the file-based playAudio path both coordinate stop/pause/resume
@@ -259,43 +256,4 @@ export function pauseSpeaking(): void {
 
 export function resumeSpeaking(): void {
   playbackGate.resume()
-}
-
-export async function speak(text: string, config: AppConfig): Promise<void> {
-  if (!config.ttsEnabled) return
-
-  const cleanText = cleanTextForSpeech(text)
-  if (!cleanText) return
-
-  const sentences = splitIntoSentences(cleanText)
-  let spokenCount = 0
-  let firstError: TTSError | null = null
-
-  for (const [i, sentence] of sentences.entries()) {
-    const audioPath = createTempAudioPath(config.ttsMode, `tts-${Date.now()}-${i}`)
-
-    try {
-      await generateAudio(sentence, config, audioPath)
-      await playAudio(audioPath, config.ttsSpeed)
-      spokenCount += 1
-    } catch (err) {
-      if (err instanceof TTSError) {
-        if (err.type === 'command_not_found') {
-          throw err // Fatal - no point continuing
-        }
-        firstError ??= err
-        if (config.ttsMode === 'serve') {
-          throw err
-        }
-      } else {
-        firstError ??= categorizeTTSError(err, 'generate')
-      }
-    } finally {
-      await unlink(audioPath).catch(() => {})
-    }
-  }
-
-  if (spokenCount === 0 && firstError) {
-    throw firstError
-  }
 }

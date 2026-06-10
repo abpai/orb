@@ -9,7 +9,8 @@ import { createTTSProcessor } from './processors/tts'
 import { createTtsRun, type TtsRun, type TTSCompletionHandle } from './processors/tts-run'
 import { openInEditor } from '../services/editor'
 import { warn } from '../services/log'
-import { pauseSpeaking, resumeSpeaking, speak, stopSpeaking } from '../services/tts'
+import { stopSpeaking } from '../services/tts'
+import { speakText } from '../services/streaming-tts'
 import type { Transport, OutboundFrame } from './transports/types'
 import { isAbortError } from './adapters/utils'
 
@@ -243,11 +244,12 @@ export function createPipelineTask(taskConfig: PipelineTaskConfig): PipelineTask
       if (!trimmed) return
 
       const runId = ++runCounter
+      const controller = speakText(trimmed, config)
       const handle: TTSCompletionHandle = {
-        waitForCompletion: () => speak(trimmed, config),
-        stop: () => stopSpeaking(),
-        pause: () => pauseSpeaking(),
-        resume: () => resumeSpeaking(),
+        waitForCompletion: () => controller.waitForCompletion(),
+        stop: () => controller.stop(),
+        pause: () => controller.pause(),
+        resume: () => controller.resume(),
       }
       setState('speaking')
       const run = createTtsRun(handle, (err) => {
