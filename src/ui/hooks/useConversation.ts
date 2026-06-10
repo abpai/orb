@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 
 import type { OutboundFrame } from '../../pipeline/transports/types'
 import type { RunResult } from '../../pipeline/task'
-import { FALLBACK_MODEL_CHOICES_BY_PROVIDER, modelAliasFamily } from '../../services/model-catalog'
+import { modelAliasFamily } from '../../services/model-catalog'
 import { saveSession } from '../../services/session'
 import { warn } from '../../services/log'
 import {
@@ -15,6 +15,9 @@ import {
   type SavedSession,
   type TTSErrorType,
 } from '../../types'
+import { getModelChoices } from '../utils/model-choices'
+import { useSyncedRef } from './useSyncedRef'
+import { useTimerSlot } from './useTimerSlot'
 
 interface UseConversationConfig {
   config: AppConfig
@@ -22,12 +25,8 @@ interface UseConversationConfig {
   /** Stable id for this conversation; minted here when starting fresh. */
   orbSessionId?: string
   taskState: AppState
-}
-
-function getModelChoices(config: AppConfig): LlmModelId[] {
-  return config.llmModelChoices && config.llmModelChoices.length > 0
-    ? config.llmModelChoices
-    : FALLBACK_MODEL_CHOICES_BY_PROVIDER[config.llmProvider]
+  /** Throttle window for live-delta renders; injectable so tests can shrink it. */
+  renderIntervalMs?: number
 }
 
 function shouldRestoreSessionModel(config: AppConfig, model?: LlmModelId): model is LlmModelId {
@@ -62,6 +61,7 @@ export function useConversation({
   initialSession,
   orbSessionId,
   taskState,
+  renderIntervalMs = LIVE_DELTA_RENDER_INTERVAL_MS,
 }: UseConversationConfig) {
   const sessionMatchesProvider = initialSession?.llmProvider === config.llmProvider
   const initialHistory = sessionMatchesProvider ? (initialSession?.history ?? []) : []
@@ -72,41 +72,33 @@ export function useConversation({
   const initialAgentSession = sessionMatchesProvider ? initialSession?.agentSession : undefined
 
   const [completedTurns, setCompletedTurns] = useState<HistoryEntry[]>(initialHistory)
-  const [liveTurn, setLiveTurn] = useState<HistoryEntry | null>(null)
+  // liveTurnRef is read synchronously inside frame/run handlers (archive guards,
+  // coalesce decisions) before React re-renders; updateLiveTurn keeps it in lockstep.
+  const [liveTurn, liveTurnRef, updateLiveTurn] = useSyncedRef<HistoryEntry | null>(null)
   const [ttsError, setTtsError] = useState<{ type: TTSErrorType; message: string } | null>(null)
   const [activeModel, setActiveModel] = useState<LlmModelId>(initialModel)
 
-  const liveTurnRef = useRef<HistoryEntry | null>(null)
   const activeEntryIdRef = useRef<string | null>(null)
   const sessionIdRef = useRef<string>(orbSessionId ?? initialSession?.id ?? randomUUID())
   const agentSessionRef = useRef<AgentSession | undefined>(initialAgentSession)
   const pendingSaveRef = useRef(false)
   const pendingRenderTurnRef = useRef<HistoryEntry | null>(null)
-  const renderFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastRenderFlushAtRef = useRef(0)
 
-  /** Update both ref (synchronous, for archive guards) and state (async, for render). */
-  const updateLiveTurn = useCallback((turn: HistoryEntry | null) => {
-    liveTurnRef.current = turn
-    setLiveTurn(turn)
-  }, [])
+  const renderFlushTimer = useTimerSlot()
 
-  const clearScheduledRenderFlush = useCallback(() => {
-    const timer = renderFlushTimerRef.current
-    if (timer === null) return
-    clearTimeout(timer)
-    renderFlushTimerRef.current = null
-  }, [])
+  const clearScheduledRenderFlush = renderFlushTimer.clear
 
   const flushPendingLiveTurn = useCallback(() => {
-    renderFlushTimerRef.current = null
     lastRenderFlushAtRef.current = Date.now()
     const pending = pendingRenderTurnRef.current
     pendingRenderTurnRef.current = null
+    // The delta handler already wrote `pending` into liveTurnRef; this flush
+    // exists to let the lagging state (and so the render) catch up to the ref.
     if (pending && liveTurnRef.current !== null) {
-      setLiveTurn(pending)
+      updateLiveTurn(pending)
     }
-  }, [])
+  }, [liveTurnRef, updateLiveTurn])
 
   /**
    * Keep the ref updated for every token, but cap React/Ink rendering to a
@@ -114,13 +106,11 @@ export function useConversation({
    * reconcile the whole terminal almost continuously, which crowds out typing.
    */
   const scheduleRenderFlush = useCallback(() => {
-    if (renderFlushTimerRef.current !== null) return
+    if (renderFlushTimer.isScheduled()) return
     const elapsed = Date.now() - lastRenderFlushAtRef.current
-    const delay = Math.max(0, LIVE_DELTA_RENDER_INTERVAL_MS - elapsed)
-    renderFlushTimerRef.current = setTimeout(flushPendingLiveTurn, delay)
-  }, [flushPendingLiveTurn])
-
-  useEffect(() => clearScheduledRenderFlush, [clearScheduledRenderFlush])
+    const delay = Math.max(0, renderIntervalMs - elapsed)
+    renderFlushTimer.schedule(flushPendingLiveTurn, delay)
+  }, [flushPendingLiveTurn, renderFlushTimer, renderIntervalMs])
 
   const getHistorySnapshot = useCallback(
     () => [...completedTurns, ...(liveTurnRef.current ? [liveTurnRef.current] : [])],

@@ -35,71 +35,49 @@ export function useKeyboardShortcuts({
   onTogglePause,
   state,
 }: UseKeyboardShortcutsConfig) {
-  useInput(
-    (input, key) => {
-      // The `@`-file menu owns Esc while it's open (it dismisses itself); don't
-      // also cancel the in-flight turn. Ctrl-S still cancels unconditionally.
-      if (key.escape && menuOpen) return
-      if (key.escape || (key.ctrl && input === 's')) {
+  // A single subscription dispatches every shortcut. It must stay `isActive: true`
+  // so Ctrl-C exits even when the app is otherwise disabled; per-shortcut guards
+  // below reproduce the enable/can* conditions each subscription used to carry.
+  useInput((input, key) => {
+    // Ctrl-C exits unconditionally, ignoring `enabled`.
+    if (key.ctrl && input === 'c') {
+      process.exit(0)
+    }
+
+    if (!enabled) return
+
+    // Cancel an in-flight turn via Esc or Ctrl-S. The `@`-file menu owns Esc while
+    // open (it dismisses itself), so don't also cancel; Ctrl-S still cancels.
+    if (state !== 'idle') {
+      if (key.escape && menuOpen) {
+        // menu owns Esc — fall through to the other shortcuts below.
+      } else if (key.escape || (key.ctrl && input === 's')) {
         onCancel()
       }
-    },
-    { isActive: enabled && state !== 'idle' },
-  )
+    }
 
-  useInput(
-    (input, key) => {
-      if (key.ctrl && input === 'o') {
-        onToggleDetailMode()
-      }
-    },
-    { isActive: enabled },
-  )
+    if (key.ctrl && input === 'o') {
+      onToggleDetailMode()
+    }
 
-  useInput(
-    (input, key) => {
-      if (key.ctrl && input === 'p') {
-        onTogglePause()
-      }
-    },
-    { isActive: enabled && canTogglePause },
-  )
+    if (canTogglePause && key.ctrl && input === 'p') {
+      onTogglePause()
+    }
 
-  useInput(
-    (input, key) => {
-      if (key.ctrl && input === 'r') {
-        onRepeat()
-      }
-    },
-    { isActive: enabled && canRepeat },
-  )
+    if (canRepeat && key.ctrl && input === 'r') {
+      onRepeat()
+    }
 
-  useInput(
-    (input, key) => {
-      if (key.ctrl && input === 'g') {
-        onOpenFiles()
-      }
-    },
-    { isActive: enabled && canOpenFiles },
-  )
+    if (canOpenFiles && key.ctrl && input === 'g') {
+      onOpenFiles()
+    }
 
-  useInput(
-    (input, key) => {
+    if (canCycleModel) {
       const isShiftTab =
         (key.shift && key.tab) || input === '\u001b[Z' || (key.shift && input === '\t')
       if (isShiftTab) {
         onCycleModel()
       }
-    },
-    { isActive: enabled && canCycleModel },
-  )
-
-  useInput(
-    (input, key) => {
-      if (key.ctrl && input === 'c') {
-        process.exit(0)
-      }
-    },
-    { isActive: true },
-  )
+    }
+  })
 }

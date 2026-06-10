@@ -4,7 +4,6 @@ import { Box, Text } from 'ink'
 
 import { openInEditor, formatOpenOutcome } from '../services/editor'
 import { latestFocusRefs, parseExplicitRefs } from '../services/file-refs'
-import { FALLBACK_MODEL_CHOICES_BY_PROVIDER } from '../services/model-catalog'
 import { buildResumeArgsForSession } from '../services/relaunch'
 import { listSessions, type SessionSummary } from '../services/session'
 import {
@@ -23,6 +22,7 @@ import { SessionPicker } from './components/SessionPicker'
 import { TTSErrorBanner } from './components/TTSErrorBanner'
 import { WelcomeSplash } from './components/WelcomeSplash'
 import { useConversation } from './hooks/useConversation'
+import { getModelChoices } from './utils/model-choices'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { usePipeline } from './hooks/usePipeline'
 import { useTerminalSize } from './hooks/useTerminalSize'
@@ -175,10 +175,7 @@ export function App({
     [terminalRows, liveToolCount],
   )
 
-  const modelChoices =
-    config.llmModelChoices && config.llmModelChoices.length > 0
-      ? config.llmModelChoices
-      : FALLBACK_MODEL_CHOICES_BY_PROVIDER[config.llmProvider]
+  const modelChoices = getModelChoices(config)
   const canCycleModel = state === 'idle' && modelChoices.length > 1
   const isSpeakingState = state === 'speaking' || state === 'processing_speaking'
   const lastCompletedAnswer =

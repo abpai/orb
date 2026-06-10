@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import { empty, type TextBufferState } from '../input/TextBuffer'
+import { useSyncedRef } from './useSyncedRef'
 
 export interface CycleState {
   matches: string[]
@@ -18,8 +19,7 @@ export interface TextBufferInput {
 }
 
 export function useTextBufferInput(): TextBufferInput {
-  const [buffer, setBuffer] = useState<TextBufferState>(() => empty())
-  const bufferRef = useRef<TextBufferState>(buffer)
+  const [buffer, bufferRef, setBuffer] = useSyncedRef<TextBufferState>(() => empty())
   const desiredColRef = useRef<number>(0)
   const cycleRef = useRef<CycleState | null>(null)
 
@@ -30,7 +30,6 @@ export function useTextBufferInput(): TextBufferInput {
     const next = fn(bufferRef.current)
     if (next === bufferRef.current) return null
     if (opts.resetDesiredCol ?? true) desiredColRef.current = next.col
-    bufferRef.current = next
     setBuffer(next)
     return next
   }
