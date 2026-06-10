@@ -167,6 +167,27 @@ describe('createEditorMarkerProcessor', () => {
     expect(opened).toEqual([])
   })
 
+  // Agreement: the streaming path (deltas) and the batch path (complete text)
+  // run on one shared fence machine, so feeding a document char-by-char as
+  // deltas must yield the same cleaned text as scrubbing it whole. These guard
+  // the seam the refactor unified.
+  const agrees = async (doc: string) => {
+    const viaDeltas = await run(doc.split('')) // one char per delta
+    expect(viaDeltas.deltas.join('')).toBe(viaDeltas.text)
+  }
+
+  it('streamed deltas and the complete frame clean a control block identically', async () => {
+    await agrees('intro\n```orb:open\nsrc/a.ts:9\n```\noutro')
+  })
+
+  it('streamed deltas and the complete frame clean a nested marker identically', async () => {
+    await agrees('````markdown\n```orb:open\nx.ts\n```\n````\ntrailing')
+  })
+
+  it('streamed deltas and the complete frame agree on multiple blocks and prose', async () => {
+    await agrees('one\n```orb:open\na.ts\n```\ntwo\n```ts\nconst x = 1\n```\nthree')
+  })
+
   it('passes non-text frames through untouched', async () => {
     resetFrameIds()
     const processor = createEditorMarkerProcessor({ open: () => {} })
