@@ -7,8 +7,8 @@ import {
   formatRelativeTime,
   formatSourceTag,
   pluralizeTurns,
-  truncate,
 } from './ui/components/SessionPicker'
+import { collapseToSingleLine } from './ui/utils/text'
 import { listSessions, type SessionSummary } from './services/session'
 import { listAllSessions } from './services/external-sessions'
 import { abbreviateHome } from './services/orb-paths'
@@ -62,7 +62,7 @@ export function formatSessionList(
 
   const lines = sessions.map((session) => {
     const provider = formatProviderLabel(session.llmProvider)
-    const title = truncate(session.preview || '(no messages yet)', 72)
+    const title = collapseToSingleLine(session.preview || '(no messages yet)', 72)
     return [
       title,
       `  ${formatSourceTag(session.source)} · ${abbreviateHome(session.projectPath)} · ${provider} · ${formatRelativeTime(session.lastModified)} · ${pluralizeTurns(session.turnCount)}`,

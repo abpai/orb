@@ -5,6 +5,7 @@ import type { SessionSummary } from '../../services/session'
 import type { SessionSource } from '../../types'
 import { abbreviateHome } from '../../services/orb-paths'
 import { useTerminalSize } from '../hooks/useTerminalSize'
+import { collapseToSingleLine } from '../utils/text'
 
 interface SessionPickerProps {
   sessions: SessionSummary[]
@@ -178,7 +179,7 @@ export function SessionPicker({
                 <Text color={isSelected ? 'cyan' : 'gray'}>{isSelected ? '› ' : '  '}</Text>
                 <Box flexDirection="column">
                   <Text color={isSelected ? 'cyan' : undefined} bold={isSelected} wrap="truncate">
-                    {truncate(sessionTitle(session), 72)}
+                    {collapseToSingleLine(sessionTitle(session), 72)}
                   </Text>
                   <Text color="gray" dimColor wrap="truncate">
                     {meta}
@@ -195,9 +196,4 @@ export function SessionPicker({
       )}
     </Box>
   )
-}
-
-export function truncate(value: string, max: number): string {
-  const collapsed = value.replace(/\s+/g, ' ').trim()
-  return collapsed.length > max ? `${collapsed.slice(0, max - 1)}…` : collapsed
 }

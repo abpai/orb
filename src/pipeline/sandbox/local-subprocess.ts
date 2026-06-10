@@ -12,7 +12,7 @@ import {
   type Sandbox,
   type WriteOpts,
 } from './interface'
-import { resolveWithDeepestAncestor } from './path-clamp'
+import { resolveWithDeepestAncestor } from '../../services/path-clamp'
 
 export class LocalSubprocessSandbox implements Sandbox {
   readonly rootDir: string

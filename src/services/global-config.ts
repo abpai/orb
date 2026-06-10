@@ -386,8 +386,9 @@ export function serializeGlobalConfig(config: OrbGlobalConfig): string {
     if (Object.keys(tts).length > 0) document.tts = tts
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return stringify(document as any)
+  // `document` is a RawObject (Record<string, unknown>); cast to the TOML
+  // library's documented JsonMap input type rather than `any`.
+  return stringify(document as Parameters<typeof stringify>[0])
 }
 
 export async function writeGlobalConfig(

@@ -11,6 +11,7 @@ import {
   type AppConfig,
   type AppState,
   type DetailMode,
+  type LlmProvider,
   type ResumeInfo,
   type SavedSession,
 } from '../types'
@@ -46,6 +47,13 @@ function mapStateToAnimationMode(state: AppState): AnimationMode {
     case 'idle':
       return 'idle'
   }
+}
+
+/** Speaker label shown for assistant turns, per provider. */
+const ASSISTANT_LABEL_BY_PROVIDER: Record<LlmProvider, string> = {
+  anthropic: 'claude',
+  openai: 'openai',
+  gemini: 'gemini',
 }
 
 const FIXED_UI_OVERHEAD = 8
@@ -220,12 +228,7 @@ export function App({
   // ── Derived state ──
 
   const animationMode = useMemo(() => mapStateToAnimationMode(state), [state])
-  const assistantLabel =
-    config.llmProvider === 'anthropic'
-      ? 'claude'
-      : config.llmProvider === 'gemini'
-        ? 'gemini'
-        : 'openai'
+  const assistantLabel = ASSISTANT_LABEL_BY_PROVIDER[config.llmProvider]
   const projectName = useMemo(
     () => basename(config.projectPath) || config.projectPath,
     [config.projectPath],
