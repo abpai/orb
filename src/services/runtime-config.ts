@@ -1,11 +1,17 @@
 import { randomUUID } from 'node:crypto'
 import os from 'node:os'
 
-import { DEFAULT_CONFIG, DEFAULT_MODEL_ALIAS_BY_PROVIDER, parseCliArgs } from '../config'
+import {
+  DEFAULT_CONFIG,
+  DEFAULT_MODEL_ALIAS_BY_PROVIDER,
+  parseCliArgs,
+  resolveModelForConfig,
+} from '../config'
 import type { AgentSession, AppConfig, ResumeInfo, SavedSession } from '../types'
 import { applyGlobalConfig, getGlobalConfigPath, loadGlobalConfig } from './global-config'
 import { warn } from './log'
 import { resolveAppModelConfig } from './model-catalog'
+import { modelCachePath } from './orb-paths'
 import { applyOpenAiStreamingDefaults, resolveSmartProvider } from './provider-defaults'
 import { loadSession, loadSessionById } from './session'
 import { lookupExternalSessionMeta } from './external-sessions'
@@ -30,6 +36,19 @@ function sameAgentSession(a: AgentSession | undefined, b: AgentSession): boolean
   if (a.provider === 'anthropic' && b.provider === 'anthropic') return a.sessionId === b.sessionId
   if (a.provider === 'openai' && b.provider === 'openai') return a.threadId === b.threadId
   return false
+}
+
+function alignSavedSessionWithConfig(session: SavedSession, config: AppConfig): SavedSession {
+  const agentSession =
+    session.agentSession?.provider === config.llmProvider ? session.agentSession : undefined
+
+  return {
+    ...session,
+    projectPath: config.projectPath,
+    llmProvider: config.llmProvider,
+    llmModel: config.llmModel,
+    agentSession,
+  }
 }
 
 export function createInitialSession(
@@ -71,14 +90,14 @@ export async function resolveRuntimeConfig(
   }
 
   const baseConfig = applyGlobalConfig(DEFAULT_CONFIG, globalConfig.config)
-  const { config, explicit } = parseCliArgs(args, {
+  const { config, explicit, cliOverrides } = parseCliArgs(args, {
     baseConfig,
     baseExplicit: globalConfig.explicit,
   })
 
   let resumeById: SavedSession | null = null
   if (config.resumeId && !config.startFresh) {
-    resumeById = await loadSessionById(config.projectPath, config.resumeId)
+    resumeById = await loadSessionById(config.projectPath, config.resumeId, homeDir)
     if (!resumeById) {
       return {
         kind: 'error',
@@ -86,8 +105,16 @@ export async function resolveRuntimeConfig(
         code: 1,
       }
     }
-    config.llmProvider = resumeById.llmProvider
-    config.llmModel = resumeById.llmModel
+    // Explicit CLI flags win over the saved session; config-file defaults do
+    // not. A provider-only override drops the saved model (it may not exist on
+    // the new provider) and falls through to that provider's default alias.
+    const resumeProvider = cliOverrides.provider ?? resumeById.llmProvider
+    config.llmProvider = resumeProvider
+    if (cliOverrides.model) {
+      config.llmModel = resolveModelForConfig(resumeProvider, cliOverrides.model)
+    } else if (!cliOverrides.provider) {
+      config.llmModel = resumeById.llmModel
+    }
   }
   const resumeLocksProvider = resumeById !== null
 
@@ -108,7 +135,7 @@ export async function resolveRuntimeConfig(
     }
   }
 
-  const resolvedModel = await resolveAppModelConfig(config)
+  const resolvedModel = await resolveAppModelConfig(config, { cachePath: modelCachePath(homeDir) })
   config.llmModel = resolvedModel.llmModel
   config.llmModelChoices = resolvedModel.llmModelChoices
   config.llmModelLabels = resolvedModel.llmModelLabels
@@ -118,8 +145,11 @@ export async function resolveRuntimeConfig(
 
   applyOpenAiStreamingDefaults(config, explicit)
 
-  const savedSession =
-    resumeById ?? (config.startFresh ? null : await loadSession(config.projectPath))
+  const savedSession = resumeById
+    ? alignSavedSessionWithConfig(resumeById, config)
+    : config.startFresh
+      ? null
+      : await loadSession(config.projectPath, homeDir)
   const initialSession = createInitialSession(config, savedSession)
   const orbSessionId = initialSession?.id ?? randomUUID()
 
