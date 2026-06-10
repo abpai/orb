@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { DEFAULT_CONFIG, TTSError } from '../types'
+import { detectPlayer, resetDetectedPlayer } from './audio-player'
 
 async function importModule() {
   mock.restore()
@@ -16,7 +17,7 @@ async function importGenerateAudio() {
 }
 
 async function resetAudioState() {
-  const { stopSpeaking, resetDetectedPlayer } = await import('./tts')
+  const { stopSpeaking } = await import('./tts')
   stopSpeaking()
   resetDetectedPlayer()
 }
@@ -230,7 +231,7 @@ describe('detectPlayer', () => {
   })
 
   it('returns mpv config when mpv is available', async () => {
-    const { detectPlayer, resetDetectedPlayer } = await importModule()
+    await importModule()
     resetDetectedPlayer()
 
     Bun.which = mock((binary: string) => {
@@ -242,7 +243,7 @@ describe('detectPlayer', () => {
   })
 
   it('falls back to ffplay when mpv is not available', async () => {
-    const { detectPlayer, resetDetectedPlayer } = await importModule()
+    await importModule()
     resetDetectedPlayer()
 
     Bun.which = mock((binary: string) => {
@@ -254,7 +255,7 @@ describe('detectPlayer', () => {
   })
 
   it('throws player_not_found when neither is available', async () => {
-    const { detectPlayer, resetDetectedPlayer } = await importModule()
+    await importModule()
     resetDetectedPlayer()
 
     Bun.which = mock(() => null) as unknown as typeof Bun.which
@@ -269,7 +270,7 @@ describe('detectPlayer', () => {
   })
 
   it('caches the result across calls', async () => {
-    const { detectPlayer, resetDetectedPlayer } = await importModule()
+    await importModule()
     resetDetectedPlayer()
 
     let whichCount = 0
@@ -338,7 +339,7 @@ describe('createStreamSession', () => {
   }
 
   it('pipes audio stream chunks to player stdin', async () => {
-    const { createStreamSession, resetDetectedPlayer } = await importModule()
+    const { createStreamSession } = await importModule()
     resetDetectedPlayer()
     mockPlayerAvailable('mpv')
 
@@ -382,7 +383,7 @@ describe('createStreamSession', () => {
   })
 
   it('rejects on non-zero player exit', async () => {
-    const { createStreamSession, resetDetectedPlayer } = await importModule()
+    const { createStreamSession } = await importModule()
     resetDetectedPlayer()
     mockPlayerAvailable('mpv')
 
@@ -412,7 +413,7 @@ describe('createStreamSession', () => {
   })
 
   it('ignores reader releaseLock failures during cleanup', async () => {
-    const { createStreamSession, resetDetectedPlayer } = await importModule()
+    const { createStreamSession } = await importModule()
     resetDetectedPlayer()
     mockPlayerAvailable('mpv')
 
@@ -453,7 +454,7 @@ describe('createStreamSession', () => {
   })
 
   it('kill() terminates without throwing', async () => {
-    const { createStreamSession, resetDetectedPlayer } = await importModule()
+    const { createStreamSession } = await importModule()
     resetDetectedPlayer()
     mockPlayerAvailable('mpv')
 
@@ -488,8 +489,7 @@ describe('createStreamSession', () => {
   })
 
   it('waits for resume before starting the player when paused first', async () => {
-    const { createStreamSession, pauseSpeaking, resetDetectedPlayer, resumeSpeaking } =
-      await importModule()
+    const { createStreamSession, pauseSpeaking, resumeSpeaking } = await importModule()
     resetDetectedPlayer()
     mockPlayerAvailable('mpv')
 
@@ -522,7 +522,7 @@ describe('createStreamSession', () => {
   })
 
   it('passes speed to player args', async () => {
-    const { createStreamSession, resetDetectedPlayer } = await importModule()
+    const { createStreamSession } = await importModule()
     resetDetectedPlayer()
     mockPlayerAvailable('mpv')
 
@@ -597,10 +597,10 @@ describe('createStreamSession', () => {
       }),
     }))
 
-    const { createStreamSession, resetDetectedPlayer } = await import(
-      `./tts?ffplay-test=${Date.now()}-${Math.random()}`
-    )
-    resetDetectedPlayer()
+    const cacheBust = `ffplay-test=${Date.now()}-${Math.random()}`
+    const { createStreamSession } = await import(`./tts?${cacheBust}`)
+    const { resetDetectedPlayer: resetFreshPlayer } = await import(`./audio-player?${cacheBust}`)
+    resetFreshPlayer()
     mockPlayerAvailable('ffplay')
 
     const stream = new ReadableStream<Uint8Array>({

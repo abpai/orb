@@ -3,7 +3,6 @@ import { TTSError, type AppConfig } from '../types'
 import {
   createTempAudioPath,
   createStreamSession,
-  detectPlayer,
   generateAudio,
   pauseSpeaking,
   playAudio,
@@ -12,6 +11,7 @@ import {
   resetPlaybackStoppedFlag,
   type StreamSession,
 } from './tts'
+import { detectPlayer } from './audio-player'
 import { cleanTextForSpeech } from '../ui/utils/markdown'
 import { createGatewayClient, DEFAULT_SERVER_URL } from './gateway-client'
 import { hasOpenCodeDelimiter } from './speech-text'
@@ -50,18 +50,34 @@ export function createStreamingSpeechController(
   config: AppConfig,
   callbacks: StreamingSpeechCallbacks = {},
 ): StreamingSpeechController {
-  let textBuffer = ''
-  let processedOffset = 0
-  let lastCleanedText = ''
-  let finalized = false
-  let stopped = false
-  let paused = false
-  let speakingStarted = false
-  let completed = false
-  let lastFlushAt = Date.now()
-  let maxWaitTimeout: ReturnType<typeof setTimeout> | null = null
-  let graceTimeout: ReturnType<typeof setTimeout> | null = null
-  let pendingGrace = false
+  /**
+   * Raw input accumulation and the cleaned-prefix bookkeeping that decides what
+   * has already been spoken. Invariant: `processedOffset` indexes into the
+   * *cleaned* text (cleanTextForSpeech(textBuffer)), and `lastCleanedText` is
+   * the cleaned text observed on the previous delta — reconcileProcessedOffset
+   * prefix-diffs against it to walk `processedOffset` back when an in-flight
+   * edit rewrote already-counted characters. Compaction can reset all three to
+   * empty once the settled prefix is fully emitted.
+   */
+  const textIntake = {
+    textBuffer: '',
+    processedOffset: 0,
+    lastCleanedText: '',
+  }
+
+  /**
+   * Debounce/grace timers that decide WHEN buffered text is force-flushed.
+   * Invariant: at most one `maxWaitTimeout` and one `graceTimeout` are live at a
+   * time; `pendingGrace` is true exactly while a grace timer is armed.
+   * `lastFlushAt` is the wall-clock of the last enqueue/flush, used to compute
+   * the remaining max-wait delay. clearTimers() must zero all four together.
+   */
+  const flushScheduling = {
+    lastFlushAt: Date.now(),
+    maxWaitTimeout: null as ReturnType<typeof setTimeout> | null,
+    graceTimeout: null as ReturnType<typeof setTimeout> | null,
+    pendingGrace: false,
+  }
 
   const sentenceQueue: string[] = []
   const client =
@@ -69,62 +85,90 @@ export function createStreamingSpeechController(
       ? createGatewayClient(config.ttsServerUrl ?? DEFAULT_SERVER_URL)
       : null
 
-  let isProcessing = false
-  let currentSession: StreamSession | null = null
-  let activeAbort: AbortController | null = null
-  let prefetch: PrefetchState | null = null
-  let completionResolve: (() => void) | null = null
-  let completionReject: ((error: TTSError) => void) | null = null
-  let completionPromise: Promise<void> | null = null
-  let fatalError: TTSError | null = null
+  /**
+   * The currently-playing audio attempt and its cancellation handles.
+   * Invariant: `isProcessing` is true exactly while processNextSentence is
+   * mid-flight; `currentSession`/`activeAbort` are non-null only during an
+   * in-flight stream and are cleared in the processing `finally`. `prefetch`
+   * holds the speculatively-fetched next stream, owned solely here.
+   */
+  const playback = {
+    isProcessing: false,
+    currentSession: null as StreamSession | null,
+    activeAbort: null as AbortController | null,
+    prefetch: null as PrefetchState | null,
+  }
+
+  /**
+   * One-way lifecycle flags plus the completion-promise wiring. Invariant: once
+   * `stopped` or `completed` is set it never clears; `finalized` flips once when
+   * input ends; `fatalError` (if set) is the rejection delivered to
+   * waitForCompletion. The completion resolve/reject are captured lazily when a
+   * caller first awaits waitForCompletion.
+   */
+  const lifecycle = {
+    finalized: false,
+    stopped: false,
+    paused: false,
+    speakingStarted: false,
+    completed: false,
+    fatalError: null as TTSError | null,
+    completionResolve: null as (() => void) | null,
+    completionReject: null as ((error: TTSError) => void) | null,
+    completionPromise: null as Promise<void> | null,
+  }
 
   function clearTimers(): void {
-    if (maxWaitTimeout) {
-      clearTimeout(maxWaitTimeout)
-      maxWaitTimeout = null
+    if (flushScheduling.maxWaitTimeout) {
+      clearTimeout(flushScheduling.maxWaitTimeout)
+      flushScheduling.maxWaitTimeout = null
     }
-    if (graceTimeout) {
-      clearTimeout(graceTimeout)
-      graceTimeout = null
+    if (flushScheduling.graceTimeout) {
+      clearTimeout(flushScheduling.graceTimeout)
+      flushScheduling.graceTimeout = null
     }
-    pendingGrace = false
+    flushScheduling.pendingGrace = false
   }
 
   function enqueueChunk(chunk: string, now: number): void {
     if (!chunk.trim()) return
     sentenceQueue.push(chunk)
-    lastFlushAt = now
+    flushScheduling.lastFlushAt = now
   }
 
   function reconcileProcessedOffset(cleanedText: string): void {
-    if (!lastCleanedText) {
-      lastCleanedText = cleanedText
-      processedOffset = Math.min(processedOffset, cleanedText.length)
+    if (!textIntake.lastCleanedText) {
+      textIntake.lastCleanedText = cleanedText
+      textIntake.processedOffset = Math.min(textIntake.processedOffset, cleanedText.length)
       return
     }
 
-    if (cleanedText !== lastCleanedText) {
-      const maxCheck = Math.min(processedOffset, cleanedText.length, lastCleanedText.length)
+    if (cleanedText !== textIntake.lastCleanedText) {
+      const maxCheck = Math.min(
+        textIntake.processedOffset,
+        cleanedText.length,
+        textIntake.lastCleanedText.length,
+      )
       let index = 0
 
-      while (index < maxCheck && cleanedText[index] === lastCleanedText[index]) {
+      while (index < maxCheck && cleanedText[index] === textIntake.lastCleanedText[index]) {
         index += 1
       }
 
-      if (processedOffset > index) {
-        processedOffset = index
+      if (textIntake.processedOffset > index) {
+        textIntake.processedOffset = index
       }
-      lastCleanedText = cleanedText
+      textIntake.lastCleanedText = cleanedText
     }
 
-    if (processedOffset > cleanedText.length) {
-      processedOffset = cleanedText.length
+    if (textIntake.processedOffset > cleanedText.length) {
+      textIntake.processedOffset = cleanedText.length
     }
   }
 
   function getPendingText(cleanedText: string): string {
     reconcileProcessedOffset(cleanedText)
-    return cleanedText.slice(processedOffset)
+    return cleanedText.slice(textIntake.processedOffset)
   }
 
   function tryExtractAtBoundary(
@@ -138,7 +182,7 @@ export function createStreamingSpeechController(
     const result = extractChunkAtBoundary(pending, boundary, minLength, forceFlush)
     if (result.consumed > 0) {
       if (result.chunk) enqueueChunk(result.chunk, now)
-      processedOffset += result.consumed
+      textIntake.processedOffset += result.consumed
       return getPendingText(cleanedText)
     }
     return pending
@@ -154,13 +198,13 @@ export function createStreamingSpeechController(
     const strong = extractStrongChunks(pending)
     if (strong.chunks.length > 0) {
       for (const chunk of strong.chunks) enqueueChunk(chunk, options.now)
-      processedOffset += strong.consumed
+      textIntake.processedOffset += strong.consumed
       pending = getPendingText(cleanedText)
     }
 
     if (options.finalized) {
       if (pending.trim()) enqueueChunk(pending.trimEnd(), options.now)
-      processedOffset = cleanedText.length
+      textIntake.processedOffset = cleanedText.length
       return ''
     }
 
@@ -190,7 +234,7 @@ export function createStreamingSpeechController(
       // No whitespace boundary found - emit at max length or flush all if shorter
       const emitLength = Math.min(pending.length, maxChunkLength)
       enqueueChunk(pending.slice(0, emitLength), options.now)
-      processedOffset += emitLength
+      textIntake.processedOffset += emitLength
       pending = pending.slice(emitLength)
     }
 
@@ -198,7 +242,7 @@ export function createStreamingSpeechController(
   }
 
   function extractChunks(options: { forceFlush: boolean; finalized: boolean }): string {
-    const cleanedText = cleanTextForSpeech(textBuffer)
+    const cleanedText = cleanTextForSpeech(textIntake.textBuffer)
     const now = Date.now()
     return extractChunksFromCleaned(cleanedText, { ...options, now })
   }
@@ -213,12 +257,12 @@ export function createStreamingSpeechController(
    * which TTS renders identically).
    */
   function compactSettledBuffer(): void {
-    if (lastCleanedText.length === 0) return
-    if (processedOffset < lastCleanedText.length) return
-    if (hasOpenCodeDelimiter(textBuffer)) return
-    textBuffer = ''
-    processedOffset = 0
-    lastCleanedText = ''
+    if (textIntake.lastCleanedText.length === 0) return
+    if (textIntake.processedOffset < textIntake.lastCleanedText.length) return
+    if (hasOpenCodeDelimiter(textIntake.textBuffer)) return
+    textIntake.textBuffer = ''
+    textIntake.processedOffset = 0
+    textIntake.lastCleanedText = ''
   }
 
   function shouldGrace(pending: string): boolean {
@@ -227,28 +271,28 @@ export function createStreamingSpeechController(
 
   function resetFlushTimers(pendingText: string): void {
     clearTimers()
-    if (stopped || finalized) return
+    if (lifecycle.stopped || lifecycle.finalized) return
     if (config.ttsMaxWaitMs <= 0) return
     if (!pendingText.trim()) return
 
-    const elapsed = Date.now() - lastFlushAt
+    const elapsed = Date.now() - flushScheduling.lastFlushAt
     const delay = Math.max(config.ttsMaxWaitMs - elapsed, 0)
-    maxWaitTimeout = setTimeout(handleMaxWait, delay)
+    flushScheduling.maxWaitTimeout = setTimeout(handleMaxWait, delay)
   }
 
   function handleMaxWait(): void {
-    if (stopped || finalized) return
+    if (lifecycle.stopped || lifecycle.finalized) return
 
-    const cleanedText = cleanTextForSpeech(textBuffer)
+    const cleanedText = cleanTextForSpeech(textIntake.textBuffer)
     const pendingText = getPendingText(cleanedText)
     if (!pendingText.trim()) {
       return
     }
 
-    if (config.ttsGraceWindowMs > 0 && shouldGrace(pendingText) && !pendingGrace) {
-      pendingGrace = true
-      graceTimeout = setTimeout(() => {
-        pendingGrace = false
+    if (config.ttsGraceWindowMs > 0 && shouldGrace(pendingText) && !flushScheduling.pendingGrace) {
+      flushScheduling.pendingGrace = true
+      flushScheduling.graceTimeout = setTimeout(() => {
+        flushScheduling.pendingGrace = false
         const remaining = extractChunks({ forceFlush: true, finalized: false })
         maybeStartProcessing()
         resetFlushTimers(remaining)
@@ -257,14 +301,14 @@ export function createStreamingSpeechController(
       return
     }
 
-    const lastFlush = lastFlushAt
+    const lastFlush = flushScheduling.lastFlushAt
     const remaining = extractChunksFromCleaned(cleanedText, {
       forceFlush: true,
       finalized: false,
       now: Date.now(),
     })
-    if (remaining.trim() && lastFlushAt === lastFlush) {
-      lastFlushAt = Date.now()
+    if (remaining.trim() && flushScheduling.lastFlushAt === lastFlush) {
+      flushScheduling.lastFlushAt = Date.now()
     }
     maybeStartProcessing()
     resetFlushTimers(remaining)
@@ -286,8 +330,8 @@ export function createStreamingSpeechController(
   }
 
   function cancelPrefetch(): void {
-    const state = prefetch
-    prefetch = null
+    const state = playback.prefetch
+    playback.prefetch = null
     state?.abort.abort()
     state?.stream.then((stream) => stream.cancel().catch(() => {})).catch(() => {})
   }
@@ -295,7 +339,7 @@ export function createStreamingSpeechController(
   function takeSpeechBatch(): string | null {
     if (sentenceQueue.length === 0) return null
     const targetCount = Math.max(1, config.ttsBufferSentences)
-    if (!finalized && sentenceQueue.length < targetCount) return null
+    if (!lifecycle.finalized && sentenceQueue.length < targetCount) return null
 
     const batchSize = Math.min(sentenceQueue.length, targetCount)
     return sentenceQueue.splice(0, batchSize).join(' ')
@@ -304,13 +348,13 @@ export function createStreamingSpeechController(
   function peekSpeechBatch(): string | null {
     if (sentenceQueue.length === 0) return null
     const targetCount = Math.max(1, config.ttsBufferSentences)
-    if (!finalized && sentenceQueue.length < targetCount) return null
+    if (!lifecycle.finalized && sentenceQueue.length < targetCount) return null
 
     return sentenceQueue.slice(0, Math.min(sentenceQueue.length, targetCount)).join(' ')
   }
 
   function startPrefetch(): void {
-    if (!client || prefetch || stopped || sentenceQueue.length === 0) return
+    if (!client || playback.prefetch || lifecycle.stopped || sentenceQueue.length === 0) return
 
     const nextSentence = peekSpeechBatch()
     if (!nextSentence) return
@@ -326,30 +370,30 @@ export function createStreamingSpeechController(
     state.stream = client
       .speakStream(nextSentence, config.ttsVoice, abort.signal)
       .then((stream) => {
-        if (stopped || (!state.claimed && prefetch !== state)) {
+        if (lifecycle.stopped || (!state.claimed && playback.prefetch !== state)) {
           stream.cancel().catch(() => {})
           throw new TTSError('Prefetch canceled', 'generation_failed')
         }
         return stream
       })
-    prefetch = state
+    playback.prefetch = state
     state.stream.catch(() => {
-      if (prefetch === state) prefetch = null
+      if (playback.prefetch === state) playback.prefetch = null
     })
   }
 
   async function fetchSpeechStream(sentence: string): Promise<ReadableStream<Uint8Array>> {
-    const state = prefetch
+    const state = playback.prefetch
     if (state) {
-      prefetch = null
+      playback.prefetch = null
       if (state.text === sentence) {
         state.claimed = true
-        activeAbort = state.abort
+        playback.activeAbort = state.abort
         try {
           return await state.stream
         } catch (err) {
-          if (stopped) throw err
-          activeAbort = null
+          if (lifecycle.stopped) throw err
+          playback.activeAbort = null
         }
       } else {
         state.abort.abort()
@@ -357,8 +401,8 @@ export function createStreamingSpeechController(
       }
     }
 
-    activeAbort = new AbortController()
-    return await client!.speakStream(sentence, config.ttsVoice, activeAbort.signal)
+    playback.activeAbort = new AbortController()
+    return await client!.speakStream(sentence, config.ttsVoice, playback.activeAbort.signal)
   }
 
   async function streamOrFallback(sentence: string): Promise<void> {
@@ -376,7 +420,7 @@ export function createStreamingSpeechController(
     const audioStream = await fetchSpeechStream(sentence)
 
     const session = createStreamSession(audioStream, config.ttsSpeed)
-    currentSession = session
+    playback.currentSession = session
 
     // Pre-fetch next sentence's audio while this one plays
     startPrefetch()
@@ -385,7 +429,7 @@ export function createStreamingSpeechController(
   }
 
   async function processNextSentence(): Promise<void> {
-    if (isProcessing || stopped || paused) return
+    if (playback.isProcessing || lifecycle.stopped || lifecycle.paused) return
 
     const sentence = takeSpeechBatch()
     if (!sentence) {
@@ -393,10 +437,10 @@ export function createStreamingSpeechController(
       return
     }
 
-    isProcessing = true
+    playback.isProcessing = true
 
-    if (!speakingStarted) {
-      speakingStarted = true
+    if (!lifecycle.speakingStarted) {
+      lifecycle.speakingStarted = true
       callbacks.onSpeakingStart?.()
     }
 
@@ -407,60 +451,60 @@ export function createStreamingSpeechController(
         await streamOrFallback(sentence)
       }
     } catch (err) {
-      if (stopped) return
+      if (lifecycle.stopped) return
       const ttsError =
         err instanceof TTSError ? err : new TTSError(String(err), 'generation_failed')
       callbacks.onError?.(ttsError)
       fail(ttsError)
       return
     } finally {
-      currentSession = null
-      activeAbort = null
-      isProcessing = false
-      if (!stopped) {
+      playback.currentSession = null
+      playback.activeAbort = null
+      playback.isProcessing = false
+      if (!lifecycle.stopped) {
         processNextSentence()
       }
     }
   }
 
   function hasWorkRemaining(): boolean {
-    return isProcessing || sentenceQueue.length > 0
+    return playback.isProcessing || sentenceQueue.length > 0
   }
 
   function markComplete(): void {
-    if (completed) return
-    completed = true
-    if (speakingStarted) callbacks.onSpeakingEnd?.()
-    completionResolve?.()
+    if (lifecycle.completed) return
+    lifecycle.completed = true
+    if (lifecycle.speakingStarted) callbacks.onSpeakingEnd?.()
+    lifecycle.completionResolve?.()
   }
 
   function fail(error: TTSError): void {
-    if (completed) return
-    fatalError = error
-    stopped = true
-    completed = true
+    if (lifecycle.completed) return
+    lifecycle.fatalError = error
+    lifecycle.stopped = true
+    lifecycle.completed = true
     sentenceQueue.length = 0
     cancelPrefetch()
-    completionReject?.(error)
+    lifecycle.completionReject?.(error)
   }
 
   function checkCompletion(): void {
-    if (finalized && !stopped && !hasWorkRemaining() && !completed) {
+    if (lifecycle.finalized && !lifecycle.stopped && !hasWorkRemaining() && !lifecycle.completed) {
       markComplete()
     }
   }
 
   function maybeStartProcessing(): void {
-    if (stopped || isProcessing || paused) return
-    if (sentenceQueue.length >= config.ttsBufferSentences || finalized) {
+    if (lifecycle.stopped || playback.isProcessing || lifecycle.paused) return
+    if (sentenceQueue.length >= config.ttsBufferSentences || lifecycle.finalized) {
       processNextSentence()
     }
   }
 
   return {
     feedText(chunk: string): void {
-      if (stopped || !config.ttsEnabled) return
-      textBuffer += chunk
+      if (lifecycle.stopped || !config.ttsEnabled) return
+      textIntake.textBuffer += chunk
       const remaining = extractChunks({ forceFlush: false, finalized: false })
       maybeStartProcessing()
       resetFlushTimers(remaining)
@@ -468,12 +512,12 @@ export function createStreamingSpeechController(
     },
 
     finalize(): void {
-      if (stopped || finalized) return
-      finalized = true
+      if (lifecycle.stopped || lifecycle.finalized) return
+      lifecycle.finalized = true
       clearTimers()
 
       if (!config.ttsEnabled) {
-        completionResolve?.()
+        lifecycle.completionResolve?.()
         return
       }
 
@@ -484,59 +528,59 @@ export function createStreamingSpeechController(
     },
 
     stop(): void {
-      stopped = true
-      paused = false
-      completed = true
+      lifecycle.stopped = true
+      lifecycle.paused = false
+      lifecycle.completed = true
       clearTimers()
       sentenceQueue.length = 0
 
       cancelPrefetch()
 
-      activeAbort?.abort()
-      activeAbort = null
+      playback.activeAbort?.abort()
+      playback.activeAbort = null
 
-      currentSession?.kill()
-      currentSession = null
+      playback.currentSession?.kill()
+      playback.currentSession = null
 
       // Stop generate-mode playback (afplay)
       stopSpeaking()
 
       // Resolve completion promise
-      completionResolve?.()
+      lifecycle.completionResolve?.()
     },
 
     pause(): void {
-      if (stopped || completed || paused) return
-      paused = true
-      currentSession?.pause()
+      if (lifecycle.stopped || lifecycle.completed || lifecycle.paused) return
+      lifecycle.paused = true
+      playback.currentSession?.pause()
       pauseSpeaking()
     },
 
     resume(): void {
-      if (stopped || completed || !paused) return
-      paused = false
-      currentSession?.resume()
+      if (lifecycle.stopped || lifecycle.completed || !lifecycle.paused) return
+      lifecycle.paused = false
+      playback.currentSession?.resume()
       resumeSpeaking()
       // Kick the queue back into motion if an audio session isn't already running
-      if (!currentSession && !isProcessing) {
+      if (!playback.currentSession && !playback.isProcessing) {
         processNextSentence()
       }
     },
 
     waitForCompletion(): Promise<void> {
-      if (completionPromise) return completionPromise
+      if (lifecycle.completionPromise) return lifecycle.completionPromise
 
-      completionPromise = new Promise((resolve, reject) => {
-        completionResolve = resolve
-        completionReject = reject
+      lifecycle.completionPromise = new Promise((resolve, reject) => {
+        lifecycle.completionResolve = resolve
+        lifecycle.completionReject = reject
 
-        if (fatalError) {
-          reject(fatalError)
+        if (lifecycle.fatalError) {
+          reject(lifecycle.fatalError)
           return
         }
 
-        const alreadyDone = stopped || completed || !config.ttsEnabled
-        const justFinished = finalized && !hasWorkRemaining()
+        const alreadyDone = lifecycle.stopped || lifecycle.completed || !config.ttsEnabled
+        const justFinished = lifecycle.finalized && !hasWorkRemaining()
 
         if (alreadyDone || justFinished) {
           markComplete()
@@ -544,11 +588,11 @@ export function createStreamingSpeechController(
         }
       })
 
-      return completionPromise
+      return lifecycle.completionPromise
     },
 
     isActive(): boolean {
-      return !stopped && (hasWorkRemaining() || speakingStarted)
+      return !lifecycle.stopped && (hasWorkRemaining() || lifecycle.speakingStarted)
     },
   }
 }
