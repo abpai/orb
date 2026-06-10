@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, mock } from 'bun:test'
 import type { AppConfig } from '../types'
 import { DEFAULT_CONFIG } from '../types'
 import { createStreamingSpeechController } from './streaming-tts'
-import { resetDetectedPlayer } from './tts'
+import { resetDetectedPlayer } from './audio-player'
 
 const originalFetch = globalThis.fetch
 const originalSpawn = Bun.spawn

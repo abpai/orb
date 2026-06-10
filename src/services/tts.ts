@@ -3,16 +3,16 @@ import { join } from 'node:path'
 import { unlink } from 'node:fs/promises'
 import { TTSError, type AppConfig, type TTSErrorType, type Voice } from '../types'
 import { cleanTextForSpeech } from '../ui/utils/markdown'
-import {
-  detectPlayer,
-  spawnAfplay,
-  type FilePlayerProcess,
-  type PlayerProcess,
-} from './audio-player'
+import { detectPlayer, spawnAfplay, type PlayerProcess } from './audio-player'
 import { createGatewayClient, DEFAULT_SERVER_URL } from './gateway-client'
+import { createPlaybackGate, type PlaybackGate } from './playback-gate'
 import { splitIntoSentences } from './speech-text'
 
-export { detectPlayer, resetDetectedPlayer } from './audio-player'
+// Single process-global playback control owner. createStreamSession's playback
+// loop and the file-based playAudio path both coordinate stop/pause/resume
+// through this gate. Exported so the streaming controller binds to the same
+// instance instead of reaching for loose module variables.
+export const playbackGate: PlaybackGate = createPlaybackGate()
 
 export interface StreamSession {
   done: Promise<void>
@@ -25,6 +25,7 @@ export interface StreamSession {
 export function createStreamSession(
   audioStream: ReadableStream<Uint8Array>,
   speed: number,
+  gate: PlaybackGate = playbackGate,
 ): StreamSession {
   let killed = false
   let proc: PlayerProcess | null = null
@@ -33,8 +34,8 @@ export function createStreamSession(
   const player = detectPlayer()
 
   const done = (async () => {
-    const controlVersion = playbackControlVersion
-    if (!(await waitForPlaybackReady(controlVersion)) || killed) {
+    const controlVersion = gate.snapshotVersion()
+    if (!(await gate.waitUntilReady(controlVersion)) || killed) {
       return
     }
 
@@ -45,8 +46,8 @@ export function createStreamSession(
 
     try {
       while (true) {
-        if (playbackPaused || controlVersion !== playbackControlVersion) {
-          if (!(await waitForPlaybackReady(controlVersion))) break
+        if (gate.isPaused() || controlVersion !== gate.snapshotVersion()) {
+          if (!(await gate.waitUntilReady(controlVersion))) break
         }
         if (killed) break
         const { done: readerDone, value } = await reader.read()
@@ -126,38 +127,12 @@ function categorizeTTSError(err: unknown, context: 'generate' | 'playback'): TTS
   return new TTSError(error.message, type, error)
 }
 
-let currentPlayProcess: FilePlayerProcess | null = null
-let playbackStoppedManually = false
-let playbackPaused = false
-let playbackControlVersion = 0
-const playbackResumeWaiters = new Set<() => void>()
-
-function flushPlaybackResumeWaiters(): void {
-  for (const resolve of playbackResumeWaiters) {
-    resolve()
-  }
-  playbackResumeWaiters.clear()
-}
-
-async function waitForPlaybackReady(controlVersion: number): Promise<boolean> {
-  while (playbackPaused) {
-    await new Promise<void>((resolve) => {
-      playbackResumeWaiters.add(resolve)
-    })
-    if (controlVersion !== playbackControlVersion) {
-      return false
-    }
-  }
-
-  return controlVersion === playbackControlVersion
-}
-
 export function wasPlaybackStopped(): boolean {
-  return playbackStoppedManually
+  return playbackGate.wasStopped()
 }
 
 export function resetPlaybackStoppedFlag(): void {
-  playbackStoppedManually = false
+  playbackGate.resetStopped()
 }
 
 function isValidSpeed(speed: number | undefined): speed is number {
@@ -243,28 +218,28 @@ export async function generateAudio(
 }
 
 export async function playAudio(path: string, speed?: number): Promise<void> {
-  const controlVersion = playbackControlVersion
+  const controlVersion = playbackGate.snapshotVersion()
 
-  if (!(await waitForPlaybackReady(controlVersion))) {
+  if (!(await playbackGate.waitUntilReady(controlVersion))) {
     return
   }
 
   try {
-    currentPlayProcess = spawnAfplay(path, isValidSpeed(speed) ? speed : undefined)
+    playbackGate.setCurrentProcess(spawnAfplay(path, isValidSpeed(speed) ? speed : undefined))
   } catch (err) {
-    currentPlayProcess = null
+    playbackGate.setCurrentProcess(null)
     throw categorizeTTSError(err, 'playback')
   }
 
-  const proc = currentPlayProcess
+  const proc = playbackGate.getCurrentProcess()
   if (!proc) {
     throw new TTSError('Audio playback failed to start', 'audio_playback')
   }
 
   const exitCode = await proc.exited
-  currentPlayProcess = null
+  playbackGate.setCurrentProcess(null)
 
-  const wasManualStop = playbackStoppedManually
+  const wasManualStop = playbackGate.wasStopped()
   if (wasManualStop) {
     resetPlaybackStoppedFlag()
   }
@@ -275,27 +250,15 @@ export async function playAudio(path: string, speed?: number): Promise<void> {
 }
 
 export function stopSpeaking(): void {
-  playbackPaused = false
-  playbackControlVersion += 1
-  flushPlaybackResumeWaiters()
-
-  if (currentPlayProcess) {
-    playbackStoppedManually = true
-    currentPlayProcess.resume() // unblock if paused so kill takes effect
-    currentPlayProcess.kill()
-    currentPlayProcess = null
-  }
+  playbackGate.stopAll()
 }
 
 export function pauseSpeaking(): void {
-  playbackPaused = true
-  currentPlayProcess?.pause()
+  playbackGate.pause()
 }
 
 export function resumeSpeaking(): void {
-  playbackPaused = false
-  flushPlaybackResumeWaiters()
-  currentPlayProcess?.resume()
+  playbackGate.resume()
 }
 
 export async function speak(text: string, config: AppConfig): Promise<void> {
