@@ -59,8 +59,10 @@ function sessionTitle(session: SessionSummary): string {
 
 function matchesFilter(session: SessionSummary, filter: string): boolean {
   if (!filter) return true
+  // External rows carry no recorded model, so only orb rows contribute one.
+  const model = session.source === 'orb' ? session.llmModel : ''
   const haystack =
-    `${formatSourceTag(session.source)} ${session.projectName} ${session.projectPath} ${session.preview} ${session.llmModel}`.toLowerCase()
+    `${formatSourceTag(session.source)} ${session.projectName} ${session.projectPath} ${session.preview} ${model}`.toLowerCase()
   return haystack.includes(filter.toLowerCase())
 }
 

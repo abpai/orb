@@ -60,22 +60,38 @@ function getLegacySessionPath(projectPath: string, homeDir = os.homedir()): stri
 /** Exposed for tests that seed a legacy flat-file session. */
 export const getLegacyPathForTest = getLegacySessionPath
 
-export interface SessionSummary {
-  /**
-   * orb rows: the orb session id. claude/codex rows: the external resume id
-   * (Claude sessionId / Codex threadId) passed to `--claude-session`/`--codex-thread`.
-   */
-  id: string
+/** Fields shared by every picker row, regardless of where it came from. */
+interface SessionSummaryBase {
   projectPath: string
   projectName: string
   llmProvider: LlmProvider
-  llmModel: string
   lastModified: string
   turnCount: number
   preview: string
-  /** Origin of the row. Omitted/`'orb'` for orb's own saved sessions. */
-  source?: SessionSource
 }
+
+/**
+ * A row backed by one of orb's own saved sessions. `id` is the orb session id
+ * (resumed via `--resume`) and the recorded model is always known.
+ */
+export interface OrbSessionSummary extends SessionSummaryBase {
+  source: 'orb'
+  id: string
+  llmModel: string
+}
+
+/**
+ * A row backed by an external store (Claude Code / Codex). `id` is the external
+ * resume id (Claude sessionId / Codex threadId) handed off via
+ * `--claude-session`/`--codex-thread`; the model isn't recorded by those stores.
+ */
+export interface ExternalSessionSummary extends SessionSummaryBase {
+  source: Exclude<SessionSource, 'orb'>
+  id: string
+}
+
+/** A resumable session row, discriminated on `source`. */
+export type SessionSummary = OrbSessionSummary | ExternalSessionSummary
 
 interface SavedSessionV1 {
   version: 1

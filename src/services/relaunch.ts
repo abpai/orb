@@ -43,12 +43,7 @@ export function buildResumeArgsForSession(
   session: SessionSummary,
   extraArgs: string[] = [],
 ): string[] {
-  return buildExternalResumeArgs(
-    session.projectPath,
-    session.source ?? 'orb',
-    session.id,
-    extraArgs,
-  )
+  return buildExternalResumeArgs(session.projectPath, session.source, session.id, extraArgs)
 }
 
 /**
