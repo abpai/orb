@@ -3,6 +3,7 @@ import path from 'node:path'
 import os from 'node:os'
 
 import type { SessionSummary } from '../session'
+import { asString } from './coerce'
 import type { CodexListResult, ExternalSessionMeta } from './types'
 
 const CODEX_DEFAULT_MAX_FILES = 2000
@@ -108,11 +109,10 @@ function parseCodexMeta(firstLine: string): { id: string; cwd: string; timestamp
     return null
   }
   if (line.type !== 'session_meta') return null
-  const id = line.payload?.id
-  const cwd = line.payload?.cwd
-  if (typeof id !== 'string' || typeof cwd !== 'string') return null
-  const timestamp = line.payload?.timestamp
-  return { id, cwd, timestamp: typeof timestamp === 'string' ? timestamp : undefined }
+  const id = asString(line.payload?.id)
+  const cwd = asString(line.payload?.cwd)
+  if (id === undefined || cwd === undefined) return null
+  return { id, cwd, timestamp: asString(line.payload?.timestamp) }
 }
 
 async function readCodexRollout(
@@ -157,7 +157,6 @@ async function readCodexRollout(
     projectPath: resolvedProject,
     projectName: path.basename(resolvedProject) || resolvedProject,
     llmProvider: 'openai',
-    llmModel: '',
     lastModified: meta.timestamp ?? new Date(0).toISOString(),
     turnCount: userCount,
     preview,

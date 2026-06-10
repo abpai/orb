@@ -10,7 +10,7 @@ import {
 import { buildProviderPrompt } from '../../services/prompts'
 import type { Frame } from '../frames'
 import { createFrame } from '../frames'
-import { resolveWithDeepestAncestor } from '../sandbox/path-clamp'
+import { resolveWithDeepestAncestor } from '../../services/path-clamp'
 import type { AgentAdapter, AgentAdapterConfig } from './types'
 import {
   createToolFrameTracker,

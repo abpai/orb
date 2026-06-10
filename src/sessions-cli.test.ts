@@ -18,8 +18,9 @@ function summary(overrides: Partial<SessionSummary> = {}): SessionSummary {
     lastModified: '2026-06-06T12:00:00.000Z',
     turnCount: 2,
     preview: 'resume this project',
+    source: 'orb',
     ...overrides,
-  }
+  } as SessionSummary
 }
 
 describe('formatSessionList', () => {

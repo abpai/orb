@@ -7,24 +7,21 @@ import {
   isForeignModelAlias,
   isModelAlias,
 } from './services/model-catalog'
+import {
+  TTS_MODES,
+  normalizeProvider,
+  parseNonNegativeInt,
+  parsePositiveInt,
+  parsePositiveNumber,
+  parseReasoningEffort,
+  parseTtsMode,
+  parseVoice,
+  type Validated,
+} from './services/config-values'
 import type { AgentSession, AppConfig, LlmModelId, LlmProvider, Voice } from './types'
 import { DEFAULT_CONFIG, REASONING_EFFORTS, VOICES, type ReasoningEffort } from './types'
 
-const PROVIDER_ALIASES: Record<string, LlmProvider> = {
-  anthropic: 'anthropic',
-  claude: 'anthropic',
-  openai: 'openai',
-  gpt: 'openai',
-  codex: 'openai',
-  gemini: 'gemini',
-  google: 'gemini',
-}
-
 export const ORB_VERSION = packageJson.version
-
-function normalizeProvider(value: string): LlmProvider | undefined {
-  return PROVIDER_ALIASES[value.trim().toLowerCase()]
-}
 
 function normalizeModelForProvider(provider: LlmProvider, value: string): LlmModelId {
   const normalized = value.trim()
@@ -151,47 +148,26 @@ function assertSessionProviderMatches(
   )
 }
 
-function positiveFloat(value: string): number {
-  const n = Number(value)
-  if (!Number.isFinite(n) || n <= 0) throw new Error(`Expected a positive number, got "${value}"`)
-  return n
-}
-
-function positiveInt(value: string): number {
-  const n = Number(value)
-  if (!Number.isInteger(n) || n <= 0) throw new Error(`Expected a positive integer, got "${value}"`)
-  return n
-}
-
-function nonNegativeInt(value: string): number {
-  const n = Number(value)
-  if (!Number.isInteger(n) || n < 0)
-    throw new Error(`Expected a non-negative integer, got "${value}"`)
-  return n
-}
-
-function reasoningEffort(value: string): ReasoningEffort {
-  const normalized = value.trim().toLowerCase()
-  if (REASONING_EFFORTS.includes(normalized as ReasoningEffort)) {
-    return normalized as ReasoningEffort
+/**
+ * Adapt a shared {@link Validated} primitive into a Commander parser: on
+ * failure it throws Error with `expected` rendered into the existing CLI error
+ * format (`Expected <expected>, got "<value>"`, which config.test.ts asserts
+ * on); on success it returns the parsed value.
+ */
+function cliParser<T>(parse: (value: string) => Validated<T>, expected: string) {
+  return (value: string): T => {
+    const result = parse(value)
+    if (!result.ok) throw new Error(`Expected ${expected}, got "${value}"`)
+    return result.value
   }
-  throw new Error(`Expected one of ${REASONING_EFFORTS.join(', ')}, got "${value}"`)
 }
 
-function voiceParser(value: string): Voice {
-  const v = value.trim()
-  if (VOICES.includes(v as Voice)) return v as Voice
-  throw new Error(`Expected one of ${VOICES.join(', ')}, got "${value}"`)
-}
-
-const TTS_MODES = ['serve', 'generate', 'server'] as const
-
-function ttsModeParser(value: string): 'serve' | 'generate' {
-  const v = value.trim()
-  if (v === 'serve' || v === 'server') return 'serve'
-  if (v === 'generate') return 'generate'
-  throw new Error(`Expected one of ${TTS_MODES.join(', ')}, got "${value}"`)
-}
+const positiveFloat = cliParser(parsePositiveNumber, 'a positive number')
+const positiveInt = cliParser(parsePositiveInt, 'a positive integer')
+const nonNegativeInt = cliParser(parseNonNegativeInt, 'a non-negative integer')
+const reasoningEffort = cliParser(parseReasoningEffort, `one of ${REASONING_EFFORTS.join(', ')}`)
+const voiceParser = cliParser(parseVoice, `one of ${VOICES.join(', ')}`)
+const ttsModeParser = cliParser(parseTtsMode, `one of ${TTS_MODES.join(', ')}`)
 
 export { buildHelpText } from './cli/help'
 
