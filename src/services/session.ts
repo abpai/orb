@@ -8,6 +8,7 @@ import type {
   HistoryEntry,
   LlmProvider,
   OpenAiSession,
+  CursorSession,
   SavedSession,
   AgentSession,
   SessionSource,
@@ -129,7 +130,13 @@ function isSavedSessionV2(value: unknown): value is SavedSession {
 }
 
 function normalizeSessionProvider(provider: string): LlmProvider | undefined {
-  if (provider === 'anthropic' || provider === 'openai' || provider === 'gemini') return provider
+  if (
+    provider === 'anthropic' ||
+    provider === 'openai' ||
+    provider === 'gemini' ||
+    provider === 'cursor'
+  )
+    return provider
   return undefined
 }
 
@@ -143,6 +150,16 @@ function isValidOpenAiSession(value: unknown): value is OpenAiSession {
   )
 }
 
+function isValidCursorSession(value: unknown): value is CursorSession {
+  if (!value || typeof value !== 'object') return false
+  const session = value as Partial<CursorSession>
+  return (
+    session.provider === 'cursor' &&
+    typeof session.sessionId === 'string' &&
+    session.sessionId.trim().length > 0
+  )
+}
+
 function normalizeAgentSession(session?: AgentSession): AgentSession | undefined {
   if (!session) return undefined
 
@@ -151,6 +168,8 @@ function normalizeAgentSession(session?: AgentSession): AgentSession | undefined
       return session.sessionId?.length > 0 ? session : undefined
     case 'openai':
       return isValidOpenAiSession(session) ? session : undefined
+    case 'cursor':
+      return isValidCursorSession(session) ? session : undefined
     default:
       return undefined
   }

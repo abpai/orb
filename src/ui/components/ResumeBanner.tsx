@@ -8,7 +8,14 @@ interface ResumeBannerProps {
 }
 
 function sourceLabel(source: ResumeInfo['source']): string {
-  return source === 'claude' ? 'Claude Code' : 'Codex'
+  switch (source) {
+    case 'claude':
+      return 'Claude Code'
+    case 'codex':
+      return 'Codex'
+    case 'cursor':
+      return 'Cursor Agent'
+  }
 }
 
 function pluralizeMessages(count: number): string {

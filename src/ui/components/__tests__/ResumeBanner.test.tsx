@@ -23,6 +23,14 @@ describe('ResumeBanner', () => {
     expect(frame).not.toContain('1 earlier messages')
   })
 
+  it('labels Cursor sessions', () => {
+    const frame = normalizeFrame(
+      render(<ResumeBanner info={{ source: 'cursor', messageCount: 2 }} />).lastFrame(),
+    )
+    expect(frame).toContain('Resumed Cursor Agent session')
+    expect(frame).toContain('2 earlier messages hidden')
+  })
+
   it('falls back to a count-free message when the count is unknown', () => {
     const frame = normalizeFrame(render(<ResumeBanner info={{ source: 'claude' }} />).lastFrame())
     expect(frame).toContain('earlier history hidden')

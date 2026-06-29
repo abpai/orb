@@ -43,6 +43,8 @@ const PROVIDER_ALIASES: Record<string, LlmProvider> = {
   codex: 'openai',
   gemini: 'gemini',
   google: 'gemini',
+  cursor: 'cursor',
+  composer: 'cursor',
 }
 
 /** Canonical CLI tts modes plus the `server` alias for `serve`. */
@@ -55,7 +57,7 @@ export function normalizeProvider(value: string): LlmProvider | undefined {
 
 /** Canonical-only provider check (no aliasing) for the TOML path. */
 export function isLlmProvider(value: unknown): value is LlmProvider {
-  return value === 'anthropic' || value === 'openai' || value === 'gemini'
+  return value === 'anthropic' || value === 'openai' || value === 'gemini' || value === 'cursor'
 }
 
 /** Parse a reasoning-effort string (case-insensitive, trimmed). */

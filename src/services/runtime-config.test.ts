@@ -112,4 +112,50 @@ describe('resolveRuntimeConfig resume overrides', () => {
       history: [{ question: 'old question', answer: 'old answer' }],
     })
   })
+
+  it('creates a Cursor initial session from a Cursor handoff id', async () => {
+    const homeDir = await tempDir('orb-runtime-home-')
+    const projectPath = await tempDir('orb-runtime-project-')
+    await seedModelCache(homeDir)
+
+    const result = await resolveRuntimeConfig(
+      [projectPath, '--cursor-session', 'cursor-session-1'],
+      homeDir,
+    )
+
+    expect(result.kind).toBe('ok')
+    if (result.kind !== 'ok') return
+    expect(result.config.llmProvider).toBe('cursor')
+    expect(result.config.llmModel).toBe('composer-2.5-fast')
+    expect(result.initialSession?.agentSession).toEqual({
+      provider: 'cursor',
+      sessionId: 'cursor-session-1',
+    })
+    expect(result.resumeInfo).toEqual({ source: 'cursor', messageCount: undefined })
+  })
+
+  it('keeps a saved Cursor session when resuming the matching provider', async () => {
+    const homeDir = await tempDir('orb-runtime-home-')
+    const projectPath = await tempDir('orb-runtime-project-')
+    await seedModelCache(homeDir)
+    await saveSession(
+      savedSession(projectPath, {
+        llmProvider: 'cursor',
+        llmModel: 'composer-2.5',
+        agentSession: { provider: 'cursor', sessionId: 'cursor-session-1' },
+      }),
+      homeDir,
+    )
+
+    const result = await resolveRuntimeConfig([projectPath, '--resume', 'saved-1'], homeDir)
+
+    expect(result.kind).toBe('ok')
+    if (result.kind !== 'ok') return
+    expect(result.config.llmProvider).toBe('cursor')
+    expect(result.config.llmModel).toBe('composer-2.5')
+    expect(result.initialSession?.agentSession).toEqual({
+      provider: 'cursor',
+      sessionId: 'cursor-session-1',
+    })
+  })
 })

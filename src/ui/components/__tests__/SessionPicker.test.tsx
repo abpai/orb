@@ -77,6 +77,20 @@ describe('SessionPicker', () => {
     app.unmount()
   })
 
+  it('labels Cursor sessions as Cursor', () => {
+    const app = render(
+      <SessionPicker
+        sessions={[summary({ llmProvider: 'cursor', llmModel: 'composer-2.5-fast' })]}
+        onSelect={() => {}}
+        onCancel={() => {}}
+      />,
+    )
+    const frame = normalizeFrame(app.lastFrame())
+    expect(frame).toContain('cursor')
+    expect(frame).not.toContain('codex')
+    app.unmount()
+  })
+
   it('resumes the highlighted session on enter', async () => {
     const selected: SessionSummary[] = []
     const sessions = [
@@ -141,6 +155,7 @@ describe('SessionPicker', () => {
           summary({ id: 'orb-1', source: 'orb', preview: 'orb chat' }),
           summary({ id: 'claude-1', source: 'claude', preview: 'claude chat' }),
           summary({ id: 'codex-1', source: 'codex', preview: 'codex chat' }),
+          summary({ id: 'cursor-1', source: 'cursor', preview: 'cursor chat' }),
         ]}
         onSelect={() => {}}
         onCancel={() => {}}
@@ -149,6 +164,7 @@ describe('SessionPicker', () => {
     const frame = normalizeFrame(app.lastFrame())
     expect(frame).toContain('claude code ·')
     expect(frame).toContain('codex ·')
+    expect(frame).toContain('cursor ·')
     expect(frame).toContain('orb ·')
     app.unmount()
   })

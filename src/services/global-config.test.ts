@@ -70,6 +70,17 @@ grace_window_ms = 220
     })
   })
 
+  it('accepts cursor as a stable provider value', () => {
+    const result = parseGlobalConfigToml('provider = "cursor"\nmodel = "fast"\n')
+
+    expect(result.warnings).toEqual([])
+    expect(result.config).toEqual({
+      provider: 'cursor',
+      model: 'fast',
+    })
+    expect(result.explicit).toEqual({ provider: true, model: true })
+  })
+
   it('warns on malformed TOML', () => {
     const result = parseGlobalConfigToml('provider = [', '/tmp/orb/config.toml')
     expect(result.config).toEqual({})
@@ -88,7 +99,9 @@ buffer_sentences = 0
 `)
 
     expect(result.config).toEqual({})
-    expect(result.warnings).toContain('provider must be "anthropic", "openai", or "gemini".')
+    expect(result.warnings).toContain(
+      'provider must be "anthropic", "openai", "gemini", or "cursor".',
+    )
     expect(result.warnings).toContain(
       'reasoning_effort must be one of: none, minimal, low, medium, high, xhigh.',
     )
@@ -172,6 +185,15 @@ describe('applyGlobalConfig', () => {
 
     expect(result.llmProvider).toBe('gemini')
     expect(result.llmModel).toBe('pro')
+  })
+
+  it('applies the Cursor default model when no model is configured', () => {
+    const result = applyGlobalConfig(DEFAULT_CONFIG, {
+      provider: 'cursor',
+    })
+
+    expect(result.llmProvider).toBe('cursor')
+    expect(result.llmModel).toBe('fast')
   })
 
   it('serializes only defined values', () => {

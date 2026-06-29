@@ -315,4 +315,15 @@ describe('lookupExternalSessionMeta', () => {
     )
     expect(meta).toMatchObject({ messageCount: 2, preview: 'first' })
   })
+
+  it('does not route Cursor session metadata lookups through Codex', async () => {
+    const home = await tempHome()
+    const meta = await lookupExternalSessionMeta(
+      { provider: 'cursor', sessionId: 'cursor-session-1' },
+      PROJECT,
+      home,
+    )
+
+    expect(meta).toBeNull()
+  })
 })

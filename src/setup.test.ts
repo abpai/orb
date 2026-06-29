@@ -192,6 +192,57 @@ describe('runSetup', () => {
     expect(written).toContain('reasoning_effort = "low"')
   })
 
+  it('writes Cursor defaults and prints Cursor setup guidance', async () => {
+    setTTY(true)
+    const tempDir = await mkdtemp(join(tmpdir(), 'orb-setup-'))
+    tempDirs.push(tempDir)
+    const configPath = join(tempDir, 'config.toml')
+    const infoMessages: string[] = []
+    const originalConsoleInfo = console.info
+    console.info = (...args: unknown[]) => {
+      infoMessages.push(args.join(' '))
+    }
+
+    try {
+      const setupCalls = { select: 0, text: 0 }
+
+      mock.module('@clack/prompts', () => ({
+        intro: () => {},
+        outro: () => {},
+        cancel: () => {},
+        isCancel: () => false,
+        select: async () => {
+          const call = setupCalls.select++
+          return call === 0 ? 'cursor' : call === 1 ? 'generate' : 'alba'
+        },
+        confirm: async () => true,
+        text: async () => {
+          const call = setupCalls.text++
+          return call === 0 ? 'fast' : '1.5'
+        },
+      }))
+
+      const { runSetup } = await importSetupModule()
+      await runSetup({
+        configPath,
+        commandsSourceDir: join(tempDir, 'no-commands'),
+        commandsTargetDir: join(tempDir, 'commands-target'),
+      })
+
+      const written = await readFile(configPath, 'utf8')
+      expect(written).toContain('provider = "cursor"')
+      expect(written).toContain('model = "fast"')
+      expect(infoMessages.join('\n')).toContain('agent login')
+      expect(infoMessages.join('\n')).toContain('read-only ask mode')
+      expect(infoMessages.join('\n')).toContain('CURSOR_API_KEY')
+      expect(infoMessages.join('\n')).toContain('cursor-agent-doctor.sh --skip-codex --smoke')
+      expect(infoMessages.join('\n')).toContain('~/.agents/skills/composer/bin')
+      expect(infoMessages.join('\n')).toContain('Status alone is advisory')
+    } finally {
+      console.info = originalConsoleInfo
+    }
+  })
+
   it('throws if setup is run without a TTY', async () => {
     setTTY(false)
     mock.module('@clack/prompts', () => ({

@@ -39,5 +39,8 @@ export async function lookupExternalSessionMeta(
   if (session.provider === 'anthropic') {
     return lookupClaudeMeta(session.sessionId, projectPath, homeDir)
   }
+  if (session.provider === 'cursor') {
+    return null
+  }
   return lookupCodexMeta(session.threadId, projectPath, homeDir)
 }

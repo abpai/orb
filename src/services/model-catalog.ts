@@ -64,18 +64,21 @@ const PROVIDER_GATEWAY_PREFIX: Record<LlmProvider, string> = {
   anthropic: 'anthropic',
   openai: 'openai',
   gemini: 'google',
+  cursor: 'cursor',
 }
 
 export const DEFAULT_MODEL_ALIAS_BY_PROVIDER: Record<LlmProvider, LlmModelId> = {
   anthropic: 'haiku',
   openai: 'gpt-5.5',
   gemini: 'pro',
+  cursor: 'fast',
 }
 
 export const DEFAULT_MODEL_BY_PROVIDER: Record<LlmProvider, LlmModelId> = {
   anthropic: 'claude-haiku-4-5-20251001',
   openai: 'gpt-5.5',
   gemini: 'gemini-3.1-pro-preview',
+  cursor: 'composer-2.5-fast',
 }
 
 // ── Model family descriptors ─────────────────────────────────────────────────
@@ -218,12 +221,31 @@ const PROVIDER_FAMILIES: Record<LlmProvider, ModelFamilyDescriptor[]> = {
       label: genericModelLabel,
     },
   ],
+  cursor: [
+    {
+      provider: 'cursor',
+      name: 'fast',
+      fallbackModel: 'composer-2.5-fast',
+      fallbackLabel: 'Composer 2.5 Fast',
+      matches: (id) => id === 'composer-2.5-fast',
+      label: () => 'Composer 2.5 Fast',
+    },
+    {
+      provider: 'cursor',
+      name: 'composer',
+      fallbackModel: 'composer-2.5',
+      fallbackLabel: 'Composer 2.5',
+      matches: (id) => id === 'composer-2.5',
+      label: () => 'Composer 2.5',
+    },
+  ],
 }
 
 export const FALLBACK_MODEL_CHOICES_BY_PROVIDER: Record<LlmProvider, LlmModelId[]> = {
   anthropic: PROVIDER_FAMILIES.anthropic.map((f) => f.fallbackModel),
   openai: PROVIDER_FAMILIES.openai.map((f) => f.fallbackModel),
   gemini: PROVIDER_FAMILIES.gemini.map((f) => f.fallbackModel),
+  cursor: PROVIDER_FAMILIES.cursor.map((f) => f.fallbackModel),
 }
 
 const FALLBACK_CATALOG_MODELS: CatalogModel[] = (

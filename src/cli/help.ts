@@ -24,6 +24,7 @@ const HELP_EXAMPLES = [
   'orb --model=openai:gpt-5.5',
   'orb sessions                     Resume a past conversation',
   'orb sessions --all               Include Claude Code / Codex sessions',
+  'orb --provider=cursor --model=fast',
 ]
 
 const HELP_CONTROLS =
@@ -153,6 +154,11 @@ export function buildHelpText(program: Command): string {
   out.push(
     dim(
       'Auto provider (when --provider/--model omitted): 1) Codex/ChatGPT  2) Claude SDK  3) GEMINI key  4) ANTHROPIC key',
+    ),
+  )
+  out.push(
+    dim(
+      'Cursor is opt-in: use --provider cursor; default is read-only ask mode. --yolo maps to Cursor force mode plus MCP approval.',
     ),
   )
   out.push(dim('Defaults live in ~/.orb/config.toml · CLI flags override per run · docs: README'))

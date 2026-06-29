@@ -44,6 +44,15 @@ describe('formatSessionList', () => {
     expect(output).not.toContain('· openai ·')
   })
 
+  it('labels Cursor sessions as Cursor', () => {
+    const output = formatSessionList([
+      summary({ llmProvider: 'cursor', llmModel: 'composer-2.5-fast' }),
+    ])
+
+    expect(output).toContain('· cursor ·')
+    expect(output).not.toContain('· codex ·')
+  })
+
   it('shows the first message as the title and the folder path beneath it', () => {
     const output = formatSessionList([
       summary({ projectPath: '/Users/andy/Projects/orb', preview: 'resume this project' }),
@@ -61,6 +70,16 @@ describe('formatSessionList', () => {
 
     expect(output).toContain(
       'resume: orb /Users/andy/Projects/orb --codex-thread thread-1 --model=gpt-5.5 --provider=openai',
+    )
+  })
+
+  it('prints Cursor external resume commands when given a Cursor source row', () => {
+    const output = formatSessionList([
+      summary({ id: 'cursor-session-1', source: 'cursor', llmProvider: 'cursor' }),
+    ])
+
+    expect(output).toContain(
+      'resume: orb /Users/andy/Projects/orb --cursor-session cursor-session-1',
     )
   })
 })

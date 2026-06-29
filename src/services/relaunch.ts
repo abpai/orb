@@ -33,6 +33,8 @@ export function buildExternalResumeArgs(
       return [projectPath, '--claude-session', externalId, ...extraArgs]
     case 'codex':
       return [projectPath, '--codex-thread', externalId, ...extraArgs]
+    case 'cursor':
+      return [projectPath, '--cursor-session', externalId, ...extraArgs]
     default:
       return buildResumeArgs(projectPath, externalId, extraArgs)
   }

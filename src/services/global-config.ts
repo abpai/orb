@@ -103,7 +103,7 @@ const validatePositiveInt = tomlValidator(isPositiveInt, 'be a positive integer'
 const validateNonNegativeInt = tomlValidator(isNonNegativeInt, 'be a non-negative integer')
 const validateProvider = tomlValidator<LlmProvider>(
   isLlmProvider,
-  'be "anthropic", "openai", or "gemini"',
+  'be "anthropic", "openai", "gemini", or "cursor"',
 )
 const validateTtsMode = tomlValidator<AppConfig['ttsMode']>(isTtsMode, 'be "generate" or "serve"')
 const validateVoice = tomlValidator<Voice>(isVoice, `be one of: ${VOICES.join(', ')}`)

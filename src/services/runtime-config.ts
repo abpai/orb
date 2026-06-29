@@ -38,6 +38,19 @@ function sameAgentSession(a: AgentSession | undefined, b: AgentSession): boolean
       return b.provider === 'anthropic' && a.sessionId === b.sessionId
     case 'openai':
       return b.provider === 'openai' && a.threadId === b.threadId
+    case 'cursor':
+      return b.provider === 'cursor' && a.sessionId === b.sessionId
+  }
+}
+
+function resumeSourceForSession(session: AgentSession): ResumeInfo['source'] {
+  switch (session.provider) {
+    case 'anthropic':
+      return 'claude'
+    case 'openai':
+      return 'codex'
+    case 'cursor':
+      return 'cursor'
   }
 }
 
@@ -128,7 +141,7 @@ export async function resolveRuntimeConfig(
         kind: 'error',
         message:
           'No available LLM credentials found. Set up Claude (Max/OAuth), Codex ChatGPT login, GOOGLE_GENERATIVE_AI_API_KEY, or ANTHROPIC_API_KEY before starting.\n' +
-          'Tip: Use --provider openai after `codex login --device-auth`, or --provider gemini with GOOGLE_GENERATIVE_AI_API_KEY.',
+          'Tip: Use --provider openai after `codex login --device-auth`, --provider gemini with GOOGLE_GENERATIVE_AI_API_KEY, or --provider cursor after `agent login` / `cursor-agent login`.',
         code: 1,
       }
     }
@@ -162,7 +175,7 @@ export async function resolveRuntimeConfig(
       () => null,
     )
     resumeInfo = {
-      source: config.resumeSession.provider === 'anthropic' ? 'claude' : 'codex',
+      source: resumeSourceForSession(config.resumeSession),
       messageCount: meta?.messageCount,
     }
   }

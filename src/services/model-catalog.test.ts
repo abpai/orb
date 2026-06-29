@@ -209,6 +209,40 @@ describe('model catalog resolution', () => {
     expect(resolved.llmModelChoices).toEqual(FALLBACK_MODEL_CHOICES_BY_PROVIDER.gemini)
   })
 
+  it('resolves Cursor static aliases without Gateway catalog entries', async () => {
+    const cachePath = await tempCachePath()
+    const fast = await resolveAppModelConfig(
+      {
+        ...DEFAULT_CONFIG,
+        llmProvider: 'cursor',
+        llmModel: 'fast',
+      },
+      {
+        cachePath,
+        fetchImpl: failingFetch(),
+      },
+    )
+
+    expect(fast.llmModel).toBe('composer-2.5-fast')
+    expect(fast.llmModelChoices).toEqual(['composer-2.5-fast', 'composer-2.5'])
+    expect(fast.llmModelLabels['composer-2.5-fast']).toBe('Composer 2.5 Fast')
+
+    const composer = await resolveAppModelConfig(
+      {
+        ...DEFAULT_CONFIG,
+        llmProvider: 'cursor',
+        llmModel: 'composer',
+      },
+      {
+        cachePath: await tempCachePath(),
+        fetchImpl: failingFetch(),
+      },
+    )
+
+    expect(composer.llmModel).toBe('composer-2.5')
+    expect(composer.llmModelLabels['composer-2.5']).toBe('Composer 2.5')
+  })
+
   it('uses a fresh cache without hitting the network', async () => {
     const cachePath = await tempCachePath()
     await loadModelCatalog({

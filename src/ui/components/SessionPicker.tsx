@@ -40,6 +40,7 @@ export function formatRelativeTime(iso: string, now: number = Date.now()): strin
 
 export function formatProviderLabel(provider: SessionSummary['llmProvider']): string {
   if (provider === 'anthropic') return 'claude'
+  if (provider === 'cursor') return 'cursor'
   return provider
 }
 
@@ -50,6 +51,7 @@ export function pluralizeTurns(count: number): string {
 export function formatSourceTag(source?: SessionSource): string {
   if (source === 'claude') return 'claude code'
   if (source === 'codex') return 'codex'
+  if (source === 'cursor') return 'cursor'
   return 'orb'
 }
 
