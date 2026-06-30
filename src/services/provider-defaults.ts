@@ -107,7 +107,9 @@ async function detectCodexChatGptAuth(): Promise<boolean> {
   }
 }
 
-const OPENAI_STREAMING_DEFAULTS = {
+const HIGH_THROUGHPUT_STREAMING_PROVIDERS = new Set<LlmProvider>(['openai', 'cursor'])
+
+const HIGH_THROUGHPUT_STREAMING_DEFAULTS = {
   ttsBufferSentences: 3,
   ttsMinChunkLength: 100,
   ttsMaxWaitMs: 1200,
@@ -115,24 +117,27 @@ const OPENAI_STREAMING_DEFAULTS = {
   ttsClauseBoundaries: false,
 }
 
-export function applyOpenAiStreamingDefaults(config: AppConfig, explicit: ExplicitFlags): void {
-  if (config.llmProvider !== 'openai') return
+export function applyHighThroughputStreamingDefaults(
+  config: AppConfig,
+  explicit: ExplicitFlags,
+): void {
+  if (!HIGH_THROUGHPUT_STREAMING_PROVIDERS.has(config.llmProvider)) return
   if (!config.ttsEnabled || !config.ttsStreamingEnabled) return
 
   if (!explicit.ttsBufferSentences) {
-    config.ttsBufferSentences = OPENAI_STREAMING_DEFAULTS.ttsBufferSentences
+    config.ttsBufferSentences = HIGH_THROUGHPUT_STREAMING_DEFAULTS.ttsBufferSentences
   }
   if (!explicit.ttsMinChunkLength) {
-    config.ttsMinChunkLength = OPENAI_STREAMING_DEFAULTS.ttsMinChunkLength
+    config.ttsMinChunkLength = HIGH_THROUGHPUT_STREAMING_DEFAULTS.ttsMinChunkLength
   }
   if (!explicit.ttsMaxWaitMs) {
-    config.ttsMaxWaitMs = OPENAI_STREAMING_DEFAULTS.ttsMaxWaitMs
+    config.ttsMaxWaitMs = HIGH_THROUGHPUT_STREAMING_DEFAULTS.ttsMaxWaitMs
   }
   if (!explicit.ttsGraceWindowMs) {
-    config.ttsGraceWindowMs = OPENAI_STREAMING_DEFAULTS.ttsGraceWindowMs
+    config.ttsGraceWindowMs = HIGH_THROUGHPUT_STREAMING_DEFAULTS.ttsGraceWindowMs
   }
   if (!explicit.ttsClauseBoundaries) {
-    config.ttsClauseBoundaries = OPENAI_STREAMING_DEFAULTS.ttsClauseBoundaries
+    config.ttsClauseBoundaries = HIGH_THROUGHPUT_STREAMING_DEFAULTS.ttsClauseBoundaries
   }
 }
 

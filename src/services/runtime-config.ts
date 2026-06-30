@@ -12,7 +12,7 @@ import { applyGlobalConfig, getGlobalConfigPath, loadGlobalConfig } from './glob
 import { warn } from './log'
 import { resolveAppModelConfig } from './model-catalog'
 import { modelCachePath } from './orb-paths'
-import { applyOpenAiStreamingDefaults, resolveSmartProvider } from './provider-defaults'
+import { applyHighThroughputStreamingDefaults, resolveSmartProvider } from './provider-defaults'
 import { loadSession, loadSessionById } from './session'
 import { lookupExternalSessionMeta } from './external-sessions'
 
@@ -166,7 +166,7 @@ export async function resolveRuntimeConfig(
     warn(`Model catalog refresh failed: ${resolvedModel.catalog.warning}`)
   }
 
-  applyOpenAiStreamingDefaults(config, explicit)
+  applyHighThroughputStreamingDefaults(config, explicit)
 
   const savedSession = resumeById
     ? alignSavedSessionWithConfig(resumeById, config)

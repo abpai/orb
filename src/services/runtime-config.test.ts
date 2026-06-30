@@ -143,6 +143,13 @@ describe('resolveRuntimeConfig resume overrides', () => {
     if (result.kind !== 'ok') return
     expect(result.config.llmProvider).toBe('cursor')
     expect(result.config.llmModel).toBe('composer-2.5-fast')
+    expect(result.config).toMatchObject({
+      ttsBufferSentences: 3,
+      ttsMinChunkLength: 100,
+      ttsMaxWaitMs: 1200,
+      ttsGraceWindowMs: 300,
+      ttsClauseBoundaries: false,
+    })
     expect(result.initialSession?.agentSession).toEqual({
       provider: 'cursor',
       sessionId: 'cursor-session-1',
