@@ -46,7 +46,12 @@ describe('listBundledDefaultCommands', () => {
 
   it('ships the canonical defaults from the repo', async () => {
     const commands = await listBundledDefaultCommands()
-    expect(commands.map((command) => command.name)).toEqual(['explain', 'quiz', 'tour'])
+    expect(commands.map((command) => command.name)).toEqual([
+      'explain',
+      'quiz',
+      'session-tail',
+      'tour',
+    ])
   })
 })
 
