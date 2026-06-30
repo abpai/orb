@@ -82,14 +82,20 @@ function spawnFfplay(speed: number, format: StreamAudioFormat): PlayerProcess {
     args.push(
       '-f',
       format.pcmFormat,
-      '-ar',
+      '-sample_rate',
       String(format.sampleRate),
-      '-ac',
-      String(format.channels),
+      '-ch_layout',
+      channelLayoutForChannels(format.channels),
     )
   }
   args.push('-i', 'pipe:3')
   return createFfplayProcess(args)
+}
+
+function channelLayoutForChannels(channels: number): string {
+  if (channels === 1) return 'mono'
+  if (channels === 2) return 'stereo'
+  return `${channels}c`
 }
 
 function normalizeExitCode(code: number | null, signal: NodeJS.Signals | null): number {
