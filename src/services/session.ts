@@ -5,6 +5,7 @@ import crypto from 'node:crypto'
 
 import type {
   AnthropicModel,
+  CodexSessionKind,
   HistoryEntry,
   LlmProvider,
   OpenAiSession,
@@ -69,6 +70,7 @@ interface SessionSummaryBase {
   lastModified: string
   turnCount: number
   preview: string
+  codexKind?: CodexSessionKind
 }
 
 /**

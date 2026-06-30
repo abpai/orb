@@ -549,6 +549,43 @@ describe('createStreamSession', () => {
     expect(spawnedCmd).toContain('--speed=1.5')
   })
 
+  it('passes raw PCM metadata to mpv', async () => {
+    const { createStreamSession } = await importModule()
+    resetDetectedPlayer()
+    mockPlayerAvailable('mpv')
+
+    let spawnedCmd: string[] = []
+
+    Bun.spawn = mock((cmd: string[]) => {
+      spawnedCmd = cmd
+      return {
+        stdin: { write() {}, end() {} },
+        exited: Promise.resolve(0),
+        kill() {},
+      } as unknown as Bun.Subprocess
+    }) as unknown as typeof Bun.spawn
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.close()
+      },
+    })
+
+    const session = createStreamSession(stream, 1, undefined, {
+      kind: 'raw-pcm',
+      sampleRate: 24000,
+      channels: 1,
+      sampleWidth: 2,
+      pcmFormat: 's16le',
+    })
+    await session.done
+
+    expect(spawnedCmd).toContain('--demuxer=rawaudio')
+    expect(spawnedCmd).toContain('--demuxer-rawaudio-rate=24000')
+    expect(spawnedCmd).toContain('--demuxer-rawaudio-channels=1')
+    expect(spawnedCmd).toContain('--demuxer-rawaudio-format=s16le')
+  })
+
   it('uses ffplay control stdin for pause and resume', async () => {
     const controlWrites: string[] = []
     const audioWrites: Uint8Array[] = []
@@ -624,5 +661,72 @@ describe('createStreamSession', () => {
     expect(spawnCalls[0]).toContain('pipe:3')
     expect(controlWrites).toEqual(['p', 'p'])
     expect(audioWrites).toEqual([new Uint8Array([1, 2, 3])])
+  })
+
+  it('passes raw PCM metadata to ffplay', async () => {
+    const spawnCalls: string[][] = []
+
+    mock.module('node:child_process', () => ({
+      spawn: mock((_binary: string, args: string[]) => {
+        spawnCalls.push(args)
+        const exitHandlers: Array<(code: number | null, signal: NodeJS.Signals | null) => void> = []
+
+        return {
+          stdin: { write() {} },
+          stdio: [
+            null,
+            null,
+            null,
+            {
+              write() {},
+              end() {
+                for (const handler of exitHandlers) handler(0, null)
+              },
+            },
+          ],
+          once(event: string, handler: (...args: unknown[]) => void) {
+            if (event === 'exit') {
+              exitHandlers.push(
+                handler as (code: number | null, signal: NodeJS.Signals | null) => void,
+              )
+            }
+            return this
+          },
+          kill() {},
+          pid: 123,
+        }
+      }),
+    }))
+
+    const cacheBust = `ffplay-pcm-test=${Date.now()}-${Math.random()}`
+    const { createStreamSession } = await import(`./tts?${cacheBust}`)
+    const { resetDetectedPlayer: resetFreshPlayer } = await import(`./audio-player?${cacheBust}`)
+    resetFreshPlayer()
+    mockPlayerAvailable('ffplay')
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3]))
+        controller.close()
+      },
+    })
+
+    const session = createStreamSession(stream, 1, undefined, {
+      kind: 'raw-pcm',
+      sampleRate: 24000,
+      channels: 1,
+      sampleWidth: 2,
+      pcmFormat: 's16le',
+    })
+    await session.done
+
+    expect(spawnCalls).toHaveLength(1)
+    expect(spawnCalls[0]).toContain('-f')
+    expect(spawnCalls[0]).toContain('s16le')
+    expect(spawnCalls[0]).toContain('-ar')
+    expect(spawnCalls[0]).toContain('24000')
+    expect(spawnCalls[0]).toContain('-ac')
+    expect(spawnCalls[0]).toContain('1')
+    expect(spawnCalls[0]).toContain('pipe:3')
   })
 })

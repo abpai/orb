@@ -62,6 +62,7 @@ export type AgentSession =
 
 /** Where a listed session came from: orb's own store, Claude Code, Codex, or Cursor. */
 export type SessionSource = 'orb' | 'claude' | 'codex' | 'cursor'
+export type CodexSessionKind = 'subagent'
 
 /**
  * Describes an external session resumed with empty scrollback, so the UI can

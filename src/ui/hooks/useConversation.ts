@@ -84,6 +84,7 @@ export function useConversation({
   const pendingSaveRef = useRef(false)
   const pendingRenderTurnRef = useRef<HistoryEntry | null>(null)
   const lastRenderFlushAtRef = useRef(0)
+  const persistedFreshSessionRef = useRef(false)
 
   const renderFlushTimer = useTimerSlot()
 
@@ -139,6 +140,13 @@ export function useConversation({
     },
     [activeModel, config.llmProvider, config.projectPath, getHistorySnapshot],
   )
+
+  useEffect(() => {
+    if (!config.startFresh) return
+    if (persistedFreshSessionRef.current) return
+    persistedFreshSessionRef.current = true
+    void persistSession()
+  }, [config.startFresh, persistSession])
 
   useEffect(() => {
     if (!pendingSaveRef.current) return

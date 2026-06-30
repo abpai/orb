@@ -112,6 +112,13 @@ export async function resolveRuntimeConfig(
   })
 
   let resumeById: SavedSession | null = null
+  if (config.resumeId && config.startFresh) {
+    return {
+      kind: 'error',
+      message: 'Use either --new or --resume <id>, not both.',
+      code: 1,
+    }
+  }
   if (config.resumeId && !config.startFresh) {
     resumeById = await loadSessionById(config.projectPath, config.resumeId, homeDir)
     if (!resumeById) {

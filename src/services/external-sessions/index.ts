@@ -14,11 +14,12 @@ export { listCodexSessions } from './codex'
 export async function listAllSessions(
   projectPath: string,
   homeDir = os.homedir(),
+  opts: { includeSubagents?: boolean } = {},
 ): Promise<{ sessions: SessionSummary[]; codexCapped: boolean }> {
   const [orb, claude, codex] = await Promise.all([
     listSessions(homeDir, projectPath),
     listClaudeSessions(projectPath, homeDir),
-    listCodexSessions(projectPath, homeDir),
+    listCodexSessions(projectPath, homeDir, { includeSubagents: opts.includeSubagents }),
   ])
   const sessions = [...orb, ...claude, ...codex.rows].sort((a, b) =>
     b.lastModified.localeCompare(a.lastModified),

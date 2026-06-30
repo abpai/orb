@@ -285,6 +285,7 @@ describe('buildHelpText', () => {
     expect(help).toContain('Commands:')
     expect(help).toContain('orb setup')
     expect(help).toContain('orb sessions')
+    expect(help).toContain('--include-subagents')
   })
 
   it('orders Commands, then Common options, then Advanced options', () => {

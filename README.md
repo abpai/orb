@@ -138,6 +138,9 @@ orb sessions
 # Include this project's Claude Code and Codex sessions in the picker
 orb sessions --all
 
+# Include Codex worker/subagent sessions too
+orb sessions --include-subagents
+
 # Resume a specific saved session by id
 orb /path/to/project --resume <session-id>
 
@@ -147,26 +150,27 @@ orb --skip-intro
 
 ### Commands and options
 
-| Command / option              | Description                                                                                                                       | Default                                                                  |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `--provider=<provider>`       | LLM provider: `anthropic`\|`claude`, `openai`\|`gpt`\|`codex`, `gemini`\|`google`, `cursor`\|`composer` (alias: `--llm-provider`) | `auto`                                                                   |
-| `--model=<model>`             | Model ID or semantic alias (`haiku`, `sonnet`, `opus`, `gpt`, `mini`, `pro`, `fast`, etc.) or `provider:model`                    | `haiku` (anthropic), `gpt-5.5` (openai), `pro` (gemini), `fast` (cursor) |
-| `--reasoning-effort=<effort>` | OpenAI/Codex reasoning effort: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`                                                | `high`                                                                   |
-| `--voice=<voice>`             | TTS voice: `alba`, `marius`, `jean`                                                                                               | `alba`                                                                   |
-| `--tts-mode=<mode>`           | `serve` for `tts-gateway`, `generate` for local macOS `say`                                                                       | `serve`                                                                  |
-| `--tts-server-url=<url>`      | Serve-mode gateway URL                                                                                                            | `http://localhost:8000`                                                  |
-| `--tts-speed=<rate>`          | TTS speed multiplier                                                                                                              | `1.5`                                                                    |
-| `--resume-session=<ref>`      | Resume a provider session, using `claude:<session-id>`, `codex:<thread-id>`, or `cursor:<session-id>`                             | -                                                                        |
-| `--resume=<id>`               | Resume a specific saved session by id (see `orb sessions`)                                                                        | -                                                                        |
-| `orb sessions --all`          | Include this project's Claude Code and Codex sessions in the session picker                                                       | -                                                                        |
-| `--claude-session=<id>`       | Resume a Claude Code session by id                                                                                                | -                                                                        |
-| `--codex-thread=<id>`         | Resume a Codex app-server thread by id                                                                                            | -                                                                        |
-| `--cursor-session=<id>`       | Resume a Cursor Agent session by id                                                                                               | -                                                                        |
-| `--new`                       | Start fresh (ignore saved session)                                                                                                | -                                                                        |
-| `--skip-intro`                | Skip the welcome animation                                                                                                        | -                                                                        |
-| `--no-tts`                    | Disable text-to-speech                                                                                                            | -                                                                        |
-| `--no-streaming-tts`          | Disable streaming (batch mode)                                                                                                    | -                                                                        |
-| `--help`                      | Show help message                                                                                                                 | -                                                                        |
+| Command / option                   | Description                                                                                                                       | Default                                                                  |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `--provider=<provider>`            | LLM provider: `anthropic`\|`claude`, `openai`\|`gpt`\|`codex`, `gemini`\|`google`, `cursor`\|`composer` (alias: `--llm-provider`) | `auto`                                                                   |
+| `--model=<model>`                  | Model ID or semantic alias (`haiku`, `sonnet`, `opus`, `gpt`, `mini`, `pro`, `fast`, etc.) or `provider:model`                    | `haiku` (anthropic), `gpt-5.5` (openai), `pro` (gemini), `fast` (cursor) |
+| `--reasoning-effort=<effort>`      | OpenAI/Codex reasoning effort: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`                                                | `high`                                                                   |
+| `--voice=<voice>`                  | TTS voice: `alba`, `marius`, `jean`                                                                                               | `alba`                                                                   |
+| `--tts-mode=<mode>`                | `serve` for `tts-gateway`, `generate` for local macOS `say`                                                                       | `serve`                                                                  |
+| `--tts-server-url=<url>`           | Serve-mode gateway URL                                                                                                            | `http://localhost:8000`                                                  |
+| `--tts-speed=<rate>`               | TTS speed multiplier                                                                                                              | `1.5`                                                                    |
+| `--resume-session=<ref>`           | Resume a provider session, using `claude:<session-id>`, `codex:<thread-id>`, or `cursor:<session-id>`                             | -                                                                        |
+| `--resume=<id>`                    | Resume a specific saved session by id (see `orb sessions`)                                                                        | -                                                                        |
+| `orb sessions --all`               | Include this project's Claude Code and Codex sessions in the session picker                                                       | -                                                                        |
+| `orb sessions --include-subagents` | Include Codex worker/subagent sessions in the picker; implies `--all`                                                             | -                                                                        |
+| `--claude-session=<id>`            | Resume a Claude Code session by id                                                                                                | -                                                                        |
+| `--codex-thread=<id>`              | Resume a Codex app-server thread by id                                                                                            | -                                                                        |
+| `--cursor-session=<id>`            | Resume a Cursor Agent session by id                                                                                               | -                                                                        |
+| `--new`                            | Start a new saved conversation (ignore auto-resume)                                                                               | -                                                                        |
+| `--skip-intro`                     | Skip the welcome animation                                                                                                        | -                                                                        |
+| `--no-tts`                         | Disable text-to-speech                                                                                                            | -                                                                        |
+| `--no-streaming-tts`               | Disable streaming (batch mode)                                                                                                    | -                                                                        |
+| `--help`                           | Show help message                                                                                                                 | -                                                                        |
 
 ### Controls
 
@@ -304,7 +308,7 @@ orb --cursor-session=3cb88040-2612-4d4f-b708-0468588c8afd /path/to/project
 orb --resume-session=cursor:3cb88040-2612-4d4f-b708-0468588c8afd /path/to/project
 ```
 
-Use this after the other client is idle; do not drive the same Claude, Codex, or Cursor conversation from two terminals at once. The project path must match the original session's working directory. `--new` clears Orb's visible saved history but still honors the explicit handoff id. If you do not know the provider id, run `orb sessions --all` from the project to include matching Claude Code and Codex sessions in the interactive picker. Cursor external session discovery is not included in v1. When Orb resumes an external session, prior transcript lines are not imported into Orb's scrollback; instead, a short banner notes that earlier messages are hidden while the model still has the provider's conversation context.
+Use this after the other client is idle; do not drive the same Claude, Codex, or Cursor conversation from two terminals at once. The project path must match the original session's working directory. `--new` clears Orb's visible saved history but still honors the explicit handoff id. If you do not know the provider id, run `orb sessions --all` from the project to include matching Claude Code and Codex sessions in the interactive picker. Codex worker/subagent sessions are hidden by default; add `--include-subagents` only when you intentionally want to inspect or resume a worker thread. Cursor external session discovery is not included in v1. When Orb resumes an external session, prior transcript lines are not imported into Orb's scrollback; instead, a short banner notes that earlier messages are hidden while the model still has the provider's conversation context.
 
 ### OpenAI (default)
 
@@ -468,10 +472,12 @@ Config-only advanced tuning keys live under `[tts]`:
 
 Sessions are stored under `~/.orb/sessions/<project>/<session-id>.json`, keeping a
 history of recent conversations per project (older ones are pruned). Orb auto-resumes
-the latest on startup; use `orb sessions` (or `/sessions` in the app) to browse and
+the latest on startup; use `orb --new` to make a fresh conversation the current saved
+session, or `orb sessions` (or `/sessions` in the app) to browse and
 resume a past Orb conversation for the current project. Use `orb sessions --all` to
 also discover matching Claude Code and Codex sessions from the same project and relaunch
-Orb with the right external resume flag.
+Orb with the right external resume flag. Codex worker/subagent sessions stay hidden unless
+you pass `--include-subagents`.
 
 ## Customizing Prompts
 

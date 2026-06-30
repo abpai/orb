@@ -90,6 +90,22 @@ describe('resolveRuntimeConfig resume overrides', () => {
     expect(result.initialSession?.llmModel).toBe('gpt-4o')
   })
 
+  it('rejects --new with a saved-session --resume id', async () => {
+    const homeDir = await tempDir('orb-runtime-home-')
+    const projectPath = await tempDir('orb-runtime-project-')
+
+    const result = await resolveRuntimeConfig(
+      [projectPath, '--new', '--resume', 'saved-1'],
+      homeDir,
+    )
+
+    expect(result).toEqual({
+      kind: 'error',
+      message: 'Use either --new or --resume <id>, not both.',
+      code: 1,
+    })
+  })
+
   it('lets explicit CLI model/provider override a saved session resume', async () => {
     const homeDir = await tempDir('orb-runtime-home-')
     const projectPath = await tempDir('orb-runtime-project-')

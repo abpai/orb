@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 
 import type { SessionSummary } from '../../services/session'
-import type { SessionSource } from '../../types'
+import type { CodexSessionKind, SessionSource } from '../../types'
 import { abbreviateHome } from '../../services/orb-paths'
 import { useTerminalSize } from '../hooks/useTerminalSize'
 import { collapseToSingleLine } from '../utils/text'
@@ -48,8 +48,9 @@ export function pluralizeTurns(count: number): string {
   return `${count} turn${count === 1 ? '' : 's'}`
 }
 
-export function formatSourceTag(source?: SessionSource): string {
+export function formatSourceTag(source?: SessionSource, codexKind?: CodexSessionKind): string {
   if (source === 'claude') return 'claude code'
+  if (source === 'codex' && codexKind === 'subagent') return 'codex subagent'
   if (source === 'codex') return 'codex'
   if (source === 'cursor') return 'cursor'
   return 'orb'
@@ -64,7 +65,7 @@ function matchesFilter(session: SessionSummary, filter: string): boolean {
   // External rows carry no recorded model, so only orb rows contribute one.
   const model = session.source === 'orb' ? session.llmModel : ''
   const haystack =
-    `${formatSourceTag(session.source)} ${session.projectName} ${session.projectPath} ${session.preview} ${model}`.toLowerCase()
+    `${formatSourceTag(session.source, session.codexKind)} ${session.projectName} ${session.projectPath} ${session.preview} ${model}`.toLowerCase()
   return haystack.includes(filter.toLowerCase())
 }
 
@@ -173,7 +174,7 @@ export function SessionPicker({
               session.id === currentId &&
               currentProjectPath !== undefined &&
               session.projectPath === currentProjectPath
-            const meta = `${formatSourceTag(session.source)} · ${abbreviateHome(
+            const meta = `${formatSourceTag(session.source, session.codexKind)} · ${abbreviateHome(
               session.projectPath,
             )} · ${formatProviderLabel(session.llmProvider)} · ${formatRelativeTime(
               session.lastModified,

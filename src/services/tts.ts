@@ -1,7 +1,13 @@
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { TTSError, type AppConfig, type TTSErrorType, type Voice } from '../types'
-import { detectPlayer, spawnAfplay, type PlayerProcess } from './audio-player'
+import {
+  detectPlayer,
+  ENCODED_STREAM_AUDIO_FORMAT,
+  spawnAfplay,
+  type PlayerProcess,
+  type StreamAudioFormat,
+} from './audio-player'
 import { createGatewayClient, DEFAULT_SERVER_URL } from './gateway-client'
 import { createPlaybackGate, type PlaybackGate } from './playback-gate'
 
@@ -23,6 +29,7 @@ export function createStreamSession(
   audioStream: ReadableStream<Uint8Array>,
   speed: number,
   gate: PlaybackGate = playbackGate,
+  format: StreamAudioFormat = ENCODED_STREAM_AUDIO_FORMAT,
 ): StreamSession {
   let killed = false
   let proc: PlayerProcess | null = null
@@ -36,7 +43,7 @@ export function createStreamSession(
       return
     }
 
-    proc = player.spawn(speed)
+    proc = player.spawn(speed, format)
     const writer = proc.writer
     const reader = audioStream.getReader()
     activeReader = reader

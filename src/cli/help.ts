@@ -24,6 +24,7 @@ const HELP_EXAMPLES = [
   'orb --model=openai:gpt-5.5',
   'orb sessions                     Resume a past conversation',
   'orb sessions --all               Include Claude Code / Codex sessions',
+  'orb sessions --include-subagents Include Codex worker sessions',
   'orb --provider=cursor --model=fast',
 ]
 
@@ -132,7 +133,8 @@ export function buildHelpText(program: Command): string {
         { flags: 'orb setup', description: 'Create or update ~/.orb/config.toml' },
         {
           flags: 'orb sessions',
-          description: 'Browse and resume saved sessions (--all adds Claude/Codex)',
+          description:
+            'Browse and resume saved sessions (--all adds Claude/Codex; --include-subagents adds Codex workers)',
         },
       ],
       width,

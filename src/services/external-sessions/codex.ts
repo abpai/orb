@@ -12,7 +12,27 @@ const CODEX_READ_CONCURRENCY = 4
 
 interface CodexRolloutLine {
   type?: string
-  payload?: { id?: string; cwd?: string; timestamp?: string; type?: string; message?: string }
+  payload?: {
+    id?: string
+    cwd?: string
+    timestamp?: string
+    type?: string
+    message?: string
+    thread_source?: string
+    source?: unknown
+  }
+}
+
+interface CodexMeta {
+  id: string
+  cwd: string
+  timestamp?: string
+  codexKind?: 'subagent'
+}
+
+interface CodexCandidate {
+  filePath: string
+  meta: CodexMeta
 }
 
 async function listSubdirs(dir: string): Promise<string[]> {
@@ -26,60 +46,6 @@ async function listSubdirs(dir: string): Promise<string[]> {
 
 function numericDesc(a: string, b: string): number {
   return Number(b) - Number(a)
-}
-
-async function collectCodexCandidates(
-  root: string,
-  maxFiles: number,
-  maxAgeDays: number,
-): Promise<{ paths: string[]; capped: boolean }> {
-  const paths: string[] = []
-  const cutoffMs = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000
-
-  const years = (await listSubdirs(root)).filter((n) => /^\d{4}$/.test(n)).sort(numericDesc)
-  for (const year of years) {
-    const yearDir = path.join(root, year)
-    const months = (await listSubdirs(yearDir)).filter((n) => /^\d{2}$/.test(n)).sort(numericDesc)
-    for (const month of months) {
-      const monthDir = path.join(yearDir, month)
-      const days = (await listSubdirs(monthDir)).filter((n) => /^\d{2}$/.test(n)).sort(numericDesc)
-      for (const day of days) {
-        const dayEndMs = Date.parse(`${year}-${month}-${day}T23:59:59Z`)
-        if (Number.isFinite(dayEndMs) && dayEndMs < cutoffMs) {
-          return { paths, capped: false }
-        }
-        const dayDir = path.join(monthDir, day)
-        let files: string[]
-        try {
-          files = await fs.readdir(dayDir)
-        } catch {
-          continue
-        }
-        const rollouts = files
-          .filter((n) => n.startsWith('rollout-') && n.endsWith('.jsonl'))
-          .sort((a, b) => b.localeCompare(a))
-        for (const file of rollouts) {
-          if (paths.length >= maxFiles) return { paths, capped: true }
-          paths.push(path.join(dayDir, file))
-        }
-      }
-    }
-  }
-
-  // Legacy pre-date-dir layout: `rollout-*.json` directly under the root.
-  try {
-    const legacy = (await fs.readdir(root))
-      .filter((n) => n.startsWith('rollout-') && n.endsWith('.json'))
-      .sort((a, b) => b.localeCompare(a))
-    for (const file of legacy) {
-      if (paths.length >= maxFiles) return { paths, capped: true }
-      paths.push(path.join(root, file))
-    }
-  } catch {
-    // no legacy files
-  }
-
-  return { paths, capped: false }
 }
 
 async function readFirstLine(file: ReturnType<typeof Bun.file>): Promise<string | null> {
@@ -101,7 +67,20 @@ async function readFirstLine(file: ReturnType<typeof Bun.file>): Promise<string 
   }
 }
 
-function parseCodexMeta(firstLine: string): { id: string; cwd: string; timestamp?: string } | null {
+function hasSubagentSource(source: unknown): boolean {
+  return (
+    source !== null &&
+    typeof source === 'object' &&
+    Object.hasOwn(source, 'subagent') &&
+    (source as { subagent?: unknown }).subagent !== undefined
+  )
+}
+
+export function isCodexSubagentRollout(meta: { threadSource?: string; source?: unknown }): boolean {
+  return meta.threadSource === 'subagent' || hasSubagentSource(meta.source)
+}
+
+function parseCodexMeta(firstLine: string): CodexMeta | null {
   let line: CodexRolloutLine
   try {
     line = JSON.parse(firstLine.trim()) as CodexRolloutLine
@@ -112,25 +91,108 @@ function parseCodexMeta(firstLine: string): { id: string; cwd: string; timestamp
   const id = asString(line.payload?.id)
   const cwd = asString(line.payload?.cwd)
   if (id === undefined || cwd === undefined) return null
-  return { id, cwd, timestamp: asString(line.payload?.timestamp) }
+  const threadSource = asString(line.payload?.thread_source)
+  return {
+    id,
+    cwd,
+    timestamp: asString(line.payload?.timestamp),
+    codexKind: isCodexSubagentRollout({ threadSource, source: line.payload?.source })
+      ? 'subagent'
+      : undefined,
+  }
+}
+
+async function readCodexMeta(filePath: string): Promise<CodexMeta | null> {
+  const firstLine = await readFirstLine(Bun.file(filePath))
+  return firstLine ? parseCodexMeta(firstLine) : null
+}
+
+function shouldIncludeCodexMeta(
+  meta: CodexMeta | null,
+  resolvedProject: string,
+  includeSubagents: boolean,
+): meta is CodexMeta {
+  if (!meta?.id || !meta.cwd || path.resolve(meta.cwd) !== resolvedProject) return false
+  return includeSubagents || meta.codexKind !== 'subagent'
+}
+
+async function collectCodexCandidates(
+  root: string,
+  resolvedProject: string,
+  maxFiles: number,
+  maxAgeDays: number,
+  includeSubagents: boolean,
+): Promise<{ candidates: CodexCandidate[]; capped: boolean }> {
+  const candidates: CodexCandidate[] = []
+  const cutoffMs = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000
+
+  async function consider(filePath: string): Promise<boolean> {
+    const meta = await readCodexMeta(filePath)
+    if (!shouldIncludeCodexMeta(meta, resolvedProject, includeSubagents)) return false
+    if (candidates.length >= maxFiles) return true
+    candidates.push({ filePath, meta })
+    return false
+  }
+
+  const years = (await listSubdirs(root)).filter((n) => /^\d{4}$/.test(n)).sort(numericDesc)
+  for (const year of years) {
+    const yearDir = path.join(root, year)
+    const months = (await listSubdirs(yearDir)).filter((n) => /^\d{2}$/.test(n)).sort(numericDesc)
+    for (const month of months) {
+      const monthDir = path.join(yearDir, month)
+      const days = (await listSubdirs(monthDir)).filter((n) => /^\d{2}$/.test(n)).sort(numericDesc)
+      for (const day of days) {
+        const dayEndMs = Date.parse(`${year}-${month}-${day}T23:59:59Z`)
+        if (Number.isFinite(dayEndMs) && dayEndMs < cutoffMs) {
+          return { candidates, capped: false }
+        }
+        const dayDir = path.join(monthDir, day)
+        let files: string[]
+        try {
+          files = await fs.readdir(dayDir)
+        } catch {
+          continue
+        }
+        const rollouts = files
+          .filter((n) => n.startsWith('rollout-') && n.endsWith('.jsonl'))
+          .sort((a, b) => b.localeCompare(a))
+        for (const file of rollouts) {
+          if (await consider(path.join(dayDir, file))) return { candidates, capped: true }
+        }
+      }
+    }
+  }
+
+  // Legacy pre-date-dir layout: `rollout-*.json` directly under the root.
+  try {
+    const legacy = (await fs.readdir(root))
+      .filter((n) => n.startsWith('rollout-') && n.endsWith('.json'))
+      .sort((a, b) => b.localeCompare(a))
+    for (const file of legacy) {
+      if (await consider(path.join(root, file))) return { candidates, capped: true }
+    }
+  } catch {
+    // no legacy files
+  }
+
+  return { candidates, capped: false }
 }
 
 async function readCodexRollout(
   filePath: string,
   resolvedProject: string,
+  knownMeta?: CodexMeta,
 ): Promise<SessionSummary | null> {
   const file = Bun.file(filePath)
 
-  const firstLine = await readFirstLine(file)
-  if (!firstLine) return null
-  const meta = parseCodexMeta(firstLine)
+  const meta = knownMeta ?? (await readCodexMeta(filePath))
   if (!meta?.id || !meta.cwd || path.resolve(meta.cwd) !== resolvedProject) return null
 
   let text: string
   try {
     text = await file.text()
   } catch {
-    text = firstLine
+    text = ''
   }
 
   let preview = ''
@@ -161,6 +223,7 @@ async function readCodexRollout(
     turnCount: userCount,
     preview,
     source: 'codex',
+    codexKind: meta.codexKind,
   }
 }
 
@@ -184,21 +247,29 @@ async function withConcurrency<T>(
 export async function listCodexSessions(
   projectPath: string,
   homeDir = os.homedir(),
-  opts: { maxFiles?: number; maxAgeDays?: number } = {},
+  opts: { maxFiles?: number; maxAgeDays?: number; includeSubagents?: boolean } = {},
 ): Promise<CodexListResult> {
   const maxFiles = opts.maxFiles ?? CODEX_DEFAULT_MAX_FILES
   const maxAgeDays = opts.maxAgeDays ?? CODEX_DEFAULT_MAX_AGE_DAYS
+  const includeSubagents = opts.includeSubagents ?? false
   const root = path.join(homeDir, '.codex', 'sessions')
   const resolvedProject = path.resolve(projectPath)
 
-  const { paths, capped } = await collectCodexCandidates(root, maxFiles, maxAgeDays)
+  const { candidates, capped } = await collectCodexCandidates(
+    root,
+    resolvedProject,
+    maxFiles,
+    maxAgeDays,
+    includeSubagents,
+  )
   const rows: SessionSummary[] = []
 
-  await withConcurrency(paths, CODEX_READ_CONCURRENCY, async (filePath) => {
-    const row = await readCodexRollout(filePath, resolvedProject)
+  await withConcurrency(candidates, CODEX_READ_CONCURRENCY, async ({ filePath, meta }) => {
+    const row = await readCodexRollout(filePath, resolvedProject, meta)
     if (row) rows.push(row)
   })
 
+  rows.sort((a, b) => b.lastModified.localeCompare(a.lastModified))
   return { rows, capped }
 }
 
@@ -209,16 +280,18 @@ export async function lookupCodexMeta(
 ): Promise<ExternalSessionMeta | null> {
   const root = path.join(homeDir, '.codex', 'sessions')
   const resolvedProject = path.resolve(projectPath)
-  const { paths } = await collectCodexCandidates(
+  const { candidates } = await collectCodexCandidates(
     root,
+    resolvedProject,
     CODEX_DEFAULT_MAX_FILES,
     CODEX_DEFAULT_MAX_AGE_DAYS,
+    true,
   )
 
-  for (const filePath of paths) {
+  for (const { filePath, meta } of candidates) {
     if (!filePath.includes(threadId)) continue
     try {
-      const row = await readCodexRollout(filePath, resolvedProject)
+      const row = await readCodexRollout(filePath, resolvedProject, meta)
       if (row && row.id === threadId) {
         return { messageCount: row.turnCount, preview: row.preview, lastModified: row.lastModified }
       }

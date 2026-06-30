@@ -6,7 +6,7 @@ import { render } from 'ink-testing-library'
 
 import { FALLBACK_MODEL_CHOICES_BY_PROVIDER } from '../../services/model-catalog'
 import { DEFAULT_CONFIG } from '../../types'
-import { getProjectSessionDir, loadSession } from '../../services/session'
+import { getProjectSessionDir, loadSession, saveSession } from '../../services/session'
 import type { RunResult } from '../../pipeline/task'
 import type { OutboundFrame } from '../../pipeline/transports/types'
 import { useConversation } from './useConversation'
@@ -77,6 +77,54 @@ describe('useConversation', () => {
     const saved = await loadSession(projectPath)
     expect(saved).not.toBeNull()
     expect(saved?.llmModel).toBe(FALLBACK_MODEL_CHOICES_BY_PROVIDER.openai[1])
+    expect(saved?.history).toEqual([])
+  })
+
+  it('persists a --new session immediately so it becomes the latest before the first message', async () => {
+    const tempProjectRoot = await mkdtemp(path.join(tmpdir(), 'orb-use-conversation-fresh-'))
+    cleanupPaths.add(tempProjectRoot)
+
+    const projectPath = path.join(tempProjectRoot, 'project')
+    await mkdir(projectPath, { recursive: true })
+
+    cleanupPaths.add(getProjectSessionDir(projectPath))
+
+    await saveSession(
+      {
+        version: 2,
+        id: 'old-session',
+        projectPath,
+        llmProvider: 'openai',
+        llmModel: 'gpt-5.5',
+        lastModified: new Date().toISOString(),
+        history: [
+          { id: 'old-turn', question: 'old q', toolCalls: [], answer: 'old a', error: null },
+        ],
+      },
+      undefined,
+    )
+    await wait(5)
+
+    function Harness() {
+      useConversation({
+        config: {
+          ...makeConfig(projectPath),
+          startFresh: true,
+        },
+        initialSession: null,
+        orbSessionId: 'fresh-session',
+        taskState: 'idle',
+      })
+
+      return null
+    }
+
+    const app = render(<Harness />)
+    await wait(20)
+    app.unmount()
+
+    const saved = await loadSession(projectPath)
+    expect(saved?.id).toBe('fresh-session')
     expect(saved?.history).toEqual([])
   })
 

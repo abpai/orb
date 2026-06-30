@@ -15,7 +15,7 @@ type PlayerBinary = 'mpv' | 'ffplay'
 
 interface PlayerConfig {
   binary: PlayerBinary
-  spawn: (speed: number) => PlayerProcess
+  spawn: (speed: number, format: StreamAudioFormat) => PlayerProcess
 }
 
 export interface PlayerProcess {
@@ -31,12 +31,24 @@ export interface PlayerProcess {
   pid: number | undefined
 }
 
+export type StreamAudioFormat =
+  | { kind: 'encoded' }
+  | {
+      kind: 'raw-pcm'
+      sampleRate: number
+      channels: number
+      sampleWidth: number
+      pcmFormat: string
+    }
+
+export const ENCODED_STREAM_AUDIO_FORMAT: StreamAudioFormat = { kind: 'encoded' }
+
 const PLAYERS: PlayerConfig[] = [
   { binary: 'mpv', spawn: spawnMpv },
   { binary: 'ffplay', spawn: spawnFfplay },
 ]
 
-function spawnMpv(speed: number): PlayerProcess {
+function spawnMpv(speed: number, format: StreamAudioFormat): PlayerProcess {
   const ipcSocket = join(
     tmpdir(),
     `orb-mpv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.sock`,
@@ -48,15 +60,33 @@ function spawnMpv(speed: number): PlayerProcess {
     `--input-ipc-server=${ipcSocket}`,
   ]
   if (speed !== 1) args.push(`--speed=${speed}`)
+  if (format.kind === 'raw-pcm') {
+    args.push(
+      '--demuxer=rawaudio',
+      `--demuxer-rawaudio-rate=${format.sampleRate}`,
+      `--demuxer-rawaudio-channels=${format.channels}`,
+      `--demuxer-rawaudio-format=${format.pcmFormat}`,
+    )
+  }
   args.push('-')
   return createMpvProcess(args, ipcSocket)
 }
 
-function spawnFfplay(speed: number): PlayerProcess {
+function spawnFfplay(speed: number, format: StreamAudioFormat): PlayerProcess {
   const args = ['-nodisp', '-autoexit', '-loglevel', 'error']
   if (speed !== 1) {
     const clamped = Math.max(0.5, Math.min(2.0, speed))
     args.push('-af', `atempo=${clamped}`)
+  }
+  if (format.kind === 'raw-pcm') {
+    args.push(
+      '-f',
+      format.pcmFormat,
+      '-ar',
+      String(format.sampleRate),
+      '-ac',
+      String(format.channels),
+    )
   }
   args.push('-i', 'pipe:3')
   return createFfplayProcess(args)
