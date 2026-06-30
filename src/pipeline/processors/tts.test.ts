@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, mock } from 'bun:test'
 
 import { DEFAULT_CONFIG, TTSError } from '../../types'
+import { resetDetectedPlayer } from '../../services/audio-player'
 import { createFrame, type Frame } from '../frames'
 import { createTTSProcessor, type TTSCompletionHandle } from './tts'
 
@@ -20,11 +21,45 @@ async function* fromFrames(frames: Frame[]): AsyncIterable<Frame> {
 
 describe('createTTSProcessor', () => {
   const originalFetch = globalThis.fetch
+  const originalSpawn = Bun.spawn
+  const originalWhich = Bun.which
 
   afterEach(() => {
     globalThis.fetch = originalFetch
+    Bun.spawn = originalSpawn
+    Bun.which = originalWhich
+    resetDetectedPlayer()
     mock.restore()
   })
+
+  function emptyStreamResponse(): Response {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.close()
+      },
+    })
+    return new Response(stream, { status: 200 })
+  }
+
+  function installStreamingPlaybackMocks(requests: string[]): void {
+    globalThis.fetch = mock(
+      async (_url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+        const body = typeof init?.body === 'string' ? init.body : ''
+        requests.push(body ? (JSON.parse(body).text as string) : '')
+        return emptyStreamResponse()
+      },
+    ) as unknown as typeof globalThis.fetch
+
+    Bun.which = mock(() => '/usr/local/bin/mpv') as unknown as typeof Bun.which
+    Bun.spawn = mock(
+      () =>
+        ({
+          stdin: { write() {}, end() {} },
+          exited: Promise.resolve(0),
+          kill() {},
+        }) as unknown as Bun.Subprocess,
+    ) as unknown as typeof Bun.spawn
+  }
 
   it('keeps pending streaming TTS work alive after the processor finishes', async () => {
     const deferred: { reject?: (error: Error) => void } = {}
@@ -145,6 +180,53 @@ describe('createTTSProcessor', () => {
     failFetch(new Error('synthetic tts failure'))
 
     await expect(completion).rejects.toBeInstanceOf(TTSError)
+  })
+
+  it('does not replay cumulative streaming deltas through TTS', async () => {
+    const requests: string[] = []
+    installStreamingPlaybackMocks(requests)
+
+    let completionHandle: TTSCompletionHandle | null = null
+    const processor = createTTSProcessor(
+      {
+        ...DEFAULT_CONFIG,
+        ttsEnabled: true,
+        ttsStreamingEnabled: true,
+        ttsMode: 'serve',
+        ttsServerUrl: 'http://localhost:8000',
+        ttsBufferSentences: 1,
+        ttsMinChunkLength: 0,
+        ttsMaxWaitMs: 0,
+      },
+      {
+        setCompletion(handle) {
+          completionHandle = handle
+        },
+      },
+    )
+
+    await collectFrames(
+      processor(
+        fromFrames([
+          createFrame('agent-text-delta', {
+            delta: 'Alpha. ',
+            accumulatedText: 'Alpha. ',
+          }),
+          createFrame('agent-text-delta', {
+            delta: 'Alpha. Beta. ',
+            accumulatedText: 'Alpha. Beta. ',
+          }),
+          createFrame('agent-text-complete', { text: 'Alpha. Beta. ' }),
+        ]),
+      ),
+    )
+
+    if (!completionHandle) {
+      throw new Error('Expected a completion handle')
+    }
+    await (completionHandle as TTSCompletionHandle).waitForCompletion()
+
+    expect(requests.map((request) => request.trim())).toEqual(['Alpha.', 'Beta.'])
   })
 
   it('does not abort the agent turn when TTS setup is misconfigured', async () => {
