@@ -209,6 +209,24 @@ Then in Orb:
 
 Orb will load `explain.md`, and if you include trailing text it appends that text after a blank line. If a slash command is missing, Orb shows a turn-level error with the paths it checked.
 
+Bundled commands include `/session-tail`, which is meant for learning beside an active Claude or Codex session. Paste a provider block after the command:
+
+```text
+/session-tail claude  Session ID:       4e8dc399-2c4d-4045-9a37-9164fcc14523
+  cwd:              /Users/andypai/Projects/investing/garage-band
+```
+
+The command tells the model to run Orb's transcript helper first:
+
+```bash
+bun /Users/andypai/Projects/orb/src/tools/session-context.ts --tail 40 <<'EOF'
+claude  Session ID:       4e8dc399-2c4d-4045-9a37-9164fcc14523
+  cwd:              /Users/andypai/Projects/investing/garage-band
+EOF
+```
+
+The helper resolves the matching Claude or Codex log, normalizes recent user, assistant, and tool entries, and prints Markdown context for side questions like "how does this work?"
+
 Built-in commands:
 
 ```text
@@ -309,6 +327,18 @@ orb --resume-session=cursor:3cb88040-2612-4d4f-b708-0468588c8afd /path/to/projec
 ```
 
 Use this after the other client is idle; do not drive the same Claude, Codex, or Cursor conversation from two terminals at once. The project path must match the original session's working directory. `--new` clears Orb's visible saved history but still honors the explicit handoff id. If you do not know the provider id, run `orb sessions --all` from the project to include matching Claude Code and Codex sessions in the interactive picker. Codex worker/subagent sessions are hidden by default; add `--include-subagents` only when you intentionally want to inspect or resume a worker thread. Cursor external session discovery is not included in v1. When Orb resumes an external session, prior transcript lines are not imported into Orb's scrollback; instead, a short banner notes that earlier messages are hidden while the model still has the provider's conversation context.
+
+For read-only learning alongside an active session, use the transcript helper instead of resuming the provider conversation:
+
+```bash
+bun /Users/andypai/Projects/orb/src/tools/session-context.ts \
+  --provider claude \
+  --id 4e8dc399-2c4d-4045-9a37-9164fcc14523 \
+  --cwd /Users/andypai/Projects/investing/garage-band \
+  --tail 40
+```
+
+It also accepts pasted blocks with `--input`, hides tools with `--no-tools`, and can print machine-readable output with `--json`.
 
 ### OpenAI (default)
 

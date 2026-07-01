@@ -301,3 +301,22 @@ export async function lookupCodexMeta(
   }
   return null
 }
+
+export async function findCodexRolloutPath(
+  threadId: string,
+  projectPath: string,
+  homeDir = os.homedir(),
+  opts: { maxFiles?: number; maxAgeDays?: number } = {},
+): Promise<string | null> {
+  const root = path.join(homeDir, '.codex', 'sessions')
+  const resolvedProject = path.resolve(projectPath)
+  const { candidates } = await collectCodexCandidates(
+    root,
+    resolvedProject,
+    opts.maxFiles ?? CODEX_DEFAULT_MAX_FILES,
+    opts.maxAgeDays ?? CODEX_DEFAULT_MAX_AGE_DAYS,
+    true,
+  )
+
+  return candidates.find(({ meta }) => meta.id === threadId)?.filePath ?? null
+}
