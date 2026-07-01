@@ -5,6 +5,7 @@ import { resetFrameIds } from '../frames'
 import {
   buildCursorAgentCommand,
   createCursorStreamMapper,
+  formatCursorPostCompletionExitWarning,
   formatCursorPrompt,
   resolveCursorAgentBinary,
   shouldTreatCursorExitAsError,
@@ -88,6 +89,12 @@ describe('Cursor adapter command construction', () => {
     expect(shouldTreatCursorExitAsError(1, true)).toBe(false)
     expect(shouldTreatCursorExitAsError(1, false)).toBe(true)
     expect(shouldTreatCursorExitAsError(0, false)).toBe(false)
+  })
+
+  it('formats a warning for nonzero exits after completion', () => {
+    expect(formatCursorPostCompletionExitWarning(1, 'segmentation fault')).toBe(
+      'Cursor Agent exited with code 1 after completing the turn: segmentation fault',
+    )
   })
 })
 

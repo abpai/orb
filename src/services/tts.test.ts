@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { DEFAULT_CONFIG, TTSError } from '../types'
-import { buildFfplayRawPcmArgs, detectPlayer, resetDetectedPlayer } from './audio-player'
+import {
+  buildFfplayRawPcmArgs,
+  detectPlayer,
+  parseFfplayMajorVersion,
+  resetDetectedPlayer,
+} from './audio-player'
 
 async function importModule() {
   mock.restore()
@@ -745,5 +750,16 @@ describe('createStreamSession', () => {
       '-ch_layout',
       'mono',
     ])
+  })
+
+  it('parses ffplay release and source-build version strings', () => {
+    expect(parseFfplayMajorVersion('ffplay version 8.1 Copyright')).toBe(8)
+    expect(parseFfplayMajorVersion('ffplay version n4.4.4 Copyright')).toBe(4)
+    expect(
+      parseFfplayMajorVersion(
+        'ffplay version N-112489-gabcdef\nlibavutil      56. 70.100 / 56. 70.100',
+      ),
+    ).toBe(4)
+    expect(parseFfplayMajorVersion('ffplay version N-112489-gabcdef')).toBeUndefined()
   })
 })

@@ -67,6 +67,8 @@ const PROVIDER_GATEWAY_PREFIX: Record<LlmProvider, string> = {
   cursor: 'cursor',
 }
 
+const STATIC_MODEL_CATALOG_PROVIDERS = new Set<LlmProvider>(['cursor'])
+
 export const DEFAULT_MODEL_ALIAS_BY_PROVIDER: Record<LlmProvider, LlmModelId> = {
   anthropic: 'haiku',
   openai: 'gpt-5.5',
@@ -272,6 +274,10 @@ function fallbackModelCatalog(
       : FALLBACK_CATALOG_MODELS,
     source: 'fallback',
   }
+}
+
+function providerUsesStaticModelCatalog(provider: LlmProvider): boolean {
+  return STATIC_MODEL_CATALOG_PROVIDERS.has(provider)
 }
 
 // Inverse of PROVIDER_GATEWAY_PREFIX: gateway prefix → provider. Derived from the
@@ -588,10 +594,9 @@ export async function resolveAppModelConfig(
   config: AppConfig,
   options: LoadModelCatalogOptions = {},
 ): Promise<ResolvedModelConfig> {
-  const catalog =
-    config.llmProvider === 'cursor'
-      ? fallbackModelCatalog('cursor', options.now ?? Date.now())
-      : await loadModelCatalog(options)
+  const catalog = providerUsesStaticModelCatalog(config.llmProvider)
+    ? fallbackModelCatalog(config.llmProvider, options.now ?? Date.now())
+    : await loadModelCatalog(options)
   const { choices, labels } = buildProviderModelChoices(config.llmProvider, catalog.models)
   const llmModel = resolveModelForProvider(config.llmProvider, config.llmModel, catalog.models)
 

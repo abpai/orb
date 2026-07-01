@@ -1,4 +1,5 @@
 import { buildProviderPrompt } from '../../services/prompts'
+import { warn } from '../../services/log'
 import type { AgentSession, AppConfig } from '../../types'
 import type { Frame } from '../frames'
 import { createFrame } from '../frames'
@@ -282,6 +283,10 @@ export function shouldTreatCursorExitAsError(exitCode: number, completed: boolea
   return exitCode !== 0 && !completed
 }
 
+export function formatCursorPostCompletionExitWarning(exitCode: number, stderr: string): string {
+  return withStderr(`Cursor Agent exited with code ${exitCode} after completing the turn`, stderr)
+}
+
 async function* cursorEventFrames(
   proc: Bun.Subprocess<'ignore', 'pipe', 'pipe'>,
   signal: AbortSignal,
@@ -354,6 +359,9 @@ async function* cursorEventFrames(
   if (parseOrTurnError) throw new Error(withStderr(parseOrTurnError.message, stderr))
   if (shouldTreatCursorExitAsError(exitCode, completed))
     throw new Error(withStderr(`Cursor Agent exited with code ${exitCode}`, stderr))
+  if (exitCode !== 0) {
+    warn(formatCursorPostCompletionExitWarning(exitCode, stderr))
+  }
   if (!completed) {
     throw new Error(withStderr('Cursor Agent exited before completing the turn', stderr))
   }

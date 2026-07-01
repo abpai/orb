@@ -153,11 +153,19 @@ async function handleVoiceRetry<TPayload>(
   text: string,
   voice: string | undefined,
   signal: AbortSignal | undefined,
-  options: { passthroughStatus?: (status: number) => boolean } = {},
+  options: {
+    passthroughStatus?: (status: number) => boolean
+    skipVoiceRetryStatus?: (status: number) => boolean
+  } = {},
 ): Promise<Response> {
   let response = await post(buildPayload(text, voice), signal)
 
-  if (!response.ok && voice && isRetryableVoiceError(response.status)) {
+  if (
+    !response.ok &&
+    voice &&
+    isRetryableVoiceError(response.status) &&
+    !options.skipVoiceRetryStatus?.(response.status)
+  ) {
     response = await post(buildPayload(text), signal)
   }
 
@@ -173,6 +181,10 @@ async function handleVoiceRetry<TPayload>(
   }
 
   return response
+}
+
+function isPcmEndpointUnsupportedStatus(status: number): boolean {
+  return status === 404 || status === 405 || status === 406 || status === 415 || status === 501
 }
 
 async function discardResponse(response: Response): Promise<void> {
@@ -214,6 +226,12 @@ function parseStreamResult(response: Response): GatewayStreamResult {
   return { stream: response.body, format: { kind: 'encoded', contentType } }
 }
 
+const unsupportedPcmStreamUrls = new Set<string>()
+
+export function resetGatewayClientCacheForTest(): void {
+  unsupportedPcmStreamUrls.clear()
+}
+
 export function createGatewayClient(baseUrl: string) {
   const syncUrl = resolveUrl(baseUrl, DEFAULT_SPEECH_PATH)
   const streamUrl = resolveUrl(baseUrl, DEFAULT_STREAM_PATH)
@@ -241,7 +259,6 @@ export function createGatewayClient(baseUrl: string) {
   const postSync = postForm(syncUrl)
   const postStream = postJson(streamUrl)
   const postStreamPcm = streamPcmUrl ? postJson(streamPcmUrl) : null
-  let pcmStreamSupported = postStreamPcm ? true : false
 
   return {
     async speakSync(
@@ -262,7 +279,8 @@ export function createGatewayClient(baseUrl: string) {
       voice?: string,
       signal?: AbortSignal,
     ): Promise<GatewayStreamResult> {
-      if (postStreamPcm && pcmStreamSupported) {
+      const pcmUrl = streamPcmUrl
+      if (postStreamPcm && pcmUrl && !unsupportedPcmStreamUrls.has(pcmUrl)) {
         const pcmResponse = await handleVoiceRetry(
           postStreamPcm,
           buildJsonPayload,
@@ -271,12 +289,15 @@ export function createGatewayClient(baseUrl: string) {
           signal,
           {
             passthroughStatus: () => true,
+            skipVoiceRetryStatus: isPcmEndpointUnsupportedStatus,
           },
         )
         if (pcmResponse.ok) {
           return parseStreamResult(pcmResponse)
         }
-        pcmStreamSupported = false
+        if (isPcmEndpointUnsupportedStatus(pcmResponse.status)) {
+          unsupportedPcmStreamUrls.add(pcmUrl)
+        }
         await discardResponse(pcmResponse)
       }
 

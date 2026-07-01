@@ -85,9 +85,23 @@ function spawnFfplay(speed: number, format: StreamAudioFormat): PlayerProcess {
   return createFfplayProcess(args)
 }
 
-let detectedFfplayMajorVersion: number | null | undefined = undefined
+const UNKNOWN_FFPLAY_MAJOR_VERSION = Number.POSITIVE_INFINITY
+let detectedFfplayMajorVersion: number | undefined = undefined
 
-function detectFfplayMajorVersion(): number | null {
+export function parseFfplayMajorVersion(versionOutput: string): number | undefined {
+  const releaseMajor = Number.parseInt(
+    versionOutput.match(/ffplay version\s+(?:n)?(\d+)(?=[.\s-]|$)/i)?.[1] ?? '',
+    10,
+  )
+  if (Number.isFinite(releaseMajor)) return releaseMajor
+
+  const libavutilMajor = Number.parseInt(versionOutput.match(/libavutil\s+(\d+)\./i)?.[1] ?? '', 10)
+  if (!Number.isFinite(libavutilMajor)) return undefined
+  if (libavutilMajor <= 56) return 4
+  return libavutilMajor - 52
+}
+
+function detectFfplayMajorVersion(): number {
   if (detectedFfplayMajorVersion !== undefined) return detectedFfplayMajorVersion
 
   try {
@@ -96,10 +110,9 @@ function detectFfplayMajorVersion(): number | null {
       stderr: 'ignore',
     })
     const text = new TextDecoder().decode(result.stdout)
-    const major = Number.parseInt(text.match(/ffplay version\s+(\d+)/)?.[1] ?? '', 10)
-    detectedFfplayMajorVersion = Number.isFinite(major) ? major : null
+    detectedFfplayMajorVersion = parseFfplayMajorVersion(text) ?? UNKNOWN_FFPLAY_MAJOR_VERSION
   } catch {
-    detectedFfplayMajorVersion = null
+    detectedFfplayMajorVersion = UNKNOWN_FFPLAY_MAJOR_VERSION
   }
 
   return detectedFfplayMajorVersion
@@ -107,9 +120,9 @@ function detectFfplayMajorVersion(): number | null {
 
 export function buildFfplayRawPcmArgs(
   format: Extract<StreamAudioFormat, { kind: 'raw-pcm' }>,
-  ffplayMajorVersion: number | null = detectFfplayMajorVersion(),
+  ffplayMajorVersion = detectFfplayMajorVersion(),
 ): string[] {
-  if (ffplayMajorVersion !== null && ffplayMajorVersion < 5) {
+  if (ffplayMajorVersion < 5) {
     return [
       '-f',
       format.pcmFormat,
