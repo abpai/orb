@@ -23,6 +23,7 @@ describe('buildExternalResumeArgs', () => {
     expect(buildExternalResumeArgs('/p', 'orb', 'x')).toEqual(['/p', '--resume', 'x'])
     expect(buildExternalResumeArgs('/p', 'claude', 'x')).toEqual(['/p', '--claude-session', 'x'])
     expect(buildExternalResumeArgs('/p', 'codex', 'x')).toEqual(['/p', '--codex-thread', 'x'])
+    expect(buildExternalResumeArgs('/p', 'cursor', 'x')).toEqual(['/p', '--cursor-session', 'x'])
   })
 })
 

@@ -39,9 +39,7 @@ export function resolveModelForConfig(provider: LlmProvider, modelId: string): L
 }
 
 type ModelOverride = { provider?: LlmProvider; id: string }
-type SessionOverride =
-  | { provider: 'anthropic'; session: AgentSession }
-  | { provider: 'openai'; session: AgentSession }
+type SessionOverride = { provider: LlmProvider; session: AgentSession }
 
 function parseModelArg(value: string): ModelOverride | undefined {
   if (!value) return undefined
@@ -65,7 +63,9 @@ function parseModelArg(value: string): ModelOverride | undefined {
 function parseProviderSessionArg(value: string): SessionOverride {
   const separator = value.indexOf(':')
   if (separator <= 0) {
-    throw new Error('Expected --resume-session as claude:<session-id> or codex:<thread-id>')
+    throw new Error(
+      'Expected --resume-session as claude:<session-id>, codex:<thread-id>, or cursor:<session-id>',
+    )
   }
 
   const prefix = value.slice(0, separator).trim()
@@ -80,9 +80,11 @@ function parseProviderSessionArg(value: string): SessionOverride {
       return { provider, session: { provider, sessionId: id } }
     case 'openai':
       return { provider, session: { provider, threadId: id } }
+    case 'cursor':
+      return { provider, session: { provider, sessionId: id } }
     default:
       throw new Error(
-        'Expected --resume-session provider to be claude, anthropic, codex, or openai',
+        'Expected --resume-session provider to be claude, anthropic, codex, openai, cursor, or composer',
       )
   }
 }
@@ -95,8 +97,14 @@ function parseBareSessionId(value: string, flagName: string): string {
 
 function sameSession(a: AgentSession, b: AgentSession): boolean {
   if (a.provider !== b.provider) return false
-  if (a.provider === 'anthropic') return a.sessionId === (b as typeof a).sessionId
-  return a.threadId === (b as typeof a).threadId
+  switch (a.provider) {
+    case 'anthropic':
+      return a.sessionId === (b as typeof a).sessionId
+    case 'openai':
+      return a.threadId === (b as typeof a).threadId
+    case 'cursor':
+      return a.sessionId === (b as typeof a).sessionId
+  }
 }
 
 function parseSessionOverride(opts: ParsedOpts): SessionOverride | undefined {
@@ -120,6 +128,15 @@ function parseSessionOverride(opts: ParsedOpts): SessionOverride | undefined {
       session: {
         provider: 'openai',
         threadId: parseBareSessionId(opts.codexThread, '--codex-thread'),
+      },
+    })
+  }
+  if (opts.cursorSession) {
+    parsed.push({
+      provider: 'cursor',
+      session: {
+        provider: 'cursor',
+        sessionId: parseBareSessionId(opts.cursorSession, '--cursor-session'),
       },
     })
   }
@@ -183,7 +200,7 @@ export function createProgram({ config: defaults }: ProgramDefaults): Command {
     .argument('[projectPath]', 'Project directory path')
     .option(
       '--provider <provider>',
-      'LLM provider: anthropic|claude, openai|gpt|codex, gemini|google',
+      'LLM provider: anthropic|claude, openai|gpt|codex, gemini|google, cursor|composer',
     )
     .option('--llm-provider <provider>', 'LLM provider (alias for --provider)')
     .option('--model <model>', 'Model ID, semantic alias, or provider:model')
@@ -209,10 +226,11 @@ export function createProgram({ config: defaults }: ProgramDefaults): Command {
     )
     .option(
       '--resume-session <provider:id>',
-      'Resume an external provider session: claude:<session-id> or codex:<thread-id>',
+      'Resume an external provider session: claude:<session-id>, codex:<thread-id>, or cursor:<session-id>',
     )
     .option('--claude-session <id>', 'Resume a Claude Code session by id')
     .option('--codex-thread <id>', 'Resume a Codex app-server thread by id')
+    .option('--cursor-session <id>', 'Resume a Cursor Agent session by id')
     .option('--new', 'Start fresh (ignore saved session)')
     .option('--resume <id>', 'Resume a specific saved session by id')
     .option('--skip-intro', 'Skip the welcome animation')
@@ -222,7 +240,7 @@ export function createProgram({ config: defaults }: ProgramDefaults): Command {
     .option('--no-streaming-tts', 'Disable streaming (batch mode)')
     .option(
       '--yolo',
-      'Bypass all permission checks (dangerous). Without --yolo, structured file-write tools (Write/Edit/MultiEdit) are path-clamped to the project root, but Bash/shell is not restricted — use Codex provider for full shell sandboxing.',
+      'Bypass all permission checks (dangerous). For Cursor this switches from read-only ask mode to force mode plus MCP approval; for Anthropic/Gemini structured file writes are path-clamped to the project root, but Bash/shell is not restricted — use Codex provider for full shell sandboxing.',
     )
     .configureHelp({ formatHelp: (cmd) => buildHelpText(cmd) })
     .configureOutput({
@@ -246,6 +264,7 @@ interface ParsedOpts {
   resumeSession?: string
   claudeSession?: string
   codexThread?: string
+  cursorSession?: string
   new?: boolean
   resume?: string
   skipIntro?: boolean

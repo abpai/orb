@@ -66,6 +66,69 @@ async function readClaudeIndex(dir: string): Promise<ClaudeIndex | null> {
   }
 }
 
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath)
+    return true
+  } catch (err) {
+    if (isFileNotFoundError(err)) return false
+    throw err
+  }
+}
+
+async function dirEntriesOrNull(dir: string): Promise<string[] | null> {
+  try {
+    return await fs.readdir(dir)
+  } catch (err) {
+    if (isFileNotFoundError(err)) return null
+    throw err
+  }
+}
+
+async function readTextOrNull(filePath: string): Promise<string | null> {
+  try {
+    return await Bun.file(filePath).text()
+  } catch (err) {
+    if (isFileNotFoundError(err)) return null
+    throw err
+  }
+}
+
+function transcriptContainsSessionId(text: string, sessionId: string): boolean {
+  return text.includes(`"sessionId":"${sessionId}"`) || text.includes(`"sessionId": "${sessionId}"`)
+}
+
+function isJsonlName(name: string): boolean {
+  return name.endsWith('.jsonl')
+}
+
+async function findTranscriptByContent(dir: string, sessionId: string): Promise<string | null> {
+  const files = await dirEntriesOrNull(dir)
+  if (!files) return null
+
+  for (const file of files.filter(isJsonlName).sort()) {
+    const filePath = path.join(dir, file)
+    const text = await readTextOrNull(filePath)
+    if (text !== null && transcriptContainsSessionId(text, sessionId)) {
+      return filePath
+    }
+  }
+
+  return null
+}
+
+export async function findClaudeTranscriptPath(
+  sessionId: string,
+  projectPath: string,
+  homeDir = os.homedir(),
+): Promise<string | null> {
+  const dir = claudeProjectDir(projectPath, homeDir)
+  const direct = path.join(dir, `${sessionId}.jsonl`)
+  if (await fileExists(direct)) return direct
+
+  return findTranscriptByContent(dir, sessionId)
+}
+
 function extractClaudeUserText(line: ClaudeJsonlLine): string {
   const content = line.message?.content
   if (typeof content === 'string') return content.trim()

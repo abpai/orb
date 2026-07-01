@@ -1,4 +1,4 @@
-import type { Frame } from '../frames'
+import type { AgentTextDeltaFrame, Frame } from '../frames'
 import { createFrame } from '../frames'
 import type { Processor } from '../processor'
 import type { AppConfig } from '../../types'
@@ -51,6 +51,7 @@ export function createTTSProcessor(appConfig: AppConfig, runControl?: TTSRunCont
       },
     })
     let controllerHandedOff = false
+    let spokenAccumulatedText = ''
 
     function* drainPending(): Iterable<Frame> {
       while (pendingTTSFrames.length > 0) {
@@ -58,12 +59,35 @@ export function createTTSProcessor(appConfig: AppConfig, runControl?: TTSRunCont
       }
     }
 
+    function getSpeechDelta(frame: AgentTextDeltaFrame): string {
+      const next = frame.accumulatedText
+      if (!next) return frame.delta
+      if (next === spokenAccumulatedText) return ''
+
+      if (next.startsWith(spokenAccumulatedText)) {
+        const delta = next.slice(spokenAccumulatedText.length)
+        spokenAccumulatedText = next
+        return delta
+      }
+
+      if (frame.delta.startsWith(spokenAccumulatedText)) {
+        const delta = frame.delta.slice(spokenAccumulatedText.length)
+        spokenAccumulatedText = next
+        return delta
+      }
+
+      spokenAccumulatedText = next
+      return frame.delta
+    }
+
     try {
       for await (const frame of upstream) {
         // Streaming mode: feed deltas as they arrive. Batch mode waits for the
-        // complete text below.
+        // complete text below. Derive speech input from accumulatedText when
+        // possible so cumulative provider partials do not get spoken twice.
         if (frame.kind === 'agent-text-delta' && feedDeltas) {
-          controller.feedText(frame.delta)
+          const speechDelta = getSpeechDelta(frame)
+          if (speechDelta) controller.feedText(speechDelta)
         }
 
         // On agent completion, finalize TTS and hand off the playback session.

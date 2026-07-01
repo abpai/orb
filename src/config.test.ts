@@ -28,6 +28,14 @@ describe('parseCliArgs', () => {
     expect(config.llmModel).toBe('gemini-3.1-flash-lite-preview')
   })
 
+  it('supports provider:model shorthand and aliases for Cursor', () => {
+    const { config } = parseCliArgs(['--model=cursor:fast'])
+
+    expect(config.llmProvider).toBe('cursor')
+    expect(config.llmModel).toBe('fast')
+    expect(parseCliArgs(['--provider=composer']).config.llmProvider).toBe('cursor')
+  })
+
   it('supports provider:model shorthand for Anthropic family versions', () => {
     const { config } = parseCliArgs(['--model=anthropic:opus-4.8'])
 
@@ -78,6 +86,18 @@ describe('parseCliArgs', () => {
     expect(explicit.provider).toBe(true)
   })
 
+  it('parses Cursor session handoff flags and selects Cursor', () => {
+    const { config, explicit } = parseCliArgs(['--cursor-session=cursor-session-123'])
+
+    expect(config.llmProvider).toBe('cursor')
+    expect(config.llmModel).toBe('fast')
+    expect(config.resumeSession).toEqual({
+      provider: 'cursor',
+      sessionId: 'cursor-session-123',
+    })
+    expect(explicit.provider).toBe(true)
+  })
+
   it('parses generic provider-prefixed handoff flags', () => {
     expect(parseCliArgs(['--resume-session=claude:session-1']).config.resumeSession).toEqual({
       provider: 'anthropic',
@@ -88,6 +108,27 @@ describe('parseCliArgs', () => {
       provider: 'openai',
       threadId: 'thread-1',
     })
+
+    expect(parseCliArgs(['--resume-session=cursor:session-1']).config.resumeSession).toEqual({
+      provider: 'cursor',
+      sessionId: 'session-1',
+    })
+    expect(parseCliArgs(['--resume-session=composer:session-1']).config.resumeSession).toEqual({
+      provider: 'cursor',
+      sessionId: 'session-1',
+    })
+  })
+
+  it('accepts duplicate Cursor handoff flags when they reference the same session', () => {
+    const { config } = parseCliArgs([
+      '--cursor-session=session-1',
+      '--resume-session=cursor:session-1',
+    ])
+
+    expect(config.resumeSession).toEqual({
+      provider: 'cursor',
+      sessionId: 'session-1',
+    })
   })
 
   it('rejects provider/model conflicts with handoff sessions', () => {
@@ -96,6 +137,9 @@ describe('parseCliArgs', () => {
     )
     expect(() => parseCliArgs(['--model=anthropic:opus', '--codex-thread=thread-1'])).toThrow(
       /handoff session is for openai/,
+    )
+    expect(() => parseCliArgs(['--provider=openai', '--cursor-session=session-1'])).toThrow(
+      /handoff session is for cursor/,
     )
   })
 
@@ -241,6 +285,7 @@ describe('buildHelpText', () => {
     expect(help).toContain('Commands:')
     expect(help).toContain('orb setup')
     expect(help).toContain('orb sessions')
+    expect(help).toContain('--include-subagents')
   })
 
   it('orders Commands, then Common options, then Advanced options', () => {
@@ -263,6 +308,8 @@ describe('buildHelpText', () => {
     expect(advanced).toContain('--reasoning-effort')
     expect(advanced).toContain('--yolo')
     expect(advanced).toContain('--claude-session')
+    expect(advanced).toContain('--cursor-session')
+    expect(help).toContain('Cursor is opt-in')
   })
 
   it('renders every registered flag plus version and help (anti-drift)', () => {

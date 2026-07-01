@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, mock } from 'bun:test'
 import { TTSError } from '../types'
+import { resetGatewayClientCacheForTest } from './gateway-client'
 
 async function importModule() {
   mock.restore()
@@ -12,6 +13,7 @@ describe('createGatewayClient', () => {
   afterEach(() => {
     mock.restore()
     globalThis.fetch = originalFetch
+    resetGatewayClientCacheForTest()
   })
 
   describe('URL normalization', () => {
@@ -246,6 +248,25 @@ describe('createGatewayClient', () => {
         expect((err as TTSError).message).toContain('engine kokoro crashed')
       }
     })
+
+    it('surfaces structured first-audio timeout details', async () => {
+      const { createGatewayClient } = await importModule()
+
+      globalThis.fetch = mock(
+        async () =>
+          new Response(JSON.stringify({ error: 'stream first audio timed out' }), { status: 504 }),
+      ) as unknown as typeof globalThis.fetch
+
+      try {
+        await createGatewayClient('http://localhost:8000/custom-stream').speakStream('hello')
+        expect.unreachable('should have thrown')
+      } catch (err) {
+        expect(err).toBeInstanceOf(TTSError)
+        expect((err as TTSError).message).toContain(
+          'Gateway stream timed out before first audio: stream first audio timed out',
+        )
+      }
+    })
   })
 
   describe('content-type passthrough', () => {
@@ -321,29 +342,152 @@ describe('createGatewayClient', () => {
       expect(requestHeaders).toEqual({ 'Content-Type': 'application/json' })
     })
 
-    it('posts to /tts/stream endpoint by default', async () => {
+    it('prefers /tts/stream/pcm by default', async () => {
       const { createGatewayClient } = await importModule()
       let requestUrl: string | undefined
 
       globalThis.fetch = mock(async (input: string | globalThis.URL | Request) => {
         requestUrl = typeof input === 'string' ? input : input.toString()
-        return new Response(new ReadableStream(), { status: 200 })
+        return new Response(new ReadableStream(), {
+          status: 200,
+          headers: {
+            'content-type': 'audio/raw',
+            'x-tts-mode': 'stream-pcm',
+            'x-tts-sample-rate': '24000',
+            'x-tts-channels': '1',
+            'x-tts-sample-width': '2',
+            'x-tts-pcm-format': 's16le',
+          },
+        })
       }) as unknown as typeof globalThis.fetch
 
       await createGatewayClient('http://localhost:8000').speakStream('hello')
-      expect(requestUrl).toBe('http://localhost:8000/tts/stream')
+      expect(requestUrl).toBe('http://localhost:8000/tts/stream/pcm')
     })
 
-    it('returns ReadableStream on success', async () => {
+    it('returns stream metadata for PCM success', async () => {
       const { createGatewayClient } = await importModule()
       const fakeStream = new ReadableStream()
 
       globalThis.fetch = mock(
-        async () => new Response(fakeStream, { status: 200 }),
+        async () =>
+          new Response(fakeStream, {
+            status: 200,
+            headers: {
+              'content-type': 'audio/raw',
+              'x-tts-mode': 'stream-pcm',
+              'x-tts-sample-rate': '24000',
+              'x-tts-channels': '1',
+              'x-tts-sample-width': '2',
+              'x-tts-pcm-format': 's16le',
+            },
+          }),
       ) as unknown as typeof globalThis.fetch
 
-      const stream = await createGatewayClient('http://localhost:8000').speakStream('hello')
-      expect(stream).toBeInstanceOf(ReadableStream)
+      const result = await createGatewayClient('http://localhost:8000').speakStream('hello')
+      expect(result.stream).toBeInstanceOf(ReadableStream)
+      expect(result.format).toEqual({
+        kind: 'raw-pcm',
+        contentType: 'audio/raw',
+        sampleRate: 24000,
+        channels: 1,
+        sampleWidth: 2,
+        pcmFormat: 's16le',
+      })
+    })
+
+    it('falls back to encoded /tts/stream when PCM has a transient failure without caching it', async () => {
+      const { createGatewayClient } = await importModule()
+      const requestUrls: string[] = []
+
+      globalThis.fetch = mock(async (input: string | globalThis.URL | Request) => {
+        const url = typeof input === 'string' ? input : input.toString()
+        requestUrls.push(url)
+        if (url.endsWith('/tts/stream/pcm')) {
+          return new Response('gateway timeout before first audio', { status: 504 })
+        }
+        return new Response(new ReadableStream(), {
+          status: 200,
+          headers: { 'content-type': 'audio/mpeg' },
+        })
+      }) as unknown as typeof globalThis.fetch
+
+      const client = createGatewayClient('http://localhost:8000')
+      const result = await client.speakStream('hello')
+      const second = await client.speakStream('again')
+
+      expect(requestUrls).toEqual([
+        'http://localhost:8000/tts/stream/pcm',
+        'http://localhost:8000/tts/stream',
+        'http://localhost:8000/tts/stream/pcm',
+        'http://localhost:8000/tts/stream',
+      ])
+      expect(result.format).toEqual({ kind: 'encoded', contentType: 'audio/mpeg' })
+      expect(second.format).toEqual({ kind: 'encoded', contentType: 'audio/mpeg' })
+    })
+
+    it('caches genuinely unsupported PCM responses across gateway clients', async () => {
+      const { createGatewayClient } = await importModule()
+      const requestUrls: string[] = []
+
+      globalThis.fetch = mock(async (input: string | globalThis.URL | Request) => {
+        const url = typeof input === 'string' ? input : input.toString()
+        requestUrls.push(url)
+        if (url.endsWith('/tts/stream/pcm')) {
+          return new Response('not found', { status: 404 })
+        }
+        return new Response(new ReadableStream(), {
+          status: 200,
+          headers: { 'content-type': 'audio/mpeg' },
+        })
+      }) as unknown as typeof globalThis.fetch
+
+      await createGatewayClient('http://localhost:8000').speakStream('hello')
+      await createGatewayClient('http://localhost:8000').speakStream('again')
+
+      expect(requestUrls).toEqual([
+        'http://localhost:8000/tts/stream/pcm',
+        'http://localhost:8000/tts/stream',
+        'http://localhost:8000/tts/stream',
+      ])
+    })
+
+    it('does not retry the voice on a structurally unsupported PCM endpoint', async () => {
+      const { createGatewayClient } = await importModule()
+      const requestUrls: string[] = []
+
+      globalThis.fetch = mock(async (input: string | globalThis.URL | Request) => {
+        const url = typeof input === 'string' ? input : input.toString()
+        requestUrls.push(url)
+        if (url.endsWith('/tts/stream/pcm')) {
+          return new Response('not found', { status: 404 })
+        }
+        return new Response(new ReadableStream(), {
+          status: 200,
+          headers: { 'content-type': 'audio/mpeg' },
+        })
+      }) as unknown as typeof globalThis.fetch
+
+      await createGatewayClient('http://localhost:8000').speakStream('hello', 'alba')
+
+      expect(requestUrls).toEqual([
+        'http://localhost:8000/tts/stream/pcm',
+        'http://localhost:8000/tts/stream',
+      ])
+    })
+
+    it('uses explicit custom stream paths without probing PCM', async () => {
+      const { createGatewayClient } = await importModule()
+      const requestUrls: string[] = []
+
+      globalThis.fetch = mock(async (input: string | globalThis.URL | Request) => {
+        requestUrls.push(typeof input === 'string' ? input : input.toString())
+        return new Response(new ReadableStream(), { status: 200 })
+      }) as unknown as typeof globalThis.fetch
+
+      await createGatewayClient('http://localhost:8000/custom-stream').speakStream('hello')
+
+      expect(requestUrls).toEqual(['http://localhost:8000/custom-stream'])
     })
 
     it('retries without voice on retriable errors', async () => {
@@ -357,7 +501,13 @@ describe('createGatewayClient', () => {
           if (body.voice) {
             return new Response('bad voice', { status: 400 })
           }
-          return new Response(new ReadableStream(), { status: 200 })
+          return new Response(new ReadableStream(), {
+            status: 200,
+            headers: {
+              'content-type': 'audio/raw',
+              'x-tts-mode': 'stream-pcm',
+            },
+          })
         },
       ) as unknown as typeof globalThis.fetch
 

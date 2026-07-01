@@ -12,7 +12,7 @@
 
 ## Why Orb
 
-Orb is a Bun-native terminal app for exploring real codebases with Anthropic, OpenAI/Codex, or Gemini models. It keeps the interface focused, shows tool activity as it happens, remembers project conversations, and can read answers aloud through `tts-gateway` or macOS `say`.
+Orb is a Bun-native terminal app for exploring real codebases with Anthropic, OpenAI/Codex, Gemini, or Cursor Agent models. It keeps the interface focused, shows tool activity as it happens, remembers project conversations, and can read answers aloud through `tts-gateway` or macOS `say`.
 
 ## Features
 
@@ -20,7 +20,7 @@ Orb is a Bun-native terminal app for exploring real codebases with Anthropic, Op
 - **Live tool activity** - See file reads, shell commands, and exploration steps as they happen
 - **Voice input friendly** - Paste transcriptions from MacWhisper for hands-free interaction
 - **Streaming TTS (serve mode)** - Hear answers while they are still being generated
-- **Provider selection** - Choose Anthropic (Claude), OpenAI/Codex, or Gemini via CLI flags
+- **Provider selection** - Choose Anthropic (Claude), OpenAI/Codex, Gemini, or Cursor Agent via CLI flags
 - **Model switching** - Cycle provider model choices during a conversation with Shift+Tab
 - **Session history & resume** - Keeps recent conversations per project; auto-resumes the latest, or pick a past session for the current project with `orb sessions` / `/sessions`
 - **Slash command prompts** - Expand `/explain`-style shortcuts from project or global Markdown files
@@ -58,6 +58,7 @@ npm install @andypai/orb
 - Anthropic: sign in with Claude Code / Max, or set `ANTHROPIC_API_KEY`
 - OpenAI: sign in with Codex / ChatGPT subscription auth (`codex login --device-auth`)
 - Gemini: set `GOOGLE_GENERATIVE_AI_API_KEY`
+- Cursor: sign in with Cursor Agent (`agent login` or `cursor-agent login`) and pass `--provider cursor`
 
 If you do not pass `--provider` or `--model`, Orb auto-selects a provider in this order:
 
@@ -124,6 +125,10 @@ orb --model=openai:mini
 orb --provider=gemini --model=pro
 orb --model=gemini:flash-lite
 
+# Cursor Agent provider
+orb --provider=cursor --model=fast
+orb --model=cursor:composer
+
 # Fresh conversation
 orb --new
 
@@ -132,6 +137,9 @@ orb sessions
 
 # Include this project's Claude Code and Codex sessions in the picker
 orb sessions --all
+
+# Include Codex worker/subagent sessions too
+orb sessions --include-subagents
 
 # Resume a specific saved session by id
 orb /path/to/project --resume <session-id>
@@ -142,25 +150,27 @@ orb --skip-intro
 
 ### Commands and options
 
-| Command / option              | Description                                                                                                 | Default                                                 |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| `--provider=<provider>`       | LLM provider: `anthropic`\|`claude`, `openai`\|`gpt`\|`codex`, `gemini`\|`google` (alias: `--llm-provider`) | `auto`                                                  |
-| `--model=<model>`             | Model ID or semantic alias (`haiku`, `sonnet`, `opus`, `gpt`, `mini`, `pro`, etc.) or `provider:model`      | `haiku` (anthropic), `gpt-5.5` (openai), `pro` (gemini) |
-| `--reasoning-effort=<effort>` | OpenAI/Codex reasoning effort: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`                          | `high`                                                  |
-| `--voice=<voice>`             | TTS voice: `alba`, `marius`, `jean`                                                                         | `alba`                                                  |
-| `--tts-mode=<mode>`           | `serve` for `tts-gateway`, `generate` for local macOS `say`                                                 | `serve`                                                 |
-| `--tts-server-url=<url>`      | Serve-mode gateway URL                                                                                      | `http://localhost:8000`                                 |
-| `--tts-speed=<rate>`          | TTS speed multiplier                                                                                        | `1.5`                                                   |
-| `--resume-session=<ref>`      | Resume a provider session, using `claude:<session-id>` or `codex:<thread-id>`                               | -                                                       |
-| `--resume=<id>`               | Resume a specific saved session by id (see `orb sessions`)                                                  | -                                                       |
-| `orb sessions --all`          | Include this project's Claude Code and Codex sessions in the session picker                                 | -                                                       |
-| `--claude-session=<id>`       | Resume a Claude Code session by id                                                                          | -                                                       |
-| `--codex-thread=<id>`         | Resume a Codex app-server thread by id                                                                      | -                                                       |
-| `--new`                       | Start fresh (ignore saved session)                                                                          | -                                                       |
-| `--skip-intro`                | Skip the welcome animation                                                                                  | -                                                       |
-| `--no-tts`                    | Disable text-to-speech                                                                                      | -                                                       |
-| `--no-streaming-tts`          | Disable streaming (batch mode)                                                                              | -                                                       |
-| `--help`                      | Show help message                                                                                           | -                                                       |
+| Command / option                   | Description                                                                                                                       | Default                                                                  |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `--provider=<provider>`            | LLM provider: `anthropic`\|`claude`, `openai`\|`gpt`\|`codex`, `gemini`\|`google`, `cursor`\|`composer` (alias: `--llm-provider`) | `auto`                                                                   |
+| `--model=<model>`                  | Model ID or semantic alias (`haiku`, `sonnet`, `opus`, `gpt`, `mini`, `pro`, `fast`, etc.) or `provider:model`                    | `haiku` (anthropic), `gpt-5.5` (openai), `pro` (gemini), `fast` (cursor) |
+| `--reasoning-effort=<effort>`      | OpenAI/Codex reasoning effort: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`                                                | `high`                                                                   |
+| `--voice=<voice>`                  | TTS voice: `alba`, `marius`, `jean`                                                                                               | `alba`                                                                   |
+| `--tts-mode=<mode>`                | `serve` for `tts-gateway`, `generate` for local macOS `say`                                                                       | `serve`                                                                  |
+| `--tts-server-url=<url>`           | Serve-mode gateway URL                                                                                                            | `http://localhost:8000`                                                  |
+| `--tts-speed=<rate>`               | TTS speed multiplier                                                                                                              | `1.5`                                                                    |
+| `--resume-session=<ref>`           | Resume a provider session, using `claude:<session-id>`, `codex:<thread-id>`, or `cursor:<session-id>`                             | -                                                                        |
+| `--resume=<id>`                    | Resume a specific saved session by id (see `orb sessions`)                                                                        | -                                                                        |
+| `orb sessions --all`               | Include this project's Claude Code and Codex sessions in the session picker                                                       | -                                                                        |
+| `orb sessions --include-subagents` | Include Codex worker/subagent sessions in the picker; implies `--all`                                                             | -                                                                        |
+| `--claude-session=<id>`            | Resume a Claude Code session by id                                                                                                | -                                                                        |
+| `--codex-thread=<id>`              | Resume a Codex app-server thread by id                                                                                            | -                                                                        |
+| `--cursor-session=<id>`            | Resume a Cursor Agent session by id                                                                                               | -                                                                        |
+| `--new`                            | Start a new saved conversation (ignore auto-resume)                                                                               | -                                                                        |
+| `--skip-intro`                     | Skip the welcome animation                                                                                                        | -                                                                        |
+| `--no-tts`                         | Disable text-to-speech                                                                                                            | -                                                                        |
+| `--no-streaming-tts`               | Disable streaming (batch mode)                                                                                                    | -                                                                        |
+| `--help`                           | Show help message                                                                                                                 | -                                                                        |
 
 ### Controls
 
@@ -198,6 +208,24 @@ Then in Orb:
 ```
 
 Orb will load `explain.md`, and if you include trailing text it appends that text after a blank line. If a slash command is missing, Orb shows a turn-level error with the paths it checked.
+
+Bundled commands include `/session-tail`, which is meant for learning beside an active Claude or Codex session. Paste a provider block after the command:
+
+```text
+/session-tail claude  Session ID:       4e8dc399-2c4d-4045-9a37-9164fcc14523
+  cwd:              /Users/andypai/Projects/investing/garage-band
+```
+
+The command tells the model to run Orb's transcript helper first:
+
+```bash
+bun /Users/andypai/Projects/orb/src/tools/session-context.ts --tail 40 <<'EOF'
+claude  Session ID:       4e8dc399-2c4d-4045-9a37-9164fcc14523
+  cwd:              /Users/andypai/Projects/investing/garage-band
+EOF
+```
+
+The helper resolves the matching Claude or Codex log, normalizes recent user, assistant, and tool entries, and prints Markdown context for side questions like "how does this work?"
 
 Built-in commands:
 
@@ -276,7 +304,7 @@ orb --no-tts
 
 ## Provider Setup
 
-Orb supports three LLM providers: **Anthropic (Claude)**, **OpenAI via Codex**, and **Gemini**. On startup, Orb refreshes a cached model catalog from Vercel AI Gateway and resolves semantic aliases like `opus`, `gpt`, and `pro` to the newest matching native model ID for the selected runtime.
+Orb supports four LLM providers: **Anthropic (Claude)**, **OpenAI via Codex**, **Gemini**, and **Cursor Agent**. On startup, Orb refreshes a cached model catalog from Vercel AI Gateway for Gateway-backed providers and resolves semantic aliases like `opus`, `gpt`, and `pro` to the newest matching native model ID for the selected runtime. Cursor uses static Composer aliases and is opt-in.
 
 ### Session handoff
 
@@ -292,9 +320,25 @@ orb --resume-session=claude:17a921a9-c798-4ceb-8d1f-1ba89c8e9839 /path/to/projec
 # Continue a Codex app-server thread in Orb
 orb --codex-thread=019e188d-1e3e-73f0-986f-bbb7ca00d009 /path/to/project
 orb --resume-session=codex:019e188d-1e3e-73f0-986f-bbb7ca00d009 /path/to/project
+
+# Continue a Cursor Agent session in Orb
+orb --cursor-session=3cb88040-2612-4d4f-b708-0468588c8afd /path/to/project
+orb --resume-session=cursor:3cb88040-2612-4d4f-b708-0468588c8afd /path/to/project
 ```
 
-Use this after the other client is idle; do not drive the same Claude or Codex conversation from two terminals at once. The project path must match the original session's working directory. `--new` clears Orb's visible saved history but still honors the explicit handoff id. If you do not know the provider id, run `orb sessions --all` from the project to include matching Claude Code and Codex sessions in the interactive picker. When Orb resumes an external session, prior transcript lines are not imported into Orb's scrollback; instead, a short banner notes that earlier messages are hidden while the model still has the provider's conversation context.
+Use this after the other client is idle; do not drive the same Claude, Codex, or Cursor conversation from two terminals at once. The project path must match the original session's working directory. `--new` clears Orb's visible saved history but still honors the explicit handoff id. If you do not know the provider id, run `orb sessions --all` from the project to include matching Claude Code and Codex sessions in the interactive picker. Codex worker/subagent sessions are hidden by default; add `--include-subagents` only when you intentionally want to inspect or resume a worker thread. Cursor external session discovery is not included in v1. When Orb resumes an external session, prior transcript lines are not imported into Orb's scrollback; instead, a short banner notes that earlier messages are hidden while the model still has the provider's conversation context.
+
+For read-only learning alongside an active session, use the transcript helper instead of resuming the provider conversation:
+
+```bash
+bun /Users/andypai/Projects/orb/src/tools/session-context.ts \
+  --provider claude \
+  --id 4e8dc399-2c4d-4045-9a37-9164fcc14523 \
+  --cwd /Users/andypai/Projects/investing/garage-band \
+  --tail 40
+```
+
+It also accepts pasted blocks with `--input`, hides tools with `--no-tools`, and can print machine-readable output with `--json`.
 
 ### OpenAI (default)
 
@@ -378,6 +422,44 @@ orb --model=gemini:flash-lite
 
 > Note: Gemini runs through Orb's owned `bash`, `readFile`, and `writeFile` tools backed by a local subprocess sandbox. `bash` starts in your project root by default, `readFile` can read absolute or project-relative paths, and `writeFile` applies changes directly inside the project root instead of to an overlay.
 
+### Cursor Agent
+
+Cursor support uses the Cursor Agent CLI in headless mode. Orb launches `agent` when available and falls back to `cursor-agent`, so local browser login can be reused; `CURSOR_API_KEY` is the fallback for unattended automation.
+It is opt-in and is not part of auto-provider selection.
+
+#### Quick start
+
+```bash
+agent login
+# or: cursor-agent login
+
+orb --provider=cursor
+orb --provider=cursor --model=fast
+orb --model=cursor:composer
+```
+
+#### Model aliases
+
+- `fast` (default): `composer-2.5-fast`
+- `composer`: `composer-2.5`
+
+By default, Cursor runs in read-only ask mode. Pass `--yolo` to run Cursor Agent in force mode with MCP approval for write-capable tasks.
+For setup proof, `agent status` is useful, but it is not enough by itself to prove `-p` runs can complete. If you have the Composer skill installed, use its doctor wrapper:
+
+```bash
+# When the wrapper is on PATH
+cursor-agent-doctor.sh --skip-codex --smoke --model composer-2.5-fast
+
+# Codex flat install fallback
+~/.agents/skills/composer/bin/cursor-agent-doctor.sh --skip-codex --smoke --model composer-2.5-fast
+```
+
+Without the wrapper, run a tiny direct headless prompt:
+
+```bash
+agent -p --mode ask --trust --workspace "$PWD" --model composer-2.5-fast --output-format json "Reply exactly: composer-smoke-ok"
+```
+
 ## Global Config
 
 Persistent defaults live in `~/.orb/config.toml`. CLI flags override config values for one-off runs.
@@ -420,10 +502,12 @@ Config-only advanced tuning keys live under `[tts]`:
 
 Sessions are stored under `~/.orb/sessions/<project>/<session-id>.json`, keeping a
 history of recent conversations per project (older ones are pruned). Orb auto-resumes
-the latest on startup; use `orb sessions` (or `/sessions` in the app) to browse and
+the latest on startup; use `orb --new` to make a fresh conversation the current saved
+session, or `orb sessions` (or `/sessions` in the app) to browse and
 resume a past Orb conversation for the current project. Use `orb sessions --all` to
 also discover matching Claude Code and Codex sessions from the same project and relaunch
-Orb with the right external resume flag.
+Orb with the right external resume flag. Codex worker/subagent sessions stay hidden unless
+you pass `--include-subagents`.
 
 ## Customizing Prompts
 
@@ -433,6 +517,7 @@ Orb’s built-in instructions live in the root-level `prompts/` directory:
 - `prompts/anthropic.md` for Anthropic-specific system instructions
 - `prompts/openai.md` for OpenAI/Codex-specific instructions
 - `prompts/gemini.md` for Gemini-specific tool and sandbox instructions
+- `prompts/cursor.md` for Cursor Agent-specific instructions
 - `prompts/voice.md` for voice-mode guidance added when TTS is enabled
 
 Prompt files are read fresh for each run, so edits apply to the next question without rebuilding the app.
@@ -440,7 +525,7 @@ Prompt files are read fresh for each run, so edits apply to the next question wi
 ## Requirements
 
 - **Runtime**: Bun >= 1.1
-- **LLM provider**: Anthropic, Codex/OpenAI, or Gemini authentication
+- **LLM provider**: Anthropic, Codex/OpenAI, Gemini, or Cursor authentication
 - **TTS** (optional): `tts-gateway` for serve mode, or macOS `say` and `afplay` for generate mode
 
 ## Development

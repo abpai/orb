@@ -64,18 +64,23 @@ const PROVIDER_GATEWAY_PREFIX: Record<LlmProvider, string> = {
   anthropic: 'anthropic',
   openai: 'openai',
   gemini: 'google',
+  cursor: 'cursor',
 }
+
+const STATIC_MODEL_CATALOG_PROVIDERS = new Set<LlmProvider>(['cursor'])
 
 export const DEFAULT_MODEL_ALIAS_BY_PROVIDER: Record<LlmProvider, LlmModelId> = {
   anthropic: 'haiku',
   openai: 'gpt-5.5',
   gemini: 'pro',
+  cursor: 'fast',
 }
 
 export const DEFAULT_MODEL_BY_PROVIDER: Record<LlmProvider, LlmModelId> = {
   anthropic: 'claude-haiku-4-5-20251001',
   openai: 'gpt-5.5',
   gemini: 'gemini-3.1-pro-preview',
+  cursor: 'composer-2.5-fast',
 }
 
 // ── Model family descriptors ─────────────────────────────────────────────────
@@ -218,12 +223,31 @@ const PROVIDER_FAMILIES: Record<LlmProvider, ModelFamilyDescriptor[]> = {
       label: genericModelLabel,
     },
   ],
+  cursor: [
+    {
+      provider: 'cursor',
+      name: 'fast',
+      fallbackModel: 'composer-2.5-fast',
+      fallbackLabel: 'Composer 2.5 Fast',
+      matches: (id) => id === 'composer-2.5-fast',
+      label: () => 'Composer 2.5 Fast',
+    },
+    {
+      provider: 'cursor',
+      name: 'composer',
+      fallbackModel: 'composer-2.5',
+      fallbackLabel: 'Composer 2.5',
+      matches: (id) => id === 'composer-2.5',
+      label: () => 'Composer 2.5',
+    },
+  ],
 }
 
 export const FALLBACK_MODEL_CHOICES_BY_PROVIDER: Record<LlmProvider, LlmModelId[]> = {
   anthropic: PROVIDER_FAMILIES.anthropic.map((f) => f.fallbackModel),
   openai: PROVIDER_FAMILIES.openai.map((f) => f.fallbackModel),
   gemini: PROVIDER_FAMILIES.gemini.map((f) => f.fallbackModel),
+  cursor: PROVIDER_FAMILIES.cursor.map((f) => f.fallbackModel),
 }
 
 const FALLBACK_CATALOG_MODELS: CatalogModel[] = (
@@ -238,6 +262,23 @@ const FALLBACK_CATALOG_MODELS: CatalogModel[] = (
     tags: ['tool-use'],
   })),
 )
+
+function fallbackModelCatalog(
+  provider: LlmProvider | undefined,
+  fetchedAt = 0,
+): LoadedModelCatalog {
+  return {
+    fetchedAt,
+    models: provider
+      ? FALLBACK_CATALOG_MODELS.filter((model) => model.provider === provider)
+      : FALLBACK_CATALOG_MODELS,
+    source: 'fallback',
+  }
+}
+
+function providerUsesStaticModelCatalog(provider: LlmProvider): boolean {
+  return STATIC_MODEL_CATALOG_PROVIDERS.has(provider)
+}
 
 // Inverse of PROVIDER_GATEWAY_PREFIX: gateway prefix → provider. Derived from the
 // forward table so the two mappings can never drift apart.
@@ -370,7 +411,7 @@ export async function loadModelCatalog(
     if (cached) {
       return { ...cached, source: 'stale-cache', warning }
     }
-    return { fetchedAt: 0, models: FALLBACK_CATALOG_MODELS, source: 'fallback', warning }
+    return { ...fallbackModelCatalog(undefined, 0), warning }
   }
 }
 
@@ -553,7 +594,9 @@ export async function resolveAppModelConfig(
   config: AppConfig,
   options: LoadModelCatalogOptions = {},
 ): Promise<ResolvedModelConfig> {
-  const catalog = await loadModelCatalog(options)
+  const catalog = providerUsesStaticModelCatalog(config.llmProvider)
+    ? fallbackModelCatalog(config.llmProvider, options.now ?? Date.now())
+    : await loadModelCatalog(options)
   const { choices, labels } = buildProviderModelChoices(config.llmProvider, catalog.models)
   const llmModel = resolveModelForProvider(config.llmProvider, config.llmModel, catalog.models)
 

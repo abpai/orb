@@ -77,6 +77,20 @@ describe('SessionPicker', () => {
     app.unmount()
   })
 
+  it('labels Cursor sessions as Cursor', () => {
+    const app = render(
+      <SessionPicker
+        sessions={[summary({ llmProvider: 'cursor', llmModel: 'composer-2.5-fast' })]}
+        onSelect={() => {}}
+        onCancel={() => {}}
+      />,
+    )
+    const frame = normalizeFrame(app.lastFrame())
+    expect(frame).toContain('cursor')
+    expect(frame).not.toContain('codex')
+    app.unmount()
+  })
+
   it('resumes the highlighted session on enter', async () => {
     const selected: SessionSummary[] = []
     const sessions = [
@@ -141,6 +155,13 @@ describe('SessionPicker', () => {
           summary({ id: 'orb-1', source: 'orb', preview: 'orb chat' }),
           summary({ id: 'claude-1', source: 'claude', preview: 'claude chat' }),
           summary({ id: 'codex-1', source: 'codex', preview: 'codex chat' }),
+          summary({
+            id: 'codex-worker-1',
+            source: 'codex',
+            preview: 'worker chat',
+            codexKind: 'subagent',
+          }),
+          summary({ id: 'cursor-1', source: 'cursor', preview: 'cursor chat' }),
         ]}
         onSelect={() => {}}
         onCancel={() => {}}
@@ -149,6 +170,8 @@ describe('SessionPicker', () => {
     const frame = normalizeFrame(app.lastFrame())
     expect(frame).toContain('claude code ·')
     expect(frame).toContain('codex ·')
+    expect(frame).toContain('codex subagent ·')
+    expect(frame).toContain('cursor ·')
     expect(frame).toContain('orb ·')
     app.unmount()
   })
@@ -161,6 +184,12 @@ describe('SessionPicker', () => {
           // from the source tag, not the preview text.
           summary({ id: 'claude-1', source: 'claude', preview: 'fix the bug' }),
           summary({ id: 'codex-1', source: 'codex', preview: 'deploy the script' }),
+          summary({
+            id: 'worker-1',
+            source: 'codex',
+            preview: 'inspect worker task',
+            codexKind: 'subagent',
+          }),
         ]}
         onSelect={() => {}}
         onCancel={() => {}}
@@ -170,6 +199,7 @@ describe('SessionPicker', () => {
     await settle()
     const frame = normalizeFrame(app.lastFrame())
     expect(frame).toContain('deploy the script')
+    expect(frame).toContain('inspect worker task')
     expect(frame).not.toContain('fix the bug')
     app.unmount()
   })

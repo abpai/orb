@@ -1,5 +1,4 @@
 import { buildProviderPrompt } from '../../services/prompts'
-import { warn } from '../../services/log'
 import type { Frame } from '../frames'
 import { createFrame } from '../frames'
 import { CodexAppServerClient } from './codex-client'
@@ -19,8 +18,8 @@ import {
   isFailedToolItem,
   isOpenAiFullHistoryCapabilityError,
   isToolItem,
-  requireThreadId,
   requireTurnId,
+  startOrResumeOpenAiThread,
   type CodexNotificationParams,
 } from './codex-params'
 
@@ -50,6 +49,9 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
       const outputDeltas = new Map<string, string[]>()
       const agentMessages = createOpenAiAgentMessageAccumulator()
       let threadId = session?.provider === 'openai' ? session.threadId : undefined
+      const explicitResume =
+        appConfig.resumeSession?.provider === 'openai' &&
+        appConfig.resumeSession.threadId === threadId
       let turnId: string | undefined
 
       const onAbort = () => {
@@ -59,41 +61,6 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
         void client.close()
       }
       abortController.signal.addEventListener('abort', onAbort, { once: true })
-
-      async function startOrResumeThread(
-        params: ReturnType<typeof createOpenAiThreadParams>,
-      ): Promise<string> {
-        if (threadId) {
-          try {
-            return requireThreadId(
-              await client.request('thread/resume', {
-                ...params,
-                threadId,
-              }),
-            )
-          } catch (err) {
-            // The full-history capability error is an expected retry signal
-            // (the caller retries with persistExtendedHistory:false), not a
-            // resume failure — re-throw it untouched.
-            if (isOpenAiFullHistoryCapabilityError(err)) throw err
-            // Any other resume failure silently fell through to a fresh thread
-            // before, which looks exactly like the model "forgetting" the
-            // conversation. Surface it so a real failure is visible.
-            warn(
-              `Could not resume Codex thread ${threadId}; starting a fresh thread instead. ` +
-                `Prior conversation context will not be available. ` +
-                `(${err instanceof Error ? err.message : String(err)})`,
-            )
-          }
-        }
-
-        return requireThreadId(
-          await client.request('thread/start', {
-            ...params,
-            serviceName: 'orb',
-          }),
-        )
-      }
 
       try {
         await client.request('initialize', createOpenAiInitializeParams())
@@ -108,13 +75,18 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
         const baseThreadParams = createOpenAiThreadParams(appConfig, instructions)
 
         try {
-          threadId = await startOrResumeThread(baseThreadParams)
+          threadId = await startOrResumeOpenAiThread(client, baseThreadParams, threadId, {
+            explicitResume,
+          })
         } catch (err) {
           if (!isOpenAiFullHistoryCapabilityError(err)) throw err
-          threadId = await startOrResumeThread(
+          threadId = await startOrResumeOpenAiThread(
+            client,
             createOpenAiThreadParams(appConfig, instructions, {
               persistExtendedHistory: false,
             }),
+            threadId,
+            { explicitResume },
           )
         }
 

@@ -8,6 +8,7 @@ import {
   createOpenAiThreadParams,
   createOpenAiTurnStartParams,
   isOpenAiFullHistoryCapabilityError,
+  startOrResumeOpenAiThread,
 } from './codex-params'
 
 describe('OpenAI app-server params', () => {
@@ -61,6 +62,83 @@ describe('OpenAI app-server compatibility', () => {
     ).toBe(true)
 
     expect(isOpenAiFullHistoryCapabilityError(new Error('other app-server error'))).toBe(false)
+  })
+
+  it('refuses to start a fresh thread when an explicit resume fails', async () => {
+    const calls: Array<{ method: string; params?: unknown }> = []
+    const client = {
+      async request(method: string, params?: unknown): Promise<unknown> {
+        calls.push({ method, params })
+        if (method === 'thread/resume') throw new Error('thread not found')
+        throw new Error(`unexpected ${method}`)
+      },
+    }
+
+    await expect(
+      startOrResumeOpenAiThread(
+        client,
+        createOpenAiThreadParams(DEFAULT_CONFIG, 'developer instructions'),
+        'thread-missing',
+      ),
+    ).rejects.toThrow(
+      'Could not resume Codex thread thread-missing; refusing to start a fresh thread',
+    )
+    expect(calls.map((call) => call.method)).toEqual(['thread/resume'])
+  })
+
+  it('explains --new for implicit saved-session resume failures', async () => {
+    const client = {
+      async request(method: string): Promise<unknown> {
+        if (method === 'thread/resume') throw new Error('thread not found')
+        throw new Error(`unexpected ${method}`)
+      },
+    }
+
+    await expect(
+      startOrResumeOpenAiThread(
+        client,
+        createOpenAiThreadParams(DEFAULT_CONFIG, 'developer instructions'),
+        'thread-missing',
+        { explicitResume: false },
+      ),
+    ).rejects.toThrow('Start explicitly with `orb --new`')
+  })
+
+  it('keeps the full-history resume retry on the same thread', async () => {
+    const calls: Array<{ method: string; params?: Record<string, unknown> }> = []
+    const client = {
+      async request(method: string, params?: unknown): Promise<unknown> {
+        calls.push({ method, params: params as Record<string, unknown> })
+        if (calls.length === 1) {
+          throw new Error('thread/start.persistFullHistory requires experimentalApi capability')
+        }
+        return { thread: { id: 'thread-1' } }
+      },
+    }
+    const appConfig = { ...DEFAULT_CONFIG, llmModel: 'gpt-5.5' }
+
+    let threadId: string
+    try {
+      threadId = await startOrResumeOpenAiThread(
+        client,
+        createOpenAiThreadParams(appConfig, 'developer instructions'),
+        'thread-1',
+      )
+    } catch (err) {
+      if (!isOpenAiFullHistoryCapabilityError(err)) throw err
+      threadId = await startOrResumeOpenAiThread(
+        client,
+        createOpenAiThreadParams(appConfig, 'developer instructions', {
+          persistExtendedHistory: false,
+        }),
+        'thread-1',
+      )
+    }
+
+    expect(threadId).toBe('thread-1')
+    expect(calls.map((call) => call.method)).toEqual(['thread/resume', 'thread/resume'])
+    expect(calls[0]?.params?.persistExtendedHistory).toBe(true)
+    expect(calls[1]?.params).not.toHaveProperty('persistExtendedHistory')
   })
 })
 

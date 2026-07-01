@@ -83,6 +83,25 @@ describe('session persistence', () => {
     expect(loaded?.history).toEqual(session.history)
   })
 
+  it('round-trips a Cursor agent session payload', async () => {
+    const home = await tempHome()
+    const projectPath = await tempProject()
+
+    const session = makeSession(projectPath, {
+      id: 'cursor-1',
+      llmProvider: 'cursor',
+      llmModel: 'composer-2.5-fast',
+      agentSession: { provider: 'cursor', sessionId: 'cursor-session-123' },
+    })
+
+    await saveSession(session, home)
+    const loaded = await loadSession(projectPath, home)
+
+    expect(loaded).not.toBeNull()
+    expect(loaded?.llmProvider).toBe('cursor')
+    expect(loaded?.agentSession).toEqual(session.agentSession)
+  })
+
   it('keeps multiple sessions per project and loads the newest', async () => {
     const home = await tempHome()
     const projectPath = await tempProject()
@@ -108,6 +127,28 @@ describe('session persistence', () => {
     // Both remain individually addressable by id.
     expect((await loadSessionById(projectPath, 'older', home))?.id).toBe('older')
     expect((await loadSessionById(projectPath, 'newer', home))?.id).toBe('newer')
+  })
+
+  it('does not auto-resume an empty throwaway latest session', async () => {
+    const home = await tempHome()
+    const projectPath = await tempProject()
+
+    await writeSessionFile(
+      makeSession(projectPath, { id: 'real', lastModified: '2026-01-01T00:00:00.000Z' }),
+      home,
+    )
+    await writeSessionFile(
+      makeSession(projectPath, {
+        id: 'empty-new',
+        lastModified: '2026-06-01T00:00:00.000Z',
+        history: [],
+        agentSession: undefined,
+      }),
+      home,
+    )
+
+    expect((await loadSession(projectPath, home))?.id).toBe('real')
+    expect((await loadSessionById(projectPath, 'empty-new', home))?.id).toBe('empty-new')
   })
 
   it('lists sessions across projects, newest first', async () => {
@@ -214,6 +255,31 @@ describe('session persistence', () => {
     )
 
     const loaded = await loadSessionById(projectPath, 'bad-oai', home)
+    expect(loaded).not.toBeNull()
+    expect(loaded?.agentSession).toBeUndefined()
+  })
+
+  it('drops invalid Cursor sessions with blank session ids', async () => {
+    const home = await tempHome()
+    const projectPath = await tempProject()
+
+    const sessionPath = getSessionFilePath(projectPath, 'bad-cursor', home)
+    await mkdir(path.dirname(sessionPath), { recursive: true })
+    await Bun.write(
+      sessionPath,
+      JSON.stringify({
+        version: 2,
+        id: 'bad-cursor',
+        projectPath,
+        llmProvider: 'cursor',
+        llmModel: 'composer-2.5-fast',
+        agentSession: { provider: 'cursor', sessionId: '' },
+        lastModified: '2026-03-01T00:00:00.000Z',
+        history: [],
+      }),
+    )
+
+    const loaded = await loadSessionById(projectPath, 'bad-cursor', home)
     expect(loaded).not.toBeNull()
     expect(loaded?.agentSession).toBeUndefined()
   })

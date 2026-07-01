@@ -209,6 +209,48 @@ describe('model catalog resolution', () => {
     expect(resolved.llmModelChoices).toEqual(FALLBACK_MODEL_CHOICES_BY_PROVIDER.gemini)
   })
 
+  it('resolves Cursor static aliases without Gateway catalog entries', async () => {
+    const cachePath = await tempCachePath()
+    let fetchCalls = 0
+    const failIfFetched = async (): Promise<Response> => {
+      fetchCalls++
+      throw new Error('should not fetch')
+    }
+    const fast = await resolveAppModelConfig(
+      {
+        ...DEFAULT_CONFIG,
+        llmProvider: 'cursor',
+        llmModel: 'fast',
+      },
+      {
+        cachePath,
+        fetchImpl: failIfFetched,
+      },
+    )
+
+    expect(fast.llmModel).toBe('composer-2.5-fast')
+    expect(fast.llmModelChoices).toEqual(['composer-2.5-fast', 'composer-2.5'])
+    expect(fast.llmModelLabels['composer-2.5-fast']).toBe('Composer 2.5 Fast')
+    expect(fast.catalog.warning).toBeUndefined()
+    expect(fetchCalls).toBe(0)
+
+    const composer = await resolveAppModelConfig(
+      {
+        ...DEFAULT_CONFIG,
+        llmProvider: 'cursor',
+        llmModel: 'composer',
+      },
+      {
+        cachePath: await tempCachePath(),
+        fetchImpl: failIfFetched,
+      },
+    )
+
+    expect(composer.llmModel).toBe('composer-2.5')
+    expect(composer.llmModelLabels['composer-2.5']).toBe('Composer 2.5')
+    expect(fetchCalls).toBe(0)
+  })
+
   it('uses a fresh cache without hitting the network', async () => {
     const cachePath = await tempCachePath()
     await loadModelCatalog({

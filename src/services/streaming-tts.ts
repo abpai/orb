@@ -13,7 +13,7 @@ import {
 } from './tts'
 import { detectPlayer } from './audio-player'
 import { cleanTextForSpeech } from '../ui/utils/markdown'
-import { createGatewayClient, DEFAULT_SERVER_URL } from './gateway-client'
+import { createGatewayClient, DEFAULT_SERVER_URL, type GatewayStreamResult } from './gateway-client'
 import { hasOpenCodeDelimiter } from './speech-text'
 import {
   SOFT_BOUNDARY,
@@ -32,7 +32,7 @@ interface StreamingSpeechCallbacks {
 interface PrefetchState {
   text: string
   abort: AbortController
-  stream: Promise<ReadableStream<Uint8Array>>
+  stream: Promise<GatewayStreamResult>
   claimed: boolean
 }
 
@@ -340,7 +340,9 @@ export function createStreamingSpeechController(
     const state = playback.prefetch
     playback.prefetch = null
     state?.abort.abort()
-    state?.stream.then((stream) => stream.cancel().catch(() => {})).catch(() => {})
+    state?.stream
+      .then((streamResult) => streamResult.stream.cancel().catch(() => {}))
+      .catch(() => {})
   }
 
   function takeSpeechBatch(): string | null {
@@ -371,18 +373,18 @@ export function createStreamingSpeechController(
     const state: PrefetchState = {
       text: nextSentence,
       abort,
-      stream: Promise.resolve(null as unknown as ReadableStream<Uint8Array>),
+      stream: Promise.resolve(null as unknown as GatewayStreamResult),
       claimed: false,
     }
 
     state.stream = client
       .speakStream(nextSentence, config.ttsVoice, abort.signal)
-      .then((stream) => {
+      .then((streamResult) => {
         if (lifecycle.stopped || (!state.claimed && playback.prefetch !== state)) {
-          stream.cancel().catch(() => {})
+          streamResult.stream.cancel().catch(() => {})
           throw new TTSError('Prefetch canceled', 'generation_failed')
         }
-        return stream
+        return streamResult
       })
     playback.prefetch = state
     state.stream.catch(() => {
@@ -390,7 +392,7 @@ export function createStreamingSpeechController(
     })
   }
 
-  async function fetchSpeechStream(sentence: string): Promise<ReadableStream<Uint8Array>> {
+  async function fetchSpeechStream(sentence: string): Promise<GatewayStreamResult> {
     const state = playback.prefetch
     if (state) {
       playback.prefetch = null
@@ -405,7 +407,9 @@ export function createStreamingSpeechController(
         }
       } else {
         state.abort.abort()
-        state.stream.then((stream) => stream.cancel().catch(() => {})).catch(() => {})
+        state.stream
+          .then((streamResult) => streamResult.stream.cancel().catch(() => {}))
+          .catch(() => {})
       }
     }
 
@@ -427,7 +431,12 @@ export function createStreamingSpeechController(
 
     const audioStream = await fetchSpeechStream(sentence)
 
-    const session = createStreamSession(audioStream, config.ttsSpeed)
+    const session = createStreamSession(
+      audioStream.stream,
+      config.ttsSpeed,
+      undefined,
+      audioStream.format,
+    )
     playback.currentSession = session
 
     // Pre-fetch next sentence's audio while this one plays

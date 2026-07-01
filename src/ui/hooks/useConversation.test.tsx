@@ -6,7 +6,13 @@ import { render } from 'ink-testing-library'
 
 import { FALLBACK_MODEL_CHOICES_BY_PROVIDER } from '../../services/model-catalog'
 import { DEFAULT_CONFIG } from '../../types'
-import { getProjectSessionDir, loadSession } from '../../services/session'
+import {
+  getProjectSessionDir,
+  listSessions,
+  loadSession,
+  loadSessionById,
+  saveSession,
+} from '../../services/session'
 import type { RunResult } from '../../pipeline/task'
 import type { OutboundFrame } from '../../pipeline/transports/types'
 import { useConversation } from './useConversation'
@@ -74,10 +80,63 @@ describe('useConversation', () => {
 
     app.unmount()
 
-    const saved = await loadSession(projectPath)
-    expect(saved).not.toBeNull()
-    expect(saved?.llmModel).toBe(FALLBACK_MODEL_CHOICES_BY_PROVIDER.openai[1])
-    expect(saved?.history).toEqual([])
+    const saved = await listSessions(undefined, projectPath)
+    expect(saved).toHaveLength(1)
+    const savedSession = saved[0]
+    expect(savedSession?.source).toBe('orb')
+    if (savedSession?.source !== 'orb') throw new Error('expected an Orb session')
+    expect(savedSession.llmModel).toBe(FALLBACK_MODEL_CHOICES_BY_PROVIDER.openai[1]!)
+    expect(savedSession.turnCount).toBe(0)
+  })
+
+  it('persists a --new empty session without making it the automatic resume target', async () => {
+    const tempProjectRoot = await mkdtemp(path.join(tmpdir(), 'orb-use-conversation-fresh-'))
+    cleanupPaths.add(tempProjectRoot)
+
+    const projectPath = path.join(tempProjectRoot, 'project')
+    await mkdir(projectPath, { recursive: true })
+
+    cleanupPaths.add(getProjectSessionDir(projectPath))
+
+    await saveSession(
+      {
+        version: 2,
+        id: 'old-session',
+        projectPath,
+        llmProvider: 'openai',
+        llmModel: 'gpt-5.5',
+        lastModified: new Date().toISOString(),
+        history: [
+          { id: 'old-turn', question: 'old q', toolCalls: [], answer: 'old a', error: null },
+        ],
+      },
+      undefined,
+    )
+    await wait(5)
+
+    function Harness() {
+      useConversation({
+        config: {
+          ...makeConfig(projectPath),
+          startFresh: true,
+        },
+        initialSession: null,
+        orbSessionId: 'fresh-session',
+        taskState: 'idle',
+      })
+
+      return null
+    }
+
+    const app = render(<Harness />)
+    await wait(20)
+    app.unmount()
+
+    const explicitFresh = await loadSessionById(projectPath, 'fresh-session')
+    expect(explicitFresh?.history).toEqual([])
+
+    const automatic = await loadSession(projectPath)
+    expect(automatic?.id).toBe('old-session')
   })
 
   it('uses the resolved current model instead of restoring a stale semantic-family model', async () => {

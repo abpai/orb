@@ -200,10 +200,74 @@ describe('listCodexSessions', () => {
     const home = await tempHome()
     const today = new Date().toISOString().slice(0, 10).split('-') as [string, string, string]
     await seedRollout(home, today, 'a1', { cwd: PROJECT, timestamp: 't' }, ['one'])
-    await seedRollout(home, today, 'a2', { cwd: '/elsewhere', timestamp: 't' }, ['two'])
+    await seedRollout(home, today, 'a2', { cwd: PROJECT, timestamp: 't' }, ['two'])
 
     const { capped } = await listCodexSessions(PROJECT, home, { maxFiles: 1 })
     expect(capped).toBe(true)
+  })
+
+  it('excludes Codex subagent rollouts by default and includes them on request', async () => {
+    const home = await tempHome()
+    const today = new Date().toISOString().slice(0, 10).split('-') as [string, string, string]
+    await seedRollout(
+      home,
+      today,
+      'human1',
+      { cwd: PROJECT, timestamp: '2026-06-30T18:00:00.000Z' },
+      ['human turn'],
+    )
+    await seedRollout(
+      home,
+      today,
+      'worker1',
+      {
+        cwd: PROJECT,
+        timestamp: '2026-06-30T19:00:00.000Z',
+        thread_source: 'subagent',
+        parent_thread_id: 'human1',
+        source: { subagent: { thread_spawn: { parent_thread_id: 'human1' } } },
+      },
+      ['worker turn'],
+    )
+
+    const hidden = await listCodexSessions(PROJECT, home)
+    expect(hidden.rows.map((r) => r.id)).toEqual(['human1'])
+
+    const included = await listCodexSessions(PROJECT, home, { includeSubagents: true })
+    expect(included.rows.map((r) => [r.id, r.codexKind])).toEqual([
+      ['worker1', 'subagent'],
+      ['human1', undefined],
+    ])
+  })
+
+  it('does not let hidden subagents consume the visible Codex candidate budget', async () => {
+    const home = await tempHome()
+    const today = new Date().toISOString().slice(0, 10).split('-') as [string, string, string]
+    await seedRollout(
+      home,
+      today,
+      'zzworker2',
+      { cwd: PROJECT, timestamp: '2026-06-30T19:00:00.000Z', thread_source: 'subagent' },
+      ['worker two'],
+    )
+    await seedRollout(
+      home,
+      today,
+      'yyworker1',
+      { cwd: PROJECT, timestamp: '2026-06-30T18:30:00.000Z', source: { subagent: {} } },
+      ['worker one'],
+    )
+    await seedRollout(
+      home,
+      today,
+      'aahuman',
+      { cwd: PROJECT, timestamp: '2026-06-30T18:00:00.000Z' },
+      ['human turn'],
+    )
+
+    const { rows, capped } = await listCodexSessions(PROJECT, home, { maxFiles: 1 })
+    expect(rows.map((r) => r.id)).toEqual(['aahuman'])
+    expect(capped).toBe(false)
   })
 
   it('does not throw on a malformed session_meta (cwd not a string)', async () => {
@@ -250,6 +314,18 @@ describe('listAllSessions', () => {
         payload: { id: 'codexnew', cwd: PROJECT, timestamp: '2026-06-09T00:00:00.000Z' },
       },
       { type: 'event_msg', payload: { type: 'user_message', message: 'codex one' } },
+    ])
+    await writeJsonl(join(codexDir, `rollout-${today.join('-')}T10-00-00-codexworker.jsonl`), [
+      {
+        type: 'session_meta',
+        payload: {
+          id: 'codexworker',
+          cwd: PROJECT,
+          timestamp: '2026-06-10T00:00:00.000Z',
+          thread_source: 'subagent',
+        },
+      },
+      { type: 'event_msg', payload: { type: 'user_message', message: 'worker one' } },
     ])
 
     const { sessions } = await listAllSessions(PROJECT, home)
@@ -314,5 +390,37 @@ describe('lookupExternalSessionMeta', () => {
       home,
     )
     expect(meta).toMatchObject({ messageCount: 2, preview: 'first' })
+  })
+
+  it('finds explicit Codex subagent metadata for a direct resume banner', async () => {
+    const home = await tempHome()
+    const today = new Date().toISOString().slice(0, 10).split('-') as [string, string, string]
+    const dir = join(home, '.codex', 'sessions', ...today)
+    await mkdir(dir, { recursive: true })
+    await writeJsonl(join(dir, `rollout-${today.join('-')}T10-00-00-worker99.jsonl`), [
+      {
+        type: 'session_meta',
+        payload: { id: 'worker99', cwd: PROJECT, timestamp: 't', thread_source: 'subagent' },
+      },
+      { type: 'event_msg', payload: { type: 'user_message', message: 'worker first' } },
+    ])
+
+    const meta = await lookupExternalSessionMeta(
+      { provider: 'openai', threadId: 'worker99' },
+      PROJECT,
+      home,
+    )
+    expect(meta).toMatchObject({ messageCount: 1, preview: 'worker first' })
+  })
+
+  it('does not route Cursor session metadata lookups through Codex', async () => {
+    const home = await tempHome()
+    const meta = await lookupExternalSessionMeta(
+      { provider: 'cursor', sessionId: 'cursor-session-1' },
+      PROJECT,
+      home,
+    )
+
+    expect(meta).toBeNull()
   })
 })

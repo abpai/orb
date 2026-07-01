@@ -136,6 +136,59 @@ describe('createStreamingSpeechController', () => {
     })
   })
 
+  describe('stream format handoff', () => {
+    it('passes PCM gateway metadata through to streaming playback', async () => {
+      globalThis.fetch = mock(async () => {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new Uint8Array([1, 2, 3]))
+            controller.close()
+          },
+        })
+        return new Response(stream, {
+          status: 200,
+          headers: {
+            'content-type': 'audio/raw',
+            'x-tts-mode': 'stream-pcm',
+            'x-tts-sample-rate': '24000',
+            'x-tts-channels': '1',
+            'x-tts-sample-width': '2',
+            'x-tts-pcm-format': 's16le',
+          },
+        })
+      }) as unknown as typeof globalThis.fetch
+
+      Bun.which = mock(() => '/usr/local/bin/mpv') as unknown as typeof Bun.which
+
+      const spawnCalls: string[][] = []
+      Bun.spawn = mock((cmd: string[]) => {
+        spawnCalls.push(cmd)
+        return {
+          stdin: { write() {}, end() {} },
+          exited: Promise.resolve(0),
+          kill() {},
+        } as unknown as Bun.Subprocess
+      }) as unknown as typeof Bun.spawn
+
+      const controller = createStreamingSpeechController(
+        createTestConfig({
+          ttsMinChunkLength: 0,
+          ttsMaxWaitMs: 0,
+        }),
+      )
+
+      controller.feedText('Hello world.')
+      controller.finalize()
+      await controller.waitForCompletion()
+
+      expect(spawnCalls).toHaveLength(1)
+      expect(spawnCalls[0]).toContain('--demuxer=rawaudio')
+      expect(spawnCalls[0]).toContain('--demuxer-rawaudio-rate=24000')
+      expect(spawnCalls[0]).toContain('--demuxer-rawaudio-channels=1')
+      expect(spawnCalls[0]).toContain('--demuxer-rawaudio-format=s16le')
+    })
+  })
+
   describe('buffer compaction', () => {
     // Compaction drops the settled buffer prefix between sentences. Feeding the
     // same text as many tiny deltas exercises compaction repeatedly, while one

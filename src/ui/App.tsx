@@ -54,6 +54,7 @@ const ASSISTANT_LABEL_BY_PROVIDER: Record<LlmProvider, string> = {
   anthropic: 'claude',
   openai: 'openai',
   gemini: 'gemini',
+  cursor: 'cursor',
 }
 
 const FIXED_UI_OVERHEAD = 8

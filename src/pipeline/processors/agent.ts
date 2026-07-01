@@ -6,6 +6,7 @@ import type { AgentAdapter, AgentAdapterConfig } from '../adapters/types'
 import { createAnthropicAdapter } from '../adapters/anthropic'
 import { createOpenAiAdapter } from '../adapters/openai'
 import { createGeminiAdapter } from '../adapters/gemini'
+import { createCursorAdapter } from '../adapters/cursor'
 import { isAbortError } from '../adapters/utils'
 
 /**
@@ -16,6 +17,7 @@ const ADAPTER_FACTORIES: Record<LlmProvider, (config: AgentAdapterConfig) => Age
   anthropic: createAnthropicAdapter,
   openai: createOpenAiAdapter,
   gemini: createGeminiAdapter,
+  cursor: createCursorAdapter,
 }
 
 /**

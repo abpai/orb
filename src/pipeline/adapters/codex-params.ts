@@ -99,6 +99,58 @@ export function requireTurnId(response: unknown): string {
   return turnId
 }
 
+export interface OpenAiThreadClient {
+  request(method: string, params?: unknown): Promise<unknown>
+}
+
+export function formatOpenAiResumeFailure(
+  threadId: string,
+  err: unknown,
+  options: { explicitResume?: boolean } = {},
+): string {
+  const reason = err instanceof Error ? err.message : String(err)
+  const advice =
+    (options.explicitResume ?? true)
+      ? 'Pick a different row from `orb sessions --all`, remove the Codex resume flag, or start explicitly with `orb --new`.'
+      : 'This saved Orb conversation points at a Codex thread that could not be resumed. Start explicitly with `orb --new`, or pick a different row from `orb sessions --all`.'
+  return (
+    `Could not resume Codex thread ${threadId}; refusing to start a fresh thread because prior conversation context would be lost. ` +
+    `${advice} ` +
+    `(${reason})`
+  )
+}
+
+export async function startOrResumeOpenAiThread(
+  client: OpenAiThreadClient,
+  params: ReturnType<typeof createOpenAiThreadParams>,
+  threadId: string | undefined,
+  options: { explicitResume?: boolean } = {},
+): Promise<string> {
+  if (threadId) {
+    try {
+      return requireThreadId(
+        await client.request('thread/resume', {
+          ...params,
+          threadId,
+        }),
+      )
+    } catch (err) {
+      // The full-history capability error is an expected retry signal
+      // (the caller retries with persistExtendedHistory:false), not a resume
+      // failure.
+      if (isOpenAiFullHistoryCapabilityError(err)) throw err
+      throw new Error(formatOpenAiResumeFailure(threadId, err, options))
+    }
+  }
+
+  return requireThreadId(
+    await client.request('thread/start', {
+      ...params,
+      serviceName: 'orb',
+    }),
+  )
+}
+
 function getString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }

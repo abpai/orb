@@ -28,10 +28,12 @@ function formatResumeCommand(session: SessionSummary, extraArgs: string[] = []):
 
 export function parseSessionsArgs(args: string[]): {
   includeExternal: boolean
+  includeSubagents: boolean
   resumeExtraArgs: string[]
 } {
   const resumeExtraArgs: string[] = []
   let includeExternal = false
+  let includeSubagents = false
 
   for (const arg of args) {
     if (arg === '--all') {
@@ -41,12 +43,24 @@ export function parseSessionsArgs(args: string[]): {
     if (arg.startsWith('--all=')) {
       const value = arg.slice('--all='.length).trim().toLowerCase()
       includeExternal = value !== 'false' && value !== '0'
+      if (!includeExternal) includeSubagents = false
+      continue
+    }
+    if (arg === '--include-subagents') {
+      includeExternal = true
+      includeSubagents = true
+      continue
+    }
+    if (arg.startsWith('--include-subagents=')) {
+      const value = arg.slice('--include-subagents='.length).trim().toLowerCase()
+      includeSubagents = value !== 'false' && value !== '0'
+      if (includeSubagents) includeExternal = true
       continue
     }
     resumeExtraArgs.push(arg)
   }
 
-  return { includeExternal, resumeExtraArgs }
+  return { includeExternal, includeSubagents, resumeExtraArgs }
 }
 
 /** Plain, non-interactive listing — used when stdout is piped or not a TTY. */
@@ -65,7 +79,7 @@ export function formatSessionList(
     const title = collapseToSingleLine(session.preview || '(no messages yet)', 72)
     return [
       title,
-      `  ${formatSourceTag(session.source)} · ${abbreviateHome(session.projectPath)} · ${provider} · ${formatRelativeTime(session.lastModified)} · ${pluralizeTurns(session.turnCount)}`,
+      `  ${formatSourceTag(session.source, session.codexKind)} · ${abbreviateHome(session.projectPath)} · ${provider} · ${formatRelativeTime(session.lastModified)} · ${pluralizeTurns(session.turnCount)}`,
       `  resume: ${formatResumeCommand(session, resumeExtraArgs)}`,
     ].join('\n')
   })
@@ -82,12 +96,13 @@ export function formatSessionsHelp(): string {
   return [
     `${heading('orb sessions')} — browse and resume saved conversations`,
     '',
-    `${heading('Usage:')} orb sessions [--all] [orb options]`,
+    `${heading('Usage:')} orb sessions [--all] [--include-subagents] [orb options]`,
     '  Interactive picker in a TTY; plain list when piped.',
     '  Pick a session to relaunch orb with the right resume flag.',
     '',
     `${heading('Options:')}`,
-    '  --all    Also include this project’s Claude Code and Codex sessions',
+    '  --all                  Also include this project’s Claude Code and Codex sessions',
+    '  --include-subagents    Include Codex worker/subagent sessions; implies --all',
     '  Orb runtime options like --provider, --model, and --reasoning-effort are kept for the resumed session.',
   ].join('\n')
 }
@@ -98,14 +113,17 @@ export async function runSessionsCommand(args: string[]): Promise<void> {
     return
   }
 
-  const { includeExternal, resumeExtraArgs } = parseSessionsArgs(args)
+  const { includeExternal, includeSubagents, resumeExtraArgs } = parseSessionsArgs(args)
 
   // `--all` also surfaces this project's Claude Code and Codex sessions, not
   // just orb's own saved conversations.
   const cwd = process.cwd()
 
   const { sessions, capped } = includeExternal
-    ? await listAllSessions(cwd).then((r) => ({ sessions: r.sessions, capped: r.codexCapped }))
+    ? await listAllSessions(cwd, undefined, { includeSubagents }).then((r) => ({
+        sessions: r.sessions,
+        capped: r.codexCapped,
+      }))
     : { sessions: await listSessions(undefined, cwd), capped: false }
 
   if (!process.stdout.isTTY || sessions.length === 0) {

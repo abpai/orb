@@ -35,7 +35,7 @@ export interface HistoryEntry {
   error?: string | null
 }
 
-export type LlmProvider = 'anthropic' | 'openai' | 'gemini'
+export type LlmProvider = 'anthropic' | 'openai' | 'gemini' | 'cursor'
 
 export const VOICES = ['alba', 'marius', 'jean'] as const
 export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const
@@ -50,17 +50,26 @@ export interface OpenAiSession {
   threadId: string
 }
 
-export type AgentSession = { provider: 'anthropic'; sessionId: string } | OpenAiSession
+export interface CursorSession {
+  provider: 'cursor'
+  sessionId: string
+}
 
-/** Where a listed session came from: orb's own store, Claude Code, or Codex. */
-export type SessionSource = 'orb' | 'claude' | 'codex'
+export type AgentSession =
+  | { provider: 'anthropic'; sessionId: string }
+  | OpenAiSession
+  | CursorSession
+
+/** Where a listed session came from: orb's own store, Claude Code, Codex, or Cursor. */
+export type SessionSource = 'orb' | 'claude' | 'codex' | 'cursor'
+export type CodexSessionKind = 'subagent'
 
 /**
  * Describes an external session resumed with empty scrollback, so the UI can
  * reassure the user that prior history is hidden but the model still has it.
  */
 export interface ResumeInfo {
-  source: 'claude' | 'codex'
+  source: 'claude' | 'codex' | 'cursor'
   messageCount?: number
 }
 

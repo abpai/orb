@@ -63,6 +63,26 @@ describe('buildProviderPrompt', () => {
     expect(prompt).toBe('Base prompt.\n\nOpenAI prompt.\n\nOpen file prompt.\n\nVoice prompt.')
   })
 
+  it('composes cursor prompt sections', async () => {
+    const promptsDir = await createPromptsDir({
+      'base.md': 'Base prompt.',
+      'cursor.md': 'Cursor prompt for {{projectName}}.',
+      'open-file.md': 'Open file prompt.',
+      'voice.md': 'Voice prompt.',
+    })
+
+    const prompt = await buildProviderPrompt({
+      provider: 'cursor',
+      projectPath: '/tmp/orb-demo',
+      ttsEnabled: true,
+      promptsDir,
+    })
+
+    expect(prompt).toBe(
+      'Base prompt.\n\nCursor prompt for orb-demo.\n\nOpen file prompt.\n\nVoice prompt.',
+    )
+  })
+
   it('throws a clear error when a required prompt file is missing', async () => {
     const promptsDir = await createPromptsDir({
       'base.md': 'Base prompt.',

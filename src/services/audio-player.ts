@@ -15,7 +15,7 @@ type PlayerBinary = 'mpv' | 'ffplay'
 
 interface PlayerConfig {
   binary: PlayerBinary
-  spawn: (speed: number) => PlayerProcess
+  spawn: (speed: number, format: StreamAudioFormat) => PlayerProcess
 }
 
 export interface PlayerProcess {
@@ -31,12 +31,24 @@ export interface PlayerProcess {
   pid: number | undefined
 }
 
+export type StreamAudioFormat =
+  | { kind: 'encoded' }
+  | {
+      kind: 'raw-pcm'
+      sampleRate: number
+      channels: number
+      sampleWidth: number
+      pcmFormat: string
+    }
+
+export const ENCODED_STREAM_AUDIO_FORMAT: StreamAudioFormat = { kind: 'encoded' }
+
 const PLAYERS: PlayerConfig[] = [
   { binary: 'mpv', spawn: spawnMpv },
   { binary: 'ffplay', spawn: spawnFfplay },
 ]
 
-function spawnMpv(speed: number): PlayerProcess {
+function spawnMpv(speed: number, format: StreamAudioFormat): PlayerProcess {
   const ipcSocket = join(
     tmpdir(),
     `orb-mpv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.sock`,
@@ -48,18 +60,93 @@ function spawnMpv(speed: number): PlayerProcess {
     `--input-ipc-server=${ipcSocket}`,
   ]
   if (speed !== 1) args.push(`--speed=${speed}`)
+  if (format.kind === 'raw-pcm') {
+    args.push(
+      '--demuxer=rawaudio',
+      `--demuxer-rawaudio-rate=${format.sampleRate}`,
+      `--demuxer-rawaudio-channels=${format.channels}`,
+      `--demuxer-rawaudio-format=${format.pcmFormat}`,
+    )
+  }
   args.push('-')
   return createMpvProcess(args, ipcSocket)
 }
 
-function spawnFfplay(speed: number): PlayerProcess {
+function spawnFfplay(speed: number, format: StreamAudioFormat): PlayerProcess {
   const args = ['-nodisp', '-autoexit', '-loglevel', 'error']
   if (speed !== 1) {
     const clamped = Math.max(0.5, Math.min(2.0, speed))
     args.push('-af', `atempo=${clamped}`)
   }
+  if (format.kind === 'raw-pcm') {
+    args.push(...buildFfplayRawPcmArgs(format))
+  }
   args.push('-i', 'pipe:3')
   return createFfplayProcess(args)
+}
+
+const UNKNOWN_FFPLAY_MAJOR_VERSION = Number.POSITIVE_INFINITY
+let detectedFfplayMajorVersion: number | undefined = undefined
+
+export function parseFfplayMajorVersion(versionOutput: string): number | undefined {
+  const releaseMajor = Number.parseInt(
+    versionOutput.match(/ffplay version\s+(?:n)?(\d+)(?=[.\s-]|$)/i)?.[1] ?? '',
+    10,
+  )
+  if (Number.isFinite(releaseMajor)) return releaseMajor
+
+  const libavutilMajor = Number.parseInt(versionOutput.match(/libavutil\s+(\d+)\./i)?.[1] ?? '', 10)
+  if (!Number.isFinite(libavutilMajor)) return undefined
+  if (libavutilMajor <= 56) return 4
+  return libavutilMajor - 52
+}
+
+function detectFfplayMajorVersion(): number {
+  if (detectedFfplayMajorVersion !== undefined) return detectedFfplayMajorVersion
+
+  try {
+    const result = Bun.spawnSync(['ffplay', '-version'], {
+      stdout: 'pipe',
+      stderr: 'ignore',
+    })
+    const text = new TextDecoder().decode(result.stdout)
+    detectedFfplayMajorVersion = parseFfplayMajorVersion(text) ?? UNKNOWN_FFPLAY_MAJOR_VERSION
+  } catch {
+    detectedFfplayMajorVersion = UNKNOWN_FFPLAY_MAJOR_VERSION
+  }
+
+  return detectedFfplayMajorVersion
+}
+
+export function buildFfplayRawPcmArgs(
+  format: Extract<StreamAudioFormat, { kind: 'raw-pcm' }>,
+  ffplayMajorVersion = detectFfplayMajorVersion(),
+): string[] {
+  if (ffplayMajorVersion < 5) {
+    return [
+      '-f',
+      format.pcmFormat,
+      '-ar',
+      String(format.sampleRate),
+      '-ac',
+      String(format.channels),
+    ]
+  }
+
+  return [
+    '-f',
+    format.pcmFormat,
+    '-sample_rate',
+    String(format.sampleRate),
+    '-ch_layout',
+    channelLayoutForChannels(format.channels),
+  ]
+}
+
+function channelLayoutForChannels(channels: number): string {
+  if (channels === 1) return 'mono'
+  if (channels === 2) return 'stereo'
+  return `${channels}c`
 }
 
 function normalizeExitCode(code: number | null, signal: NodeJS.Signals | null): number {
@@ -182,6 +269,7 @@ export function detectPlayer(): PlayerConfig {
 
 export function resetDetectedPlayer(): void {
   detectedPlayer = undefined
+  detectedFfplayMajorVersion = undefined
 }
 
 /** Minimal process handle for file-based players (afplay). */

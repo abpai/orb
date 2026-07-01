@@ -24,6 +24,8 @@ const HELP_EXAMPLES = [
   'orb --model=openai:gpt-5.5',
   'orb sessions                     Resume a past conversation',
   'orb sessions --all               Include Claude Code / Codex sessions',
+  'orb sessions --include-subagents Include Codex worker sessions',
+  'orb --provider=cursor --model=fast',
 ]
 
 const HELP_CONTROLS =
@@ -131,7 +133,8 @@ export function buildHelpText(program: Command): string {
         { flags: 'orb setup', description: 'Create or update ~/.orb/config.toml' },
         {
           flags: 'orb sessions',
-          description: 'Browse and resume saved sessions (--all adds Claude/Codex)',
+          description:
+            'Browse and resume saved sessions (--all adds Claude/Codex; --include-subagents adds Codex workers)',
         },
       ],
       width,
@@ -153,6 +156,11 @@ export function buildHelpText(program: Command): string {
   out.push(
     dim(
       'Auto provider (when --provider/--model omitted): 1) Codex/ChatGPT  2) Claude SDK  3) GEMINI key  4) ANTHROPIC key',
+    ),
+  )
+  out.push(
+    dim(
+      'Cursor is opt-in: use --provider cursor; default is read-only ask mode. --yolo maps to Cursor force mode plus MCP approval.',
     ),
   )
   out.push(dim('Defaults live in ~/.orb/config.toml · CLI flags override per run · docs: README'))

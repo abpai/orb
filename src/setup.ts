@@ -96,6 +96,26 @@ function printTtsSetupNextSteps(config: OrbGlobalConfig): void {
   console.info('Use --tts-server-url or tts.server_url if your gateway runs elsewhere.')
 }
 
+function printProviderSetupNextSteps(config: OrbGlobalConfig): void {
+  if (config.provider !== 'cursor') return
+
+  console.info('')
+  console.info('Cursor provider quick start:')
+  console.info('  agent login  # or cursor-agent login')
+  console.info('  orb --provider cursor')
+  console.info(
+    'Cursor runs in read-only ask mode by default; pass --yolo for force mode plus MCP approval.',
+  )
+  console.info('For unattended runs, set CURSOR_API_KEY instead of printing or pasting it.')
+  console.info(
+    'If the Composer skill is installed, verify readiness with: cursor-agent-doctor.sh --skip-codex --smoke --model composer-2.5-fast',
+  )
+  console.info(
+    'If the wrapper is not on PATH, try ~/.agents/skills/composer/bin/cursor-agent-doctor.sh or run a direct headless `agent -p` smoke.',
+  )
+  console.info('Status alone is advisory; a completed headless prompt is the useful proof.')
+}
+
 export async function runSetup(options: RunSetupOptions = {}): Promise<void> {
   ensureInteractiveTerminal()
 
@@ -120,6 +140,7 @@ export async function runSetup(options: RunSetupOptions = {}): Promise<void> {
         { value: 'openai', label: 'OpenAI (Codex / ChatGPT subscription)' },
         { value: 'anthropic', label: 'Anthropic' },
         { value: 'gemini', label: 'Gemini (Google API key)' },
+        { value: 'cursor', label: 'Cursor Agent (Composer)' },
       ],
     }),
   ) as LlmProvider
@@ -225,6 +246,7 @@ export async function runSetup(options: RunSetupOptions = {}): Promise<void> {
 
   await writeGlobalConfig(nextConfig, configPath)
   outro(`Saved config to ${configPath}`)
+  printProviderSetupNextSteps(nextConfig)
   printTtsSetupNextSteps(nextConfig)
   await promptInstallDefaultCommands({
     sourceDir: options.commandsSourceDir,

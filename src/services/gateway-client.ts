@@ -5,6 +5,7 @@ import { TTSError } from '../types'
 export const DEFAULT_SERVER_URL = 'http://localhost:8000'
 const DEFAULT_SPEECH_PATH = '/v1/speech'
 const DEFAULT_STREAM_PATH = '/tts/stream'
+const DEFAULT_STREAM_PCM_PATH = '/tts/stream/pcm'
 const GATEWAY_VOICE_BY_ORB_VOICE: Record<string, string> = {
   alba: 'af_heart',
   marius: 'am_michael',
@@ -16,21 +17,57 @@ interface GatewaySpeechResult {
   contentType: string
 }
 
-function resolveUrl(rawUrl: string, defaultPath: string): string {
+export interface GatewayRawPcmFormat {
+  kind: 'raw-pcm'
+  contentType: string
+  sampleRate: number
+  channels: number
+  sampleWidth: number
+  pcmFormat: string
+}
+
+export type GatewayStreamFormat = { kind: 'encoded'; contentType: string } | GatewayRawPcmFormat
+
+export interface GatewayStreamResult {
+  stream: ReadableStream<Uint8Array>
+  format: GatewayStreamFormat
+}
+
+function parseUrl(rawUrl: string): URL {
   const trimmed = rawUrl.trim() || DEFAULT_SERVER_URL
 
-  let url: URL
   try {
-    url = new URL(trimmed)
+    return new URL(trimmed)
   } catch {
     throw new TTSError('Invalid TTS server URL', 'generation_failed')
   }
+}
+
+function resolveUrl(rawUrl: string, defaultPath: string): string {
+  const url = parseUrl(rawUrl)
 
   if (!url.pathname || url.pathname === '/') {
     url.pathname = defaultPath
   }
 
   return url.toString()
+}
+
+function resolvePcmStreamUrl(rawUrl: string): string | null {
+  const url = parseUrl(rawUrl)
+  const normalizedPath = url.pathname.replace(/\/+$/, '') || '/'
+
+  if (normalizedPath === '/') {
+    url.pathname = DEFAULT_STREAM_PCM_PATH
+    return url.toString()
+  }
+
+  if (normalizedPath === DEFAULT_STREAM_PATH) {
+    url.pathname = DEFAULT_STREAM_PCM_PATH
+    return url.toString()
+  }
+
+  return null
 }
 
 interface SpeechPayload {
@@ -62,7 +99,7 @@ function resolveGatewayVoice(voice: string | undefined): string | undefined {
   return GATEWAY_VOICE_BY_ORB_VOICE[voice] ?? voice
 }
 
-function mapStatusToMessage(status: number): string {
+function mapStatusToMessage(status: number, detail?: string | null): string {
   switch (status) {
     case 422:
       return 'Gateway rejected request: empty or invalid text'
@@ -71,6 +108,9 @@ function mapStatusToMessage(status: number): string {
     case 503:
       return 'Gateway unavailable (no TTS engines running)'
     case 504:
+      if (detail?.toLowerCase().includes('first audio')) {
+        return 'Gateway stream timed out before first audio'
+      }
       return 'Gateway timeout (synthesis took too long)'
     default:
       return `TTS server error (${status})`
@@ -80,7 +120,21 @@ function mapStatusToMessage(status: number): string {
 async function readErrorDetail(response: { text: () => Promise<string> }): Promise<string | null> {
   try {
     const text = await response.text()
-    return text.trim() || null
+    const trimmed = text.trim()
+    if (!trimmed) return null
+    try {
+      const parsed = JSON.parse(trimmed) as unknown
+      if (parsed && typeof parsed === 'object') {
+        const record = parsed as Record<string, unknown>
+        for (const key of ['error', 'detail', 'message']) {
+          const value = record[key]
+          if (typeof value === 'string' && value.trim()) return value.trim()
+        }
+      }
+    } catch {
+      // Plain-text gateway errors are fine; use the original body below.
+    }
+    return trimmed
   } catch {
     return null
   }
@@ -99,16 +153,29 @@ async function handleVoiceRetry<TPayload>(
   text: string,
   voice: string | undefined,
   signal: AbortSignal | undefined,
+  options: {
+    passthroughStatus?: (status: number) => boolean
+    skipVoiceRetryStatus?: (status: number) => boolean
+  } = {},
 ): Promise<Response> {
   let response = await post(buildPayload(text, voice), signal)
 
-  if (!response.ok && voice && isRetryableVoiceError(response.status)) {
+  if (
+    !response.ok &&
+    voice &&
+    isRetryableVoiceError(response.status) &&
+    !options.skipVoiceRetryStatus?.(response.status)
+  ) {
     response = await post(buildPayload(text), signal)
+  }
+
+  if (!response.ok && options.passthroughStatus?.(response.status)) {
+    return response
   }
 
   if (!response.ok) {
     const detail = await readErrorDetail(response)
-    const base = mapStatusToMessage(response.status)
+    const base = mapStatusToMessage(response.status, detail)
     const message = detail ? `${base}: ${detail}` : base
     throw new TTSError(message, 'generation_failed')
   }
@@ -116,9 +183,59 @@ async function handleVoiceRetry<TPayload>(
   return response
 }
 
+function isPcmEndpointUnsupportedStatus(status: number): boolean {
+  return status === 404 || status === 405 || status === 406 || status === 415 || status === 501
+}
+
+async function discardResponse(response: Response): Promise<void> {
+  try {
+    await response.body?.cancel()
+  } catch {
+    // Best-effort cleanup before falling back to the encoded stream endpoint.
+  }
+}
+
+function parsePositiveIntHeader(headers: Headers, name: string, fallback: number): number {
+  const rawValue = headers.get(name)
+  if (!rawValue) return fallback
+  const parsed = Number.parseInt(rawValue, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function parseStreamResult(response: Response): GatewayStreamResult {
+  if (!response.body) {
+    throw new TTSError('Server returned no stream body', 'generation_failed')
+  }
+
+  const contentType = response.headers.get('content-type') ?? 'audio/mpeg'
+  const mode = response.headers.get('x-tts-mode')
+  if (mode === 'stream-pcm' || contentType.toLowerCase().startsWith('audio/raw')) {
+    return {
+      stream: response.body,
+      format: {
+        kind: 'raw-pcm',
+        contentType,
+        sampleRate: parsePositiveIntHeader(response.headers, 'x-tts-sample-rate', 24_000),
+        channels: parsePositiveIntHeader(response.headers, 'x-tts-channels', 1),
+        sampleWidth: parsePositiveIntHeader(response.headers, 'x-tts-sample-width', 2),
+        pcmFormat: response.headers.get('x-tts-pcm-format') ?? 's16le',
+      },
+    }
+  }
+
+  return { stream: response.body, format: { kind: 'encoded', contentType } }
+}
+
+const unsupportedPcmStreamUrls = new Set<string>()
+
+export function resetGatewayClientCacheForTest(): void {
+  unsupportedPcmStreamUrls.clear()
+}
+
 export function createGatewayClient(baseUrl: string) {
   const syncUrl = resolveUrl(baseUrl, DEFAULT_SPEECH_PATH)
   const streamUrl = resolveUrl(baseUrl, DEFAULT_STREAM_PATH)
+  const streamPcmUrl = resolvePcmStreamUrl(baseUrl)
 
   function postForm(url: string) {
     return (payload: globalThis.FormData, signal?: AbortSignal): Promise<Response> =>
@@ -141,6 +258,7 @@ export function createGatewayClient(baseUrl: string) {
 
   const postSync = postForm(syncUrl)
   const postStream = postJson(streamUrl)
+  const postStreamPcm = streamPcmUrl ? postJson(streamPcmUrl) : null
 
   return {
     async speakSync(
@@ -160,14 +278,31 @@ export function createGatewayClient(baseUrl: string) {
       text: string,
       voice?: string,
       signal?: AbortSignal,
-    ): Promise<ReadableStream<Uint8Array>> {
-      const response = await handleVoiceRetry(postStream, buildJsonPayload, text, voice, signal)
-
-      if (!response.body) {
-        throw new TTSError('Server returned no stream body', 'generation_failed')
+    ): Promise<GatewayStreamResult> {
+      const pcmUrl = streamPcmUrl
+      if (postStreamPcm && pcmUrl && !unsupportedPcmStreamUrls.has(pcmUrl)) {
+        const pcmResponse = await handleVoiceRetry(
+          postStreamPcm,
+          buildJsonPayload,
+          text,
+          voice,
+          signal,
+          {
+            passthroughStatus: () => true,
+            skipVoiceRetryStatus: isPcmEndpointUnsupportedStatus,
+          },
+        )
+        if (pcmResponse.ok) {
+          return parseStreamResult(pcmResponse)
+        }
+        if (isPcmEndpointUnsupportedStatus(pcmResponse.status)) {
+          unsupportedPcmStreamUrls.add(pcmUrl)
+        }
+        await discardResponse(pcmResponse)
       }
 
-      return response.body
+      const response = await handleVoiceRetry(postStream, buildJsonPayload, text, voice, signal)
+      return parseStreamResult(response)
     },
   }
 }
