@@ -6,7 +6,13 @@ import { render } from 'ink-testing-library'
 
 import { FALLBACK_MODEL_CHOICES_BY_PROVIDER } from '../../services/model-catalog'
 import { DEFAULT_CONFIG } from '../../types'
-import { getProjectSessionDir, loadSession, saveSession } from '../../services/session'
+import {
+  getProjectSessionDir,
+  listSessions,
+  loadSession,
+  loadSessionById,
+  saveSession,
+} from '../../services/session'
 import type { RunResult } from '../../pipeline/task'
 import type { OutboundFrame } from '../../pipeline/transports/types'
 import { useConversation } from './useConversation'
@@ -74,13 +80,16 @@ describe('useConversation', () => {
 
     app.unmount()
 
-    const saved = await loadSession(projectPath)
-    expect(saved).not.toBeNull()
-    expect(saved?.llmModel).toBe(FALLBACK_MODEL_CHOICES_BY_PROVIDER.openai[1])
-    expect(saved?.history).toEqual([])
+    const saved = await listSessions(undefined, projectPath)
+    expect(saved).toHaveLength(1)
+    const savedSession = saved[0]
+    expect(savedSession?.source).toBe('orb')
+    if (savedSession?.source !== 'orb') throw new Error('expected an Orb session')
+    expect(savedSession.llmModel).toBe(FALLBACK_MODEL_CHOICES_BY_PROVIDER.openai[1]!)
+    expect(savedSession.turnCount).toBe(0)
   })
 
-  it('persists a --new session immediately so it becomes the latest before the first message', async () => {
+  it('persists a --new empty session without making it the automatic resume target', async () => {
     const tempProjectRoot = await mkdtemp(path.join(tmpdir(), 'orb-use-conversation-fresh-'))
     cleanupPaths.add(tempProjectRoot)
 
@@ -123,9 +132,11 @@ describe('useConversation', () => {
     await wait(20)
     app.unmount()
 
-    const saved = await loadSession(projectPath)
-    expect(saved?.id).toBe('fresh-session')
-    expect(saved?.history).toEqual([])
+    const explicitFresh = await loadSessionById(projectPath, 'fresh-session')
+    expect(explicitFresh?.history).toEqual([])
+
+    const automatic = await loadSession(projectPath)
+    expect(automatic?.id).toBe('old-session')
   })
 
   it('uses the resolved current model instead of restoring a stale semantic-family model', async () => {

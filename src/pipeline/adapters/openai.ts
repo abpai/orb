@@ -49,6 +49,9 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
       const outputDeltas = new Map<string, string[]>()
       const agentMessages = createOpenAiAgentMessageAccumulator()
       let threadId = session?.provider === 'openai' ? session.threadId : undefined
+      const explicitResume =
+        appConfig.resumeSession?.provider === 'openai' &&
+        appConfig.resumeSession.threadId === threadId
       let turnId: string | undefined
 
       const onAbort = () => {
@@ -72,7 +75,9 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
         const baseThreadParams = createOpenAiThreadParams(appConfig, instructions)
 
         try {
-          threadId = await startOrResumeOpenAiThread(client, baseThreadParams, threadId)
+          threadId = await startOrResumeOpenAiThread(client, baseThreadParams, threadId, {
+            explicitResume,
+          })
         } catch (err) {
           if (!isOpenAiFullHistoryCapabilityError(err)) throw err
           threadId = await startOrResumeOpenAiThread(
@@ -81,6 +86,7 @@ export function createOpenAiAdapter(config: AgentAdapterConfig): AgentAdapter {
               persistExtendedHistory: false,
             }),
             threadId,
+            { explicitResume },
           )
         }
 

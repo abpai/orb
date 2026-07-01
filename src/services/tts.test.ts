@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { DEFAULT_CONFIG, TTSError } from '../types'
-import { detectPlayer, resetDetectedPlayer } from './audio-player'
+import { buildFfplayRawPcmArgs, detectPlayer, resetDetectedPlayer } from './audio-player'
 
 async function importModule() {
   mock.restore()
@@ -723,10 +723,27 @@ describe('createStreamSession', () => {
     expect(spawnCalls).toHaveLength(1)
     expect(spawnCalls[0]).toContain('-f')
     expect(spawnCalls[0]).toContain('s16le')
-    expect(spawnCalls[0]).toContain('-sample_rate')
     expect(spawnCalls[0]).toContain('24000')
-    expect(spawnCalls[0]).toContain('-ch_layout')
-    expect(spawnCalls[0]).toContain('mono')
     expect(spawnCalls[0]).toContain('pipe:3')
+  })
+
+  it('uses ffplay raw PCM flags compatible with old and new FFmpeg versions', () => {
+    const format = {
+      kind: 'raw-pcm' as const,
+      sampleRate: 24000,
+      channels: 1,
+      sampleWidth: 2,
+      pcmFormat: 's16le',
+    }
+
+    expect(buildFfplayRawPcmArgs(format, 4)).toEqual(['-f', 's16le', '-ar', '24000', '-ac', '1'])
+    expect(buildFfplayRawPcmArgs(format, 8)).toEqual([
+      '-f',
+      's16le',
+      '-sample_rate',
+      '24000',
+      '-ch_layout',
+      'mono',
+    ])
   })
 })

@@ -122,11 +122,13 @@ async function collectCodexCandidates(
   maxFiles: number,
   maxAgeDays: number,
   includeSubagents: boolean,
+  targetId?: string,
 ): Promise<{ candidates: CodexCandidate[]; capped: boolean }> {
   const candidates: CodexCandidate[] = []
   const cutoffMs = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000
 
   async function consider(filePath: string): Promise<boolean> {
+    if (targetId && !path.basename(filePath).includes(targetId)) return false
     const meta = await readCodexMeta(filePath)
     if (!shouldIncludeCodexMeta(meta, resolvedProject, includeSubagents)) return false
     if (candidates.length >= maxFiles) return true
@@ -286,10 +288,10 @@ export async function lookupCodexMeta(
     CODEX_DEFAULT_MAX_FILES,
     CODEX_DEFAULT_MAX_AGE_DAYS,
     true,
+    threadId,
   )
 
   for (const { filePath, meta } of candidates) {
-    if (!filePath.includes(threadId)) continue
     try {
       const row = await readCodexRollout(filePath, resolvedProject, meta)
       if (row && row.id === threadId) {
@@ -316,6 +318,7 @@ export async function findCodexRolloutPath(
     opts.maxFiles ?? CODEX_DEFAULT_MAX_FILES,
     opts.maxAgeDays ?? CODEX_DEFAULT_MAX_AGE_DAYS,
     true,
+    threadId,
   )
 
   return candidates.find(({ meta }) => meta.id === threadId)?.filePath ?? null

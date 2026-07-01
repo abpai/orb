@@ -1,8 +1,7 @@
-import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-import { claudeProjectDir } from './external-sessions/claude'
+import { findClaudeTranscriptPath } from './external-sessions/claude'
 import { asString } from './external-sessions/coerce'
 import { findCodexRolloutPath } from './external-sessions/codex'
 
@@ -100,48 +99,6 @@ export function parseSessionReference(
     id: parseId(raw, explicit.id),
     cwd: path.resolve(parseCwd(raw, explicit.cwd)),
   }
-}
-
-async function fileExists(filePath: string): Promise<boolean> {
-  try {
-    await fs.access(filePath)
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function findClaudeTranscriptPath(
-  sessionId: string,
-  projectPath: string,
-  homeDir: string,
-): Promise<string | null> {
-  const dir = claudeProjectDir(projectPath, homeDir)
-  const direct = path.join(dir, `${sessionId}.jsonl`)
-  if (await fileExists(direct)) return direct
-
-  let files: string[]
-  try {
-    files = await fs.readdir(dir)
-  } catch {
-    return null
-  }
-
-  for (const file of files.filter((name) => name.endsWith('.jsonl')).sort()) {
-    const filePath = path.join(dir, file)
-    try {
-      const text = await Bun.file(filePath).text()
-      if (
-        text.includes(`"sessionId":"${sessionId}"`) ||
-        text.includes(`"sessionId": "${sessionId}"`)
-      ) {
-        return filePath
-      }
-    } catch {
-      // Keep scanning; external logs can be partially written.
-    }
-  }
-  return null
 }
 
 export async function resolveSessionTranscriptPath(

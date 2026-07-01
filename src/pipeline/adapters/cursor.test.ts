@@ -7,6 +7,7 @@ import {
   createCursorStreamMapper,
   formatCursorPrompt,
   resolveCursorAgentBinary,
+  shouldTreatCursorExitAsError,
 } from './cursor'
 
 describe('Cursor adapter command construction', () => {
@@ -81,6 +82,12 @@ describe('Cursor adapter command construction', () => {
     expect(formatCursorPrompt('system rules', 'do the thing')).toBe(
       'system rules\n\n---\n\nUser request:\ndo the thing',
     )
+  })
+
+  it('does not fail a Cursor turn for a nonzero exit after completion', () => {
+    expect(shouldTreatCursorExitAsError(1, true)).toBe(false)
+    expect(shouldTreatCursorExitAsError(1, false)).toBe(true)
+    expect(shouldTreatCursorExitAsError(0, false)).toBe(false)
   })
 })
 

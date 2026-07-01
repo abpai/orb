@@ -129,6 +129,28 @@ describe('session persistence', () => {
     expect((await loadSessionById(projectPath, 'newer', home))?.id).toBe('newer')
   })
 
+  it('does not auto-resume an empty throwaway latest session', async () => {
+    const home = await tempHome()
+    const projectPath = await tempProject()
+
+    await writeSessionFile(
+      makeSession(projectPath, { id: 'real', lastModified: '2026-01-01T00:00:00.000Z' }),
+      home,
+    )
+    await writeSessionFile(
+      makeSession(projectPath, {
+        id: 'empty-new',
+        lastModified: '2026-06-01T00:00:00.000Z',
+        history: [],
+        agentSession: undefined,
+      }),
+      home,
+    )
+
+    expect((await loadSession(projectPath, home))?.id).toBe('real')
+    expect((await loadSessionById(projectPath, 'empty-new', home))?.id).toBe('empty-new')
+  })
+
   it('lists sessions across projects, newest first', async () => {
     const home = await tempHome()
     const projectA = await tempProject()

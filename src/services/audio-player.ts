@@ -79,17 +79,55 @@ function spawnFfplay(speed: number, format: StreamAudioFormat): PlayerProcess {
     args.push('-af', `atempo=${clamped}`)
   }
   if (format.kind === 'raw-pcm') {
-    args.push(
-      '-f',
-      format.pcmFormat,
-      '-sample_rate',
-      String(format.sampleRate),
-      '-ch_layout',
-      channelLayoutForChannels(format.channels),
-    )
+    args.push(...buildFfplayRawPcmArgs(format))
   }
   args.push('-i', 'pipe:3')
   return createFfplayProcess(args)
+}
+
+let detectedFfplayMajorVersion: number | null | undefined = undefined
+
+function detectFfplayMajorVersion(): number | null {
+  if (detectedFfplayMajorVersion !== undefined) return detectedFfplayMajorVersion
+
+  try {
+    const result = Bun.spawnSync(['ffplay', '-version'], {
+      stdout: 'pipe',
+      stderr: 'ignore',
+    })
+    const text = new TextDecoder().decode(result.stdout)
+    const major = Number.parseInt(text.match(/ffplay version\s+(\d+)/)?.[1] ?? '', 10)
+    detectedFfplayMajorVersion = Number.isFinite(major) ? major : null
+  } catch {
+    detectedFfplayMajorVersion = null
+  }
+
+  return detectedFfplayMajorVersion
+}
+
+export function buildFfplayRawPcmArgs(
+  format: Extract<StreamAudioFormat, { kind: 'raw-pcm' }>,
+  ffplayMajorVersion: number | null = detectFfplayMajorVersion(),
+): string[] {
+  if (ffplayMajorVersion !== null && ffplayMajorVersion < 5) {
+    return [
+      '-f',
+      format.pcmFormat,
+      '-ar',
+      String(format.sampleRate),
+      '-ac',
+      String(format.channels),
+    ]
+  }
+
+  return [
+    '-f',
+    format.pcmFormat,
+    '-sample_rate',
+    String(format.sampleRate),
+    '-ch_layout',
+    channelLayoutForChannels(format.channels),
+  ]
 }
 
 function channelLayoutForChannels(channels: number): string {
@@ -218,6 +256,7 @@ export function detectPlayer(): PlayerConfig {
 
 export function resetDetectedPlayer(): void {
   detectedPlayer = undefined
+  detectedFfplayMajorVersion = undefined
 }
 
 /** Minimal process handle for file-based players (afplay). */

@@ -350,6 +350,10 @@ async function loadProjectSessions(projectDir: string): Promise<SavedSession[]> 
     .sort((a, b) => b.lastModified.localeCompare(a.lastModified))
 }
 
+function isAutoResumableSession(session: SavedSession): boolean {
+  return session.history.length > 0 || session.agentSession !== undefined
+}
+
 async function pruneProject(projectDir: string, maxAgeMs: number, keep: number): Promise<void> {
   let filenames: string[]
   try {
@@ -431,7 +435,8 @@ export async function loadSession(
   })
 
   const sessions = await loadProjectSessions(projectDir)
-  if (sessions.length > 0) return sessions[0] ?? null
+  const resumable = sessions.find(isAutoResumableSession)
+  if (resumable) return resumable
 
   // Nothing in the new layout — fall back to migrating a legacy flat file.
   return migrateLegacySession(projectPath, homeDir)

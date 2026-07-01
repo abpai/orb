@@ -66,6 +66,48 @@ async function readClaudeIndex(dir: string): Promise<ClaudeIndex | null> {
   }
 }
 
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function findClaudeTranscriptPath(
+  sessionId: string,
+  projectPath: string,
+  homeDir = os.homedir(),
+): Promise<string | null> {
+  const dir = claudeProjectDir(projectPath, homeDir)
+  const direct = path.join(dir, `${sessionId}.jsonl`)
+  if (await fileExists(direct)) return direct
+
+  let files: string[]
+  try {
+    files = await fs.readdir(dir)
+  } catch {
+    return null
+  }
+
+  for (const file of files.filter((name) => name.endsWith('.jsonl')).sort()) {
+    const filePath = path.join(dir, file)
+    try {
+      const text = await Bun.file(filePath).text()
+      if (
+        text.includes(`"sessionId":"${sessionId}"`) ||
+        text.includes(`"sessionId": "${sessionId}"`)
+      ) {
+        return filePath
+      }
+    } catch {
+      // Keep scanning; external logs can be partially written.
+    }
+  }
+  return null
+}
+
 function extractClaudeUserText(line: ClaudeJsonlLine): string {
   const content = line.message?.content
   if (typeof content === 'string') return content.trim()

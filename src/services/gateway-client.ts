@@ -157,12 +157,12 @@ async function handleVoiceRetry<TPayload>(
 ): Promise<Response> {
   let response = await post(buildPayload(text, voice), signal)
 
-  if (!response.ok && options.passthroughStatus?.(response.status)) {
-    return response
-  }
-
   if (!response.ok && voice && isRetryableVoiceError(response.status)) {
     response = await post(buildPayload(text), signal)
+  }
+
+  if (!response.ok && options.passthroughStatus?.(response.status)) {
+    return response
   }
 
   if (!response.ok) {
@@ -173,10 +173,6 @@ async function handleVoiceRetry<TPayload>(
   }
 
   return response
-}
-
-function isPcmUnsupportedStatus(status: number): boolean {
-  return status === 404 || status === 405 || status === 406 || status === 415 || status === 501
 }
 
 async function discardResponse(response: Response): Promise<void> {
@@ -245,6 +241,7 @@ export function createGatewayClient(baseUrl: string) {
   const postSync = postForm(syncUrl)
   const postStream = postJson(streamUrl)
   const postStreamPcm = streamPcmUrl ? postJson(streamPcmUrl) : null
+  let pcmStreamSupported = postStreamPcm ? true : false
 
   return {
     async speakSync(
@@ -265,7 +262,7 @@ export function createGatewayClient(baseUrl: string) {
       voice?: string,
       signal?: AbortSignal,
     ): Promise<GatewayStreamResult> {
-      if (postStreamPcm) {
+      if (postStreamPcm && pcmStreamSupported) {
         const pcmResponse = await handleVoiceRetry(
           postStreamPcm,
           buildJsonPayload,
@@ -273,12 +270,13 @@ export function createGatewayClient(baseUrl: string) {
           voice,
           signal,
           {
-            passthroughStatus: isPcmUnsupportedStatus,
+            passthroughStatus: () => true,
           },
         )
         if (pcmResponse.ok) {
           return parseStreamResult(pcmResponse)
         }
+        pcmStreamSupported = false
         await discardResponse(pcmResponse)
       }
 

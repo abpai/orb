@@ -261,6 +261,19 @@ const FALLBACK_CATALOG_MODELS: CatalogModel[] = (
   })),
 )
 
+function fallbackModelCatalog(
+  provider: LlmProvider | undefined,
+  fetchedAt = 0,
+): LoadedModelCatalog {
+  return {
+    fetchedAt,
+    models: provider
+      ? FALLBACK_CATALOG_MODELS.filter((model) => model.provider === provider)
+      : FALLBACK_CATALOG_MODELS,
+    source: 'fallback',
+  }
+}
+
 // Inverse of PROVIDER_GATEWAY_PREFIX: gateway prefix → provider. Derived from the
 // forward table so the two mappings can never drift apart.
 const PROVIDER_BY_GATEWAY_PREFIX: Record<string, LlmProvider> = Object.fromEntries(
@@ -392,7 +405,7 @@ export async function loadModelCatalog(
     if (cached) {
       return { ...cached, source: 'stale-cache', warning }
     }
-    return { fetchedAt: 0, models: FALLBACK_CATALOG_MODELS, source: 'fallback', warning }
+    return { ...fallbackModelCatalog(undefined, 0), warning }
   }
 }
 
@@ -575,7 +588,10 @@ export async function resolveAppModelConfig(
   config: AppConfig,
   options: LoadModelCatalogOptions = {},
 ): Promise<ResolvedModelConfig> {
-  const catalog = await loadModelCatalog(options)
+  const catalog =
+    config.llmProvider === 'cursor'
+      ? fallbackModelCatalog('cursor', options.now ?? Date.now())
+      : await loadModelCatalog(options)
   const { choices, labels } = buildProviderModelChoices(config.llmProvider, catalog.models)
   const llmModel = resolveModelForProvider(config.llmProvider, config.llmModel, catalog.models)
 

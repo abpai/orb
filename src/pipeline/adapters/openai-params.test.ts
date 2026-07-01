@@ -86,6 +86,24 @@ describe('OpenAI app-server compatibility', () => {
     expect(calls.map((call) => call.method)).toEqual(['thread/resume'])
   })
 
+  it('explains --new for implicit saved-session resume failures', async () => {
+    const client = {
+      async request(method: string): Promise<unknown> {
+        if (method === 'thread/resume') throw new Error('thread not found')
+        throw new Error(`unexpected ${method}`)
+      },
+    }
+
+    await expect(
+      startOrResumeOpenAiThread(
+        client,
+        createOpenAiThreadParams(DEFAULT_CONFIG, 'developer instructions'),
+        'thread-missing',
+        { explicitResume: false },
+      ),
+    ).rejects.toThrow('Start explicitly with `orb --new`')
+  })
+
   it('keeps the full-history resume retry on the same thread', async () => {
     const calls: Array<{ method: string; params?: Record<string, unknown> }> = []
     const client = {

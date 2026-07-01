@@ -394,7 +394,7 @@ describe('createGatewayClient', () => {
       })
     })
 
-    it('falls back to encoded /tts/stream when PCM is unsupported', async () => {
+    it('falls back to encoded /tts/stream when PCM is unsupported and caches the fallback', async () => {
       const { createGatewayClient } = await importModule()
       const requestUrls: string[] = []
 
@@ -402,7 +402,7 @@ describe('createGatewayClient', () => {
         const url = typeof input === 'string' ? input : input.toString()
         requestUrls.push(url)
         if (url.endsWith('/tts/stream/pcm')) {
-          return new Response('not found', { status: 404 })
+          return new Response('gateway timeout before first audio', { status: 504 })
         }
         return new Response(new ReadableStream(), {
           status: 200,
@@ -410,13 +410,17 @@ describe('createGatewayClient', () => {
         })
       }) as unknown as typeof globalThis.fetch
 
-      const result = await createGatewayClient('http://localhost:8000').speakStream('hello')
+      const client = createGatewayClient('http://localhost:8000')
+      const result = await client.speakStream('hello')
+      const second = await client.speakStream('again')
 
       expect(requestUrls).toEqual([
         'http://localhost:8000/tts/stream/pcm',
         'http://localhost:8000/tts/stream',
+        'http://localhost:8000/tts/stream',
       ])
       expect(result.format).toEqual({ kind: 'encoded', contentType: 'audio/mpeg' })
+      expect(second.format).toEqual({ kind: 'encoded', contentType: 'audio/mpeg' })
     })
 
     it('uses explicit custom stream paths without probing PCM', async () => {

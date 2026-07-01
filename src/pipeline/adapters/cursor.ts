@@ -278,6 +278,10 @@ export function createCursorStreamMapper() {
   }
 }
 
+export function shouldTreatCursorExitAsError(exitCode: number, completed: boolean): boolean {
+  return exitCode !== 0 && !completed
+}
+
 async function* cursorEventFrames(
   proc: Bun.Subprocess<'ignore', 'pipe', 'pipe'>,
   signal: AbortSignal,
@@ -348,7 +352,7 @@ async function* cursorEventFrames(
   const [stderr, exitCode] = await Promise.all([stderrPromise, proc.exited])
   if (aborted || signal.aborted) throw cursorAbortError()
   if (parseOrTurnError) throw new Error(withStderr(parseOrTurnError.message, stderr))
-  if (exitCode !== 0)
+  if (shouldTreatCursorExitAsError(exitCode, completed))
     throw new Error(withStderr(`Cursor Agent exited with code ${exitCode}`, stderr))
   if (!completed) {
     throw new Error(withStderr('Cursor Agent exited before completing the turn', stderr))
