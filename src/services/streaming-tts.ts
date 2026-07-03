@@ -2,6 +2,7 @@ import { unlink } from 'node:fs/promises'
 import { TTSError, type AppConfig } from '../types'
 import {
   createTempAudioPath,
+  createPlaybackSink,
   createStreamSession,
   generateAudio,
   pauseSpeaking,
@@ -9,9 +10,10 @@ import {
   resumeSpeaking,
   stopSpeaking,
   resetPlaybackStoppedFlag,
+  type PlaybackSink,
   type StreamSession,
 } from './tts'
-import { detectPlayer } from './audio-player'
+import { detectPlayer, type StreamAudioFormat } from './audio-player'
 import { cleanTextForSpeech } from '../ui/utils/markdown'
 import { createGatewayClient, DEFAULT_SERVER_URL, type GatewayStreamResult } from './gateway-client'
 import { hasOpenCodeDelimiter } from './speech-text'
@@ -33,7 +35,12 @@ interface PrefetchState {
   text: string
   abort: AbortController
   stream: Promise<GatewayStreamResult>
-  claimed: boolean
+}
+
+interface ActivePlaybackSink {
+  sink: PlaybackSink
+  format: StreamAudioFormat
+  speed: number
 }
 
 export interface StreamingSpeechController {
@@ -97,11 +104,14 @@ export function createStreamingSpeechController(
    * Invariant: `isProcessing` is true exactly while processNextSentence is
    * mid-flight; `currentSession`/`activeAbort` are non-null only during an
    * in-flight stream and are cleared in the processing `finally`. `prefetch`
-   * holds the speculatively-fetched next stream, owned solely here.
+   * holds the speculatively-fetched next stream, owned solely here. `sink`
+   * is the long-lived PCM playback process kept open until the finalized
+   * queue drains.
    */
   const playback = {
     isProcessing: false,
     currentSession: null as StreamSession | null,
+    sink: null as ActivePlaybackSink | null,
     activeAbort: null as AbortController | null,
     prefetch: null as PrefetchState | null,
   }
@@ -348,25 +358,55 @@ export function createStreamingSpeechController(
   function takeSpeechBatch(): string | null {
     if (sentenceQueue.length === 0) return null
     const targetCount = Math.max(1, config.ttsBufferSentences)
-    if (!lifecycle.finalized && sentenceQueue.length < targetCount) return null
 
     const batchSize = Math.min(sentenceQueue.length, targetCount)
     return sentenceQueue.splice(0, batchSize).join(' ')
   }
 
-  function peekSpeechBatch(): string | null {
-    if (sentenceQueue.length === 0) return null
-    const targetCount = Math.max(1, config.ttsBufferSentences)
-    if (!lifecycle.finalized && sentenceQueue.length < targetCount) return null
+  function normalizeStreamFormat(format: GatewayStreamResult['format']): StreamAudioFormat {
+    if (format.kind === 'encoded') return { kind: 'encoded' }
+    return {
+      kind: 'raw-pcm',
+      sampleRate: format.sampleRate,
+      channels: format.channels,
+      sampleWidth: format.sampleWidth,
+      pcmFormat: format.pcmFormat,
+    }
+  }
 
-    return sentenceQueue.slice(0, Math.min(sentenceQueue.length, targetCount)).join(' ')
+  function streamFormatsEqual(left: StreamAudioFormat, right: StreamAudioFormat): boolean {
+    if (left.kind !== right.kind) return false
+    if (left.kind === 'encoded' || right.kind === 'encoded') return true
+    return (
+      left.sampleRate === right.sampleRate &&
+      left.channels === right.channels &&
+      left.sampleWidth === right.sampleWidth &&
+      left.pcmFormat === right.pcmFormat
+    )
+  }
+
+  function playbackSpeedFor(result: GatewayStreamResult): number {
+    const applied = result.speedApplied
+    if (applied === null || !Number.isFinite(applied) || applied <= 0) return config.ttsSpeed
+    // The gateway already time-scaled the audio by `applied` (it may clamp the
+    // requested speed, e.g. to [0.5, 2.0]); the player only makes up the
+    // difference. Applying the full requested speed here would compound them.
+    const residual = config.ttsSpeed / applied
+    return Math.abs(residual - 1) <= 0.01 ? 1 : residual
+  }
+
+  async function finishPlaybackSink(): Promise<void> {
+    const activeSink = playback.sink
+    if (!activeSink) return
+    playback.sink = null
+    await activeSink.sink.finish()
   }
 
   function startPrefetch(): void {
     const client = getClient()
     if (!client || playback.prefetch || lifecycle.stopped || sentenceQueue.length === 0) return
 
-    const nextSentence = peekSpeechBatch()
+    const nextSentence = takeSpeechBatch()
     if (!nextSentence) return
 
     const abort = new AbortController()
@@ -374,22 +414,19 @@ export function createStreamingSpeechController(
       text: nextSentence,
       abort,
       stream: Promise.resolve(null as unknown as GatewayStreamResult),
-      claimed: false,
     }
 
     state.stream = client
-      .speakStream(nextSentence, config.ttsVoice, abort.signal)
+      .speakStream(nextSentence, config.ttsVoice, abort.signal, config.ttsSpeed)
       .then((streamResult) => {
-        if (lifecycle.stopped || (!state.claimed && playback.prefetch !== state)) {
+        if (lifecycle.stopped) {
           streamResult.stream.cancel().catch(() => {})
           throw new TTSError('Prefetch canceled', 'generation_failed')
         }
         return streamResult
       })
     playback.prefetch = state
-    state.stream.catch(() => {
-      if (playback.prefetch === state) playback.prefetch = null
-    })
+    state.stream.catch(() => {})
   }
 
   async function fetchSpeechStream(sentence: string): Promise<GatewayStreamResult> {
@@ -397,7 +434,6 @@ export function createStreamingSpeechController(
     if (state) {
       playback.prefetch = null
       if (state.text === sentence) {
-        state.claimed = true
         playback.activeAbort = state.abort
         try {
           return await state.stream
@@ -414,7 +450,50 @@ export function createStreamingSpeechController(
     }
 
     playback.activeAbort = new AbortController()
-    return await getClient()!.speakStream(sentence, config.ttsVoice, playback.activeAbort.signal)
+    return await getClient()!.speakStream(
+      sentence,
+      config.ttsVoice,
+      playback.activeAbort.signal,
+      config.ttsSpeed,
+    )
+  }
+
+  async function playStreamResult(streamResult: GatewayStreamResult): Promise<void> {
+    const speed = playbackSpeedFor(streamResult)
+
+    if (streamResult.format.kind !== 'raw-pcm') {
+      await finishPlaybackSink()
+      const session = createStreamSession(
+        streamResult.stream,
+        speed,
+        undefined,
+        streamResult.format,
+      )
+      playback.currentSession = session
+      await session.done
+      return
+    }
+
+    const format = normalizeStreamFormat(streamResult.format)
+    const activeSink = playback.sink
+    if (
+      !activeSink ||
+      !streamFormatsEqual(activeSink.format, format) ||
+      activeSink.speed !== speed
+    ) {
+      await finishPlaybackSink()
+      playback.sink = {
+        sink: createPlaybackSink(speed, format),
+        format,
+        speed,
+      }
+    }
+
+    const currentSink = playback.sink
+    if (!currentSink) {
+      throw new TTSError('Playback sink failed to start', 'audio_playback')
+    }
+    await currentSink.sink.writeStream(streamResult.stream)
   }
 
   async function streamOrFallback(sentence: string): Promise<void> {
@@ -431,25 +510,32 @@ export function createStreamingSpeechController(
 
     const audioStream = await fetchSpeechStream(sentence)
 
-    const session = createStreamSession(
-      audioStream.stream,
-      config.ttsSpeed,
-      undefined,
-      audioStream.format,
-    )
-    playback.currentSession = session
-
     // Pre-fetch next sentence's audio while this one plays
     startPrefetch()
 
-    await session.done
+    await playStreamResult(audioStream)
   }
 
   async function processNextSentence(): Promise<void> {
     if (playback.isProcessing || lifecycle.stopped || lifecycle.paused) return
 
-    const sentence = takeSpeechBatch()
+    const sentence = playback.prefetch?.text ?? takeSpeechBatch()
     if (!sentence) {
+      if (lifecycle.finalized && playback.sink) {
+        playback.isProcessing = true
+        try {
+          await finishPlaybackSink()
+        } catch (err) {
+          if (lifecycle.stopped) return
+          const ttsError =
+            err instanceof TTSError ? err : new TTSError(String(err), 'audio_playback')
+          callbacks.onError?.(ttsError)
+          fail(ttsError)
+          return
+        } finally {
+          playback.isProcessing = false
+        }
+      }
       checkCompletion()
       return
     }
@@ -489,7 +575,11 @@ export function createStreamingSpeechController(
   }
 
   function hasWorkRemaining(): boolean {
-    return playback.isProcessing || sentenceQueue.length > 0
+    return (
+      playback.isProcessing ||
+      sentenceQueue.length > 0 ||
+      Boolean(playback.prefetch || playback.sink)
+    )
   }
 
   function markComplete(): void {
@@ -506,6 +596,8 @@ export function createStreamingSpeechController(
     lifecycle.completed = true
     sentenceQueue.length = 0
     cancelPrefetch()
+    playback.sink?.sink.kill()
+    playback.sink = null
     lifecycle.completionReject?.(error)
   }
 
@@ -517,7 +609,7 @@ export function createStreamingSpeechController(
 
   function maybeStartProcessing(): void {
     if (lifecycle.stopped || playback.isProcessing || lifecycle.paused) return
-    if (sentenceQueue.length >= config.ttsBufferSentences || lifecycle.finalized) {
+    if (sentenceQueue.length > 0 || lifecycle.finalized) {
       processNextSentence()
     }
   }
@@ -563,6 +655,9 @@ export function createStreamingSpeechController(
       playback.currentSession?.kill()
       playback.currentSession = null
 
+      playback.sink?.sink.kill()
+      playback.sink = null
+
       // Stop generate-mode playback (afplay)
       stopSpeaking()
 
@@ -574,6 +669,7 @@ export function createStreamingSpeechController(
       if (lifecycle.stopped || lifecycle.completed || lifecycle.paused) return
       lifecycle.paused = true
       playback.currentSession?.pause()
+      playback.sink?.sink.pause()
       pauseSpeaking()
     },
 
@@ -581,6 +677,7 @@ export function createStreamingSpeechController(
       if (lifecycle.stopped || lifecycle.completed || !lifecycle.paused) return
       lifecycle.paused = false
       playback.currentSession?.resume()
+      playback.sink?.sink.resume()
       resumeSpeaking()
       // Kick the queue back into motion if an audio session isn't already running
       if (!playback.currentSession && !playback.isProcessing) {

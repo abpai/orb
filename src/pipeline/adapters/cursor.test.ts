@@ -166,6 +166,85 @@ describe('Cursor stream mapper', () => {
     expect(frames.at(-1)).toEqual(expect.objectContaining({ text: 'hello world' }))
   })
 
+  it('does not replay messages after the first in a multi-message turn', () => {
+    const mapper = createCursorStreamMapper()
+    const assistant = (text: string) =>
+      JSON.stringify({
+        type: 'assistant',
+        message: { content: [{ type: 'text', text }] },
+        session_id: 'session-1',
+      })
+    const toolCall = (subtype: string) =>
+      JSON.stringify({
+        type: 'tool_call',
+        subtype,
+        call_id: 'tool-1',
+        tool_call: { shellToolCall: { args: { command: 'echo hi' } } },
+      })
+
+    const lines = [
+      // message 1: partial deltas, then its final full snapshot
+      assistant('Checking'),
+      assistant(' the files.'),
+      assistant('Checking the files.'),
+      toolCall('started'),
+      toolCall('completed'),
+      // message 2 (the answer): partial deltas, then its final full snapshot
+      assistant('All'),
+      assistant(' good.'),
+      assistant('All good.'),
+    ]
+
+    const deltas = lines
+      .flatMap((line) => mapper.handleLine(line).frames)
+      .filter((frame) => frame.kind === 'agent-text-delta')
+
+    expect(deltas.map((frame) => frame.delta)).toEqual([
+      'Checking',
+      ' the files.',
+      '\n\nAll',
+      ' good.',
+    ])
+    expect(deltas.at(-1)).toEqual(
+      expect.objectContaining({ accumulatedText: 'Checking the files.\n\nAll good.' }),
+    )
+  })
+
+  it('does not replay cumulative partials across message boundaries', () => {
+    const mapper = createCursorStreamMapper()
+    const assistant = (text: string) =>
+      JSON.stringify({
+        type: 'assistant',
+        message: { content: [{ type: 'text', text }] },
+        session_id: 'session-1',
+      })
+
+    const lines = [
+      // message 1: cumulative partials, then final snapshot
+      assistant('Loading'),
+      assistant('Loading the transcript.'),
+      assistant('Loading the transcript.'),
+      // message 2 without an intervening tool call: cumulative partials
+      assistant('Here'),
+      assistant('Here is the answer.'),
+      assistant('Here is the answer.'),
+    ]
+
+    const deltas = lines
+      .flatMap((line) => mapper.handleLine(line).frames)
+      .filter((frame) => frame.kind === 'agent-text-delta')
+
+    expect(deltas.map((frame) => frame.delta)).toEqual([
+      'Loading',
+      ' the transcript.',
+      '\n\nHere',
+      ' is the answer.',
+    ])
+    expect(deltas.at(-1)).toEqual(
+      expect.objectContaining({ accumulatedText: 'Loading the transcript.\n\nHere is the answer.' }),
+    )
+  })
+
   it('maps Cursor tool calls to Orb tool frames', () => {
     const mapper = createCursorStreamMapper()
     const start = mapper.handleLine(

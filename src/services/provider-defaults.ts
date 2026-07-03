@@ -109,6 +109,9 @@ async function detectCodexChatGptAuth(): Promise<boolean> {
 
 const HIGH_THROUGHPUT_STREAMING_PROVIDERS = new Set<LlmProvider>(['openai', 'cursor'])
 
+// High-throughput providers can emit sentences faster than local synthesis.
+// Keep request overhead amortized by capping backlog batches at three sentences;
+// this is no longer a minimum before speech starts.
 const HIGH_THROUGHPUT_STREAMING_DEFAULTS = {
   ttsBufferSentences: 3,
   ttsMinChunkLength: 100,

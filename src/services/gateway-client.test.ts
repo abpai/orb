@@ -43,6 +43,32 @@ describe('createGatewayClient', () => {
       expect(requestUrl).toBe('http://myserver:9000/tts')
     })
 
+    it('warms the default server root without throwing on errors', async () => {
+      const { createGatewayClient } = await importModule()
+      const requestUrls: string[] = []
+
+      globalThis.fetch = mock(async (input: string | globalThis.URL | Request) => {
+        requestUrls.push(typeof input === 'string' ? input : input.toString())
+        throw new Error('gateway still loading')
+      }) as unknown as typeof globalThis.fetch
+
+      await expect(createGatewayClient('http://localhost:8000').warmup()).resolves.toBeUndefined()
+      expect(requestUrls).toEqual(['http://localhost:8000/warmup'])
+    })
+
+    it('skips warmup for explicit custom paths', async () => {
+      const { createGatewayClient } = await importModule()
+      let requestCount = 0
+
+      globalThis.fetch = mock(async () => {
+        requestCount += 1
+        return new Response('', { status: 204 })
+      }) as unknown as typeof globalThis.fetch
+
+      await createGatewayClient('http://localhost:8000/custom-stream').warmup()
+      expect(requestCount).toBe(0)
+    })
+
     it('throws TTSError for invalid URL', async () => {
       const { createGatewayClient } = await importModule()
       expect(() => createGatewayClient('not a url')).toThrow(TTSError)
@@ -339,7 +365,55 @@ describe('createGatewayClient', () => {
       expect(parsedBody).toBeDefined()
       expect(parsedBody!.text).toBe('hello world')
       expect(parsedBody!.voice).toBe('af_heart')
+      expect(parsedBody!.speed).toBeUndefined()
       expect(requestHeaders).toEqual({ 'Content-Type': 'application/json' })
+    })
+
+    it('sends non-default speed and parses the applied-speed header', async () => {
+      const { createGatewayClient } = await importModule()
+      let parsedBody: Record<string, unknown> | undefined
+
+      globalThis.fetch = mock(
+        async (_input: string | globalThis.URL | Request, init?: RequestInit) => {
+          parsedBody = JSON.parse(init?.body as string)
+          return new Response(new ReadableStream(), {
+            status: 200,
+            headers: {
+              'content-type': 'audio/raw',
+              'x-tts-mode': 'stream-pcm',
+              'x-tts-speed-applied': '1.5',
+            },
+          })
+        },
+      ) as unknown as typeof globalThis.fetch
+
+      const result = await createGatewayClient('http://localhost:8000').speakStream(
+        'hello world',
+        'alba',
+        undefined,
+        1.5,
+      )
+
+      expect(parsedBody!.speed).toBe(1.5)
+      expect(result.speedApplied).toBe(1.5)
+    })
+
+    it('reports null speedApplied when the gateway omits the header', async () => {
+      const { createGatewayClient } = await importModule()
+
+      globalThis.fetch = mock(
+        async () =>
+          new Response(new ReadableStream(), {
+            status: 200,
+            headers: {
+              'content-type': 'audio/raw',
+              'x-tts-mode': 'stream-pcm',
+            },
+          }),
+      ) as unknown as typeof globalThis.fetch
+
+      const result = await createGatewayClient('http://localhost:8000').speakStream('hello')
+      expect(result.speedApplied).toBeNull()
     })
 
     it('prefers /tts/stream/pcm by default', async () => {

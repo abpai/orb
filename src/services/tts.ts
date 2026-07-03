@@ -25,6 +25,15 @@ export interface StreamSession {
   readonly wasKilled: boolean
 }
 
+export interface PlaybackSink {
+  writeStream(stream: ReadableStream<Uint8Array>): Promise<void>
+  finish(): Promise<void>
+  kill: () => void
+  pause: () => void
+  resume: () => void
+  readonly wasKilled: boolean
+}
+
 export function createStreamSession(
   audioStream: ReadableStream<Uint8Array>,
   speed: number,
@@ -90,6 +99,137 @@ export function createStreamSession(
 
   return {
     done,
+    kill() {
+      killed = true
+      activeReader?.cancel().catch(() => {})
+      proc?.kill()
+    },
+    pause() {
+      if (killed || !proc) return
+      proc.pause()
+    },
+    resume() {
+      if (killed || !proc) return
+      proc.resume()
+    },
+    get wasKilled() {
+      return killed
+    },
+  }
+}
+
+export function createPlaybackSink(
+  speed: number,
+  format: StreamAudioFormat,
+  gate: PlaybackGate = playbackGate,
+): PlaybackSink {
+  let killed = false
+  let finished = false
+  let proc: PlayerProcess | null = null
+  let activeReader: ReturnType<ReadableStream<Uint8Array>['getReader']> | null = null
+  let exitCode: number | null = null
+  let exitError: unknown = null
+
+  const player = detectPlayer()
+  const controlVersion = gate.snapshotVersion()
+
+  async function ensureStarted(): Promise<PlayerProcess | null> {
+    if (proc) return proc
+    if (!(await gate.waitUntilReady(controlVersion)) || killed) return null
+
+    proc = player.spawn(speed, format)
+    void proc.exited
+      .then((code) => {
+        exitCode = code
+      })
+      .catch((err) => {
+        exitError = err
+      })
+    return proc
+  }
+
+  function throwIfExited(): void {
+    if (exitError) {
+      const message = exitError instanceof Error ? exitError.message : String(exitError)
+      const original = exitError instanceof Error ? exitError : undefined
+      throw new TTSError(message, 'audio_playback', original)
+    }
+    if (exitCode !== null && !killed) {
+      throw new TTSError(`Player exited with code ${exitCode}`, 'audio_playback')
+    }
+  }
+
+  async function writeStream(stream: ReadableStream<Uint8Array>): Promise<void> {
+    if (finished) {
+      throw new TTSError('Playback sink already finished', 'audio_playback')
+    }
+
+    const started = await ensureStarted()
+    if (!started) return
+
+    const writer = started.writer
+    const reader = stream.getReader()
+    activeReader = reader
+
+    try {
+      while (true) {
+        throwIfExited()
+        if (gate.isPaused() || controlVersion !== gate.snapshotVersion()) {
+          if (!(await gate.waitUntilReady(controlVersion))) break
+        }
+        if (killed) break
+        const { done: readerDone, value } = await reader.read()
+        if (readerDone || killed) break
+        try {
+          writer.write(value)
+        } catch (err) {
+          if (!killed) {
+            const original = err instanceof Error ? err : undefined
+            throw new TTSError('Player pipe closed during playback', 'audio_playback', original)
+          }
+          break
+        }
+      }
+      throwIfExited()
+    } catch (err) {
+      if (!killed) throw err
+    } finally {
+      try {
+        reader.releaseLock()
+      } catch {
+        // Bun can throw here for delayed fetch response bodies even after a
+        // successful read loop; cleanup should not fail playback completion.
+      }
+      activeReader = null
+    }
+  }
+
+  async function finish(): Promise<void> {
+    if (finished) return
+    finished = true
+
+    const started = await ensureStarted()
+    if (!started) return
+
+    try {
+      started.writer.end()
+    } catch {
+      /* pipe may already be closed */
+    }
+
+    const code = await started.exited
+    exitCode = code
+    await started.cleanup?.()
+    proc = null
+
+    if (code !== 0 && !killed) {
+      throw new TTSError(`Player exited with code ${code}`, 'audio_playback')
+    }
+  }
+
+  return {
+    writeStream,
+    finish,
     kill() {
       killed = true
       activeReader?.cancel().catch(() => {})

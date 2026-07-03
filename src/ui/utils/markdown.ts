@@ -43,7 +43,7 @@ function replaceDelimited(
   input: string,
   openDelimiter: string,
   closeDelimiter: string,
-  replacement: string,
+  replacement: string | ((content: string, closed: boolean) => string),
 ): string {
   let result = ''
   let cursor = 0
@@ -57,10 +57,14 @@ function replaceDelimited(
 
     const searchFrom = start + openDelimiter.length
     const end = input.indexOf(closeDelimiter, searchFrom)
+    const closed = end !== -1
+    const content = closed ? input.slice(searchFrom, end) : input.slice(searchFrom)
+    const nextReplacement =
+      typeof replacement === 'function' ? replacement(content, closed) : replacement
 
-    result += input.slice(cursor, start) + replacement
+    result += input.slice(cursor, start) + nextReplacement
 
-    if (end === -1) {
+    if (!closed) {
       result += input.slice(searchFrom)
       break
     }
@@ -78,7 +82,9 @@ function replaceDelimited(
  */
 export function cleanTextForSpeech(text: string): string {
   const withoutCodeBlocks = replaceDelimited(text, '```', '```', ' code block ')
-  const withoutInlineCode = replaceDelimited(withoutCodeBlocks, '`', '`', ' code ')
+  const withoutInlineCode = replaceDelimited(withoutCodeBlocks, '`', '`', (content, closed) =>
+    closed && content.length <= 40 ? ` ${content} ` : ' code ',
+  )
 
   return withoutInlineCode
     .split('\n')

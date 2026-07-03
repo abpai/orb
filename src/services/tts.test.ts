@@ -326,6 +326,113 @@ describe('playAudio', () => {
   })
 })
 
+describe('createPlaybackSink', () => {
+  const originalSpawn = Bun.spawn
+  const originalWhich = Bun.which
+
+  afterEach(async () => {
+    mock.restore()
+    Bun.spawn = originalSpawn
+    Bun.which = originalWhich
+    await resetAudioState()
+  })
+
+  function streamFrom(chunks: Uint8Array[]): ReadableStream<Uint8Array> {
+    return new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(chunk)
+        controller.close()
+      },
+    })
+  }
+
+  it('reuses one player process and finishes only after stdin end plus process exit', async () => {
+    const written: Uint8Array[] = []
+    const spawnCalls: Array<{ speed: number; format: unknown }> = []
+    let stdinEnded = false
+    let resolveExited: (code: number) => void
+
+    const { createPlaybackSink } = await importModule()
+
+    Bun.which = mock(() => '/usr/local/bin/mpv') as unknown as typeof Bun.which
+    Bun.spawn = mock((cmd: string[]) => {
+      spawnCalls.push({
+        speed: cmd.includes('--speed=1.25') ? 1.25 : 1,
+        format: cmd,
+      })
+      return {
+        stdin: {
+          write(data: Uint8Array) {
+            written.push(new Uint8Array(data))
+          },
+          end() {
+            stdinEnded = true
+          },
+        },
+        exited: new Promise<number>((resolve) => {
+          resolveExited = resolve
+        }),
+        kill() {},
+      } as unknown as Bun.Subprocess
+    }) as unknown as typeof Bun.spawn
+
+    const sink = createPlaybackSink(1.25, {
+      kind: 'raw-pcm',
+      sampleRate: 24000,
+      channels: 1,
+      sampleWidth: 2,
+      pcmFormat: 's16le',
+    })
+
+    await sink.writeStream(streamFrom([new Uint8Array([1, 2])]))
+    await sink.writeStream(streamFrom([new Uint8Array([3, 4])]))
+
+    let finished = false
+    const finish = sink.finish().then(() => {
+      finished = true
+    })
+    await flushMicrotasks()
+
+    expect(spawnCalls).toHaveLength(1)
+    expect(spawnCalls[0]!.speed).toBe(1.25)
+    expect(written).toEqual([new Uint8Array([1, 2]), new Uint8Array([3, 4])])
+    expect(stdinEnded).toBe(true)
+    expect(finished).toBe(false)
+
+    resolveExited!(0)
+    await finish
+    expect(finished).toBe(true)
+  })
+
+  it('kills the active player and tolerates pause/resume calls', async () => {
+    let killed = false
+
+    const { createPlaybackSink } = await importModule()
+
+    Bun.which = mock(() => '/usr/local/bin/mpv') as unknown as typeof Bun.which
+    Bun.spawn = mock(
+      () =>
+        ({
+          stdin: { write() {}, end() {} },
+          exited: new Promise<number>(() => {}),
+          kill() {
+            killed = true
+          },
+        }) as unknown as Bun.Subprocess,
+    ) as unknown as typeof Bun.spawn
+
+    const sink = createPlaybackSink(1, { kind: 'encoded' })
+    await sink.writeStream(streamFrom([]))
+
+    sink.pause()
+    sink.resume()
+    sink.kill()
+
+    expect(killed).toBe(true)
+    expect(sink.wasKilled).toBe(true)
+  })
+})
+
 describe('createStreamSession', () => {
   const originalSpawn = Bun.spawn
   const originalWhich = Bun.which

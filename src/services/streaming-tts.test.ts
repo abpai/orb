@@ -57,6 +57,27 @@ function emptyStreamResponse(): Response {
   return new Response(stream, { status: 200 })
 }
 
+function pcmStreamResponse(headers: Record<string, string> = {}): Response {
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new Uint8Array([1, 2, 3]))
+      controller.close()
+    },
+  })
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      'content-type': 'audio/raw',
+      'x-tts-mode': 'stream-pcm',
+      'x-tts-sample-rate': '24000',
+      'x-tts-channels': '1',
+      'x-tts-sample-width': '2',
+      'x-tts-pcm-format': 's16le',
+      ...headers,
+    },
+  })
+}
+
 function createTestConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
     ...DEFAULT_CONFIG,
@@ -134,6 +155,41 @@ describe('createStreamingSpeechController', () => {
 
       expect(requests).toEqual(['First. Second.', 'Third. Fourth.'])
     })
+
+    it('starts playback immediately when one sentence is ready below the batch cap', async () => {
+      const requests: string[] = []
+      globalThis.fetch = mock(
+        async (_url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+          const body = typeof init?.body === 'string' ? init.body : ''
+          requests.push(body ? (JSON.parse(body).text as string) : '')
+          return emptyStreamResponse()
+        },
+      ) as unknown as typeof globalThis.fetch
+
+      Bun.which = mock(() => '/usr/local/bin/mpv') as unknown as typeof Bun.which
+      Bun.spawn = mock(
+        () =>
+          ({
+            stdin: { write() {}, end() {} },
+            exited: Promise.resolve(0),
+            kill() {},
+          }) as unknown as Bun.Subprocess,
+      ) as unknown as typeof Bun.spawn
+
+      const controller = createStreamingSpeechController(
+        createTestConfig({
+          ttsBufferSentences: 3,
+          ttsMinChunkLength: 0,
+          ttsMaxWaitMs: 0,
+        }),
+      )
+
+      controller.feedText('Ready now.')
+
+      await waitFor(() => requests.length === 1)
+      expect(requests).toEqual(['Ready now.'])
+      controller.stop()
+    })
   })
 
   describe('stream format handoff', () => {
@@ -161,11 +217,19 @@ describe('createStreamingSpeechController', () => {
       Bun.which = mock(() => '/usr/local/bin/mpv') as unknown as typeof Bun.which
 
       const spawnCalls: string[][] = []
+      let resolveExited: (code: number) => void
       Bun.spawn = mock((cmd: string[]) => {
         spawnCalls.push(cmd)
         return {
-          stdin: { write() {}, end() {} },
-          exited: Promise.resolve(0),
+          stdin: {
+            write() {},
+            end() {
+              resolveExited!(0)
+            },
+          },
+          exited: new Promise<number>((resolve) => {
+            resolveExited = resolve
+          }),
           kill() {},
         } as unknown as Bun.Subprocess
       }) as unknown as typeof Bun.spawn
@@ -186,6 +250,243 @@ describe('createStreamingSpeechController', () => {
       expect(spawnCalls[0]).toContain('--demuxer-rawaudio-rate=24000')
       expect(spawnCalls[0]).toContain('--demuxer-rawaudio-channels=1')
       expect(spawnCalls[0]).toContain('--demuxer-rawaudio-format=s16le')
+    })
+
+    it('reuses one PCM player process across two batches and drains it at completion', async () => {
+      globalThis.fetch = mock(async () => pcmStreamResponse()) as unknown as typeof globalThis.fetch
+      Bun.which = mock(() => '/usr/local/bin/mpv') as unknown as typeof Bun.which
+
+      const spawnCalls: string[][] = []
+      let stdinEnded = false
+      let resolveExited: (code: number) => void
+      Bun.spawn = mock((cmd: string[]) => {
+        spawnCalls.push(cmd)
+        return {
+          stdin: {
+            write() {},
+            end() {
+              stdinEnded = true
+            },
+          },
+          exited: new Promise<number>((resolve) => {
+            resolveExited = resolve
+          }),
+          kill() {},
+        } as unknown as Bun.Subprocess
+      }) as unknown as typeof Bun.spawn
+
+      const controller = createStreamingSpeechController(
+        createTestConfig({
+          ttsBufferSentences: 1,
+          ttsMinChunkLength: 0,
+          ttsMaxWaitMs: 0,
+        }),
+      )
+
+      controller.feedText('Alpha. Beta.')
+      controller.finalize()
+
+      await waitFor(() => stdinEnded)
+      expect(spawnCalls).toHaveLength(1)
+
+      resolveExited!(0)
+      await controller.waitForCompletion()
+    })
+
+    it('keeps encoded streaming playback on per-batch player sessions', async () => {
+      globalThis.fetch = mock(async () =>
+        emptyStreamResponse(),
+      ) as unknown as typeof globalThis.fetch
+      Bun.which = mock(() => '/usr/local/bin/mpv') as unknown as typeof Bun.which
+
+      const spawnCalls: string[][] = []
+      Bun.spawn = mock((cmd: string[]) => {
+        spawnCalls.push(cmd)
+        return {
+          stdin: { write() {}, end() {} },
+          exited: Promise.resolve(0),
+          kill() {},
+        } as unknown as Bun.Subprocess
+      }) as unknown as typeof Bun.spawn
+
+      const controller = createStreamingSpeechController(
+        createTestConfig({
+          ttsBufferSentences: 1,
+          ttsMinChunkLength: 0,
+          ttsMaxWaitMs: 0,
+        }),
+      )
+
+      controller.feedText('Alpha. Beta.')
+      controller.finalize()
+      await controller.waitForCompletion()
+
+      expect(spawnCalls).toHaveLength(2)
+    })
+
+    it('uses player speed 1 when the gateway applied the requested speed', async () => {
+      globalThis.fetch = mock(async () =>
+        pcmStreamResponse({ 'x-tts-speed-applied': '1.5' }),
+      ) as unknown as typeof globalThis.fetch
+      Bun.which = mock(() => '/usr/local/bin/mpv') as unknown as typeof Bun.which
+
+      let spawnedCmd: string[] = []
+      let resolveExited: (code: number) => void
+      Bun.spawn = mock((cmd: string[]) => {
+        spawnedCmd = cmd
+        return {
+          stdin: {
+            write() {},
+            end() {
+              resolveExited!(0)
+            },
+          },
+          exited: new Promise<number>((resolve) => {
+            resolveExited = resolve
+          }),
+          kill() {},
+        } as unknown as Bun.Subprocess
+      }) as unknown as typeof Bun.spawn
+
+      const controller = createStreamingSpeechController(
+        createTestConfig({
+          ttsSpeed: 1.5,
+          ttsMinChunkLength: 0,
+          ttsMaxWaitMs: 0,
+        }),
+      )
+
+      controller.feedText('Hello world.')
+      controller.finalize()
+      await controller.waitForCompletion()
+
+      expect(spawnedCmd).not.toContain('--speed=1.5')
+    })
+
+    it('keeps client-side player speed when the gateway does not apply it', async () => {
+      globalThis.fetch = mock(async () => pcmStreamResponse()) as unknown as typeof globalThis.fetch
+      Bun.which = mock(() => '/usr/local/bin/mpv') as unknown as typeof Bun.which
+
+      let spawnedCmd: string[] = []
+      let resolveExited: (code: number) => void
+      Bun.spawn = mock((cmd: string[]) => {
+        spawnedCmd = cmd
+        return {
+          stdin: {
+            write() {},
+            end() {
+              resolveExited!(0)
+            },
+          },
+          exited: new Promise<number>((resolve) => {
+            resolveExited = resolve
+          }),
+          kill() {},
+        } as unknown as Bun.Subprocess
+      }) as unknown as typeof Bun.spawn
+
+      const controller = createStreamingSpeechController(
+        createTestConfig({
+          ttsSpeed: 1.5,
+          ttsMinChunkLength: 0,
+          ttsMaxWaitMs: 0,
+        }),
+      )
+
+      controller.feedText('Hello world.')
+      controller.finalize()
+      await controller.waitForCompletion()
+
+      expect(spawnedCmd).toContain('--speed=1.5')
+    })
+
+    it('applies only the residual speed when the gateway clamped the request', async () => {
+      // Requested 3.0, gateway clamped to its max of 2.0: the player must make
+      // up only the remaining 1.5x, not re-apply the full 3.0x.
+      globalThis.fetch = mock(async () =>
+        pcmStreamResponse({ 'x-tts-speed-applied': '2' }),
+      ) as unknown as typeof globalThis.fetch
+      Bun.which = mock(() => '/usr/local/bin/mpv') as unknown as typeof Bun.which
+
+      let spawnedCmd: string[] = []
+      let resolveExited: (code: number) => void
+      Bun.spawn = mock((cmd: string[]) => {
+        spawnedCmd = cmd
+        return {
+          stdin: {
+            write() {},
+            end() {
+              resolveExited!(0)
+            },
+          },
+          exited: new Promise<number>((resolve) => {
+            resolveExited = resolve
+          }),
+          kill() {},
+        } as unknown as Bun.Subprocess
+      }) as unknown as typeof Bun.spawn
+
+      const controller = createStreamingSpeechController(
+        createTestConfig({
+          ttsSpeed: 3.0,
+          ttsMinChunkLength: 0,
+          ttsMaxWaitMs: 0,
+        }),
+      )
+
+      controller.feedText('Hello world.')
+      controller.finalize()
+      await controller.waitForCompletion()
+
+      expect(spawnedCmd).toContain('--speed=1.5')
+      expect(spawnedCmd).not.toContain('--speed=3')
+    })
+
+    it('kills the PCM sink on stop', async () => {
+      globalThis.fetch = mock(
+        async () =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(new Uint8Array([1, 2, 3]))
+              },
+            }),
+            {
+              status: 200,
+              headers: {
+                'content-type': 'audio/raw',
+                'x-tts-mode': 'stream-pcm',
+              },
+            },
+          ),
+      ) as unknown as typeof globalThis.fetch
+      Bun.which = mock(() => '/usr/local/bin/mpv') as unknown as typeof Bun.which
+
+      let killed = false
+      let spawnCount = 0
+      Bun.spawn = mock(() => {
+        spawnCount += 1
+        return {
+          stdin: { write() {}, end() {} },
+          exited: new Promise<number>(() => {}),
+          kill() {
+            killed = true
+          },
+        } as unknown as Bun.Subprocess
+      }) as unknown as typeof Bun.spawn
+
+      const controller = createStreamingSpeechController(
+        createTestConfig({
+          ttsMinChunkLength: 0,
+          ttsMaxWaitMs: 0,
+        }),
+      )
+
+      controller.feedText('Hello world.')
+      await waitFor(() => spawnCount === 1)
+
+      controller.stop()
+      expect(killed).toBe(true)
     })
   })
 
@@ -430,6 +731,65 @@ describe('createStreamingSpeechController', () => {
       await controller.waitForCompletion()
 
       controller.stop()
+    })
+
+    it('claims prefetched text so later queue growth cannot duplicate requests', async () => {
+      const deferreds: Array<{
+        resolve: (r: Response) => void
+        text: string
+      }> = []
+
+      globalThis.fetch = mock(
+        (_url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+          const body = typeof init?.body === 'string' ? init.body : ''
+          const text = body ? (JSON.parse(body).text as string) : ''
+          const { promise, resolve } = Promise.withResolvers<Response>()
+          deferreds.push({ resolve, text })
+          return promise
+        },
+      ) as unknown as typeof globalThis.fetch
+
+      Bun.which = mock(() => '/usr/local/bin/mpv') as unknown as typeof Bun.which
+      Bun.spawn = mock(
+        () =>
+          ({
+            stdin: { write() {}, end() {} },
+            exited: Promise.resolve(0),
+            kill() {},
+          }) as unknown as Bun.Subprocess,
+      ) as unknown as typeof Bun.spawn
+
+      const controller = createStreamingSpeechController(
+        createTestConfig({
+          ttsBufferSentences: 1,
+          ttsMinChunkLength: 0,
+          ttsMaxWaitMs: 0,
+        }),
+      )
+
+      controller.feedText('Alpha. ')
+      await waitFor(() => deferreds.length === 1)
+      controller.feedText('Beta. ')
+      controller.feedText('Gamma. ')
+      deferreds[0]!.resolve(emptyStreamResponse())
+
+      await waitFor(() => deferreds.length === 2)
+      expect(deferreds[1]!.text).toBe('Beta.')
+
+      controller.feedText('Delta. ')
+      deferreds[1]!.resolve(emptyStreamResponse())
+
+      await waitFor(() => deferreds.length === 3)
+      expect(deferreds[2]!.text).toBe('Gamma.')
+      deferreds[2]!.resolve(emptyStreamResponse())
+
+      controller.finalize()
+      await waitFor(() => deferreds.length === 4)
+      expect(deferreds[3]!.text).toBe('Delta.')
+      deferreds[3]!.resolve(emptyStreamResponse())
+
+      await controller.waitForCompletion()
+      expect(deferreds.map(({ text }) => text)).toEqual(['Alpha.', 'Beta.', 'Gamma.', 'Delta.'])
     })
   })
 })
