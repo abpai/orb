@@ -189,29 +189,47 @@ function resultText(value: unknown): string {
 export function createCursorStreamMapper() {
   const tools = createToolFrameTracker()
   let accumulatedText = ''
+  // A turn can contain several assistant messages (status text between tool
+  // calls, then the answer). Partials are relative to the *current message*,
+  // not the whole turn, so dedup must track the message separately from the
+  // turn-wide accumulated text — otherwise every message after the first fails
+  // the prefix check and its full snapshot gets re-emitted (spoken/shown twice).
+  let messageText = ''
+  let messageComplete = false
   let latestSessionId: string | undefined
 
   function appendText(text: string): Frame[] {
     if (!text) return []
 
-    let delta = text
-    let next = accumulatedText + text
-
-    if (text === accumulatedText) {
-      delta = ''
-      next = accumulatedText
-    } else if (text.startsWith(accumulatedText)) {
-      delta = text.slice(accumulatedText.length)
-      next = text
-    }
-
-    if (!delta) {
-      accumulatedText = next
+    let delta: string
+    if (messageComplete) {
+      // A repeated snapshot of the message that just closed — drop it.
+      if (text === messageText) return []
+      // Previous message closed (full snapshot seen or a tool call ran): this
+      // text starts a new assistant message.
+      delta = (accumulatedText ? '\n\n' : '') + text
+      messageText = text
+      messageComplete = false
+    } else if (text === messageText) {
+      // Final full-message snapshot after its partials: already emitted.
+      messageComplete = true
       return []
+    } else if (text.startsWith(messageText)) {
+      // Cumulative partial (or first chunk) extending the current message.
+      delta = text.slice(messageText.length)
+      messageText = text
+    } else {
+      // Plain delta continuing the current message.
+      delta = text
+      messageText += text
     }
 
-    accumulatedText = next
+    accumulatedText += delta
     return [createFrame('agent-text-delta', { delta, accumulatedText })]
+  }
+
+  function endMessage(): void {
+    if (messageText) messageComplete = true
   }
 
   function sessionFrame(sessionId: string | undefined): Frame[] {
@@ -246,6 +264,9 @@ export function createCursorStreamMapper() {
       }
 
       if (type === 'tool_call') {
+        // A tool call ends the assistant message that preceded it, even when
+        // no final full-message snapshot arrived.
+        endMessage()
         const tool = describeCursorTool(event)
         if (!tool) return { frames }
 
