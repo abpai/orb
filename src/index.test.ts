@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it, mock } from 'bun:test'
 
 import { ORB_VERSION } from './config'
 import { DEFAULT_CONFIG, type SavedSession } from './types'
@@ -6,6 +6,10 @@ import { DEFAULT_CONFIG, type SavedSession } from './types'
 async function importIndex() {
   return await import('./index')
 }
+
+afterEach(() => {
+  mock.restore()
+})
 
 describe('run', () => {
   it('handles --version before loading config or rendering the app', async () => {
@@ -37,6 +41,30 @@ describe('run', () => {
         value: originalWrite,
         configurable: true,
       })
+    }
+  })
+
+  it('fires gateway warmup without awaiting or surfacing rejection', async () => {
+    const originalFetch = globalThis.fetch
+    const requests: string[] = []
+    globalThis.fetch = mock(async (input: string | URL | Request) => {
+      requests.push(typeof input === 'string' ? input : input.toString())
+      throw new Error('still cold')
+    }) as unknown as typeof globalThis.fetch
+
+    try {
+      const { warmGatewayForStartup } = await importIndex()
+      warmGatewayForStartup({
+        ...DEFAULT_CONFIG,
+        ttsEnabled: true,
+        ttsMode: 'serve',
+        ttsServerUrl: 'http://localhost:8000',
+      })
+
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(requests).toEqual(['http://localhost:8000/warmup'])
+    } finally {
+      globalThis.fetch = originalFetch
     }
   })
 })

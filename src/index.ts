@@ -6,11 +6,22 @@ import { relaunchOrb } from './services/relaunch'
 import { runSessionsCommand } from './sessions-cli'
 import { runSetupCommand } from './setup'
 import { resolveRuntimeConfig } from './services/runtime-config'
+import { createGatewayClient, DEFAULT_SERVER_URL } from './services/gateway-client'
+import type { AppConfig } from './types'
 
 export { App } from './ui/App'
 export { parseCliArgs, DEFAULT_CONFIG } from './config'
 export type { AnthropicModel, AppConfig, LlmModelId, LlmProvider, Voice } from './types'
 export { createInitialSession } from './services/runtime-config'
+
+export function warmGatewayForStartup(config: AppConfig): void {
+  if (!config.ttsEnabled || config.ttsMode !== 'serve') return
+
+  const signal = AbortSignal.timeout(3000)
+  void createGatewayClient(config.ttsServerUrl ?? DEFAULT_SERVER_URL)
+    .warmup(signal)
+    .catch(() => {})
+}
 
 function shouldHandleMetaFlag(args: string[]): boolean {
   return (
@@ -43,6 +54,8 @@ export async function run(args: string[]): Promise<void> {
   }
 
   const { config, initialSession, orbSessionId, resumeInfo } = result
+  warmGatewayForStartup(config)
+
   const instance = render(
     React.createElement(App, {
       config,

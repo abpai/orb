@@ -6,6 +6,7 @@ export const DEFAULT_SERVER_URL = 'http://localhost:8000'
 const DEFAULT_SPEECH_PATH = '/v1/speech'
 const DEFAULT_STREAM_PATH = '/tts/stream'
 const DEFAULT_STREAM_PCM_PATH = '/tts/stream/pcm'
+const DEFAULT_WARMUP_PATH = '/warmup'
 const GATEWAY_VOICE_BY_ORB_VOICE: Record<string, string> = {
   alba: 'af_heart',
   marius: 'am_michael',
@@ -31,6 +32,7 @@ export type GatewayStreamFormat = { kind: 'encoded'; contentType: string } | Gat
 export interface GatewayStreamResult {
   stream: ReadableStream<Uint8Array>
   format: GatewayStreamFormat
+  speedApplied: number | null
 }
 
 function parseUrl(rawUrl: string): URL {
@@ -70,16 +72,37 @@ function resolvePcmStreamUrl(rawUrl: string): string | null {
   return null
 }
 
+function resolveWarmupUrl(rawUrl: string): string | null {
+  const url = parseUrl(rawUrl)
+  const normalizedPath = url.pathname.replace(/\/+$/, '') || '/'
+
+  if (
+    normalizedPath === '/' ||
+    normalizedPath === DEFAULT_SPEECH_PATH ||
+    normalizedPath === DEFAULT_STREAM_PATH ||
+    normalizedPath === DEFAULT_STREAM_PCM_PATH
+  ) {
+    url.pathname = DEFAULT_WARMUP_PATH
+    return url.toString()
+  }
+
+  return null
+}
+
 interface SpeechPayload {
   text: string
   voice?: string
+  speed?: number
 }
 
-function buildJsonPayload(text: string, voice?: string): SpeechPayload {
+function buildJsonPayload(text: string, voice?: string, speed?: number): SpeechPayload {
   const gatewayVoice = resolveGatewayVoice(voice)
   const payload: SpeechPayload = { text }
   if (gatewayVoice) {
     payload.voice = gatewayVoice
+  }
+  if (typeof speed === 'number' && Number.isFinite(speed) && speed !== 1) {
+    payload.speed = speed
   }
   return payload
 }
@@ -202,6 +225,13 @@ function parsePositiveIntHeader(headers: Headers, name: string, fallback: number
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
+function parseOptionalNumberHeader(headers: Headers, name: string): number | null {
+  const rawValue = headers.get(name)
+  if (!rawValue) return null
+  const parsed = Number.parseFloat(rawValue)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 function parseStreamResult(response: Response): GatewayStreamResult {
   if (!response.body) {
     throw new TTSError('Server returned no stream body', 'generation_failed')
@@ -209,9 +239,11 @@ function parseStreamResult(response: Response): GatewayStreamResult {
 
   const contentType = response.headers.get('content-type') ?? 'audio/mpeg'
   const mode = response.headers.get('x-tts-mode')
+  const speedApplied = parseOptionalNumberHeader(response.headers, 'x-tts-speed-applied')
   if (mode === 'stream-pcm' || contentType.toLowerCase().startsWith('audio/raw')) {
     return {
       stream: response.body,
+      speedApplied,
       format: {
         kind: 'raw-pcm',
         contentType,
@@ -223,7 +255,7 @@ function parseStreamResult(response: Response): GatewayStreamResult {
     }
   }
 
-  return { stream: response.body, format: { kind: 'encoded', contentType } }
+  return { stream: response.body, format: { kind: 'encoded', contentType }, speedApplied }
 }
 
 const unsupportedPcmStreamUrls = new Set<string>()
@@ -236,6 +268,7 @@ export function createGatewayClient(baseUrl: string) {
   const syncUrl = resolveUrl(baseUrl, DEFAULT_SPEECH_PATH)
   const streamUrl = resolveUrl(baseUrl, DEFAULT_STREAM_PATH)
   const streamPcmUrl = resolvePcmStreamUrl(baseUrl)
+  const warmupUrl = resolveWarmupUrl(baseUrl)
 
   function postForm(url: string) {
     return (payload: globalThis.FormData, signal?: AbortSignal): Promise<Response> =>
@@ -278,12 +311,15 @@ export function createGatewayClient(baseUrl: string) {
       text: string,
       voice?: string,
       signal?: AbortSignal,
+      speed?: number,
     ): Promise<GatewayStreamResult> {
+      const buildStreamPayload = (payloadText: string, payloadVoice?: string): SpeechPayload =>
+        buildJsonPayload(payloadText, payloadVoice, speed)
       const pcmUrl = streamPcmUrl
       if (postStreamPcm && pcmUrl && !unsupportedPcmStreamUrls.has(pcmUrl)) {
         const pcmResponse = await handleVoiceRetry(
           postStreamPcm,
-          buildJsonPayload,
+          buildStreamPayload,
           text,
           voice,
           signal,
@@ -301,8 +337,18 @@ export function createGatewayClient(baseUrl: string) {
         await discardResponse(pcmResponse)
       }
 
-      const response = await handleVoiceRetry(postStream, buildJsonPayload, text, voice, signal)
+      const response = await handleVoiceRetry(postStream, buildStreamPayload, text, voice, signal)
       return parseStreamResult(response)
+    },
+
+    async warmup(signal?: AbortSignal): Promise<void> {
+      if (!warmupUrl) return
+      try {
+        const response = await fetch(warmupUrl, { method: 'POST', signal })
+        await response.body?.cancel().catch(() => {})
+      } catch {
+        // Warmup must never affect the main app startup path.
+      }
     },
   }
 }

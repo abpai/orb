@@ -8,14 +8,19 @@ describe('cleanTextForSpeech', () => {
       expect(cleanTextForSpeech(input)).toBe('Here is some code: code block End.')
     })
 
-    it('replaces inline code with placeholder', () => {
+    it('speaks short inline code literally', () => {
       const input = 'Use `useState` for state'
-      expect(cleanTextForSpeech(input)).toBe('Use code for state')
+      expect(cleanTextForSpeech(input)).toBe('Use useState for state')
     })
 
-    it('handles multiple inline codes', () => {
+    it('handles multiple short inline codes', () => {
       const input = 'Use `foo` and `bar` together'
-      expect(cleanTextForSpeech(input)).toBe('Use code and code together')
+      expect(cleanTextForSpeech(input)).toBe('Use foo and bar together')
+    })
+
+    it('keeps long inline code as a placeholder', () => {
+      const input = 'Use `const value = await client.doSomethingComplicated()` carefully'
+      expect(cleanTextForSpeech(input)).toBe('Use code carefully')
     })
   })
 
@@ -55,7 +60,7 @@ describe('cleanTextForSpeech', () => {
 
     it('handles empty content between delimiters', () => {
       const input = 'Empty `` code'
-      expect(cleanTextForSpeech(input)).toBe('Empty code code')
+      expect(cleanTextForSpeech(input)).toBe('Empty code')
     })
 
     it('handles empty code block', () => {

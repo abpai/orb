@@ -98,6 +98,7 @@ export interface AppConfig {
   ttsSpeed: number
   ttsEnabled: boolean
   ttsStreamingEnabled: boolean
+  /** Maximum sentences per streaming synthesis request when queued text backs up. */
   ttsBufferSentences: number
   ttsClauseBoundaries: boolean
   ttsMinChunkLength: number
