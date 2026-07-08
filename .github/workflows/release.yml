@@ -1,8 +1,11 @@
 name: Release
 
 # Automated npm releases via Changesets, authenticated with OIDC trusted
-# publishing. Configure a Trusted Publisher on npmjs.com for @andypai/orb using
-# this workflow file; no long-lived NPM_TOKEN secret is required.
+# publishing. Configure a Trusted Publisher on npmjs.com for @andypai/orb using:
+# owner/repo: abpai/orb
+# workflow: release.yml
+# environment: leave blank
+# No long-lived NPM_TOKEN secret is required.
 
 on:
   push:
