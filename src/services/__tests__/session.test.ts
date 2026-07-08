@@ -105,15 +105,17 @@ describe('session persistence', () => {
   it('keeps multiple sessions per project and loads the newest', async () => {
     const home = await tempHome()
     const projectPath = await tempProject()
+    const newerLastModified = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const olderLastModified = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
 
     await writeSessionFile(
-      makeSession(projectPath, { id: 'older', lastModified: '2026-01-01T00:00:00.000Z' }),
+      makeSession(projectPath, { id: 'older', lastModified: olderLastModified }),
       home,
     )
     await writeSessionFile(
       makeSession(projectPath, {
         id: 'newer',
-        lastModified: '2026-06-01T00:00:00.000Z',
+        lastModified: newerLastModified,
         history: [
           { id: 'e', question: 'newest question', toolCalls: [], answer: 'a', error: null },
         ],

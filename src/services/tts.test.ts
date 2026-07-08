@@ -404,6 +404,121 @@ describe('createPlaybackSink', () => {
     expect(finished).toBe(true)
   })
 
+  it('waits for player pipe backpressure before completing a stream write', async () => {
+    const written: Uint8Array[] = []
+    let writeCalls = 0
+    let resolvePendingWrite: ((bytes: number) => void) | null = null
+    let writeCompleted = false
+
+    const { createPlaybackSink } = await importModule()
+
+    Bun.which = mock(() => '/usr/local/bin/mpv') as unknown as typeof Bun.which
+    Bun.spawn = mock(() => {
+      return {
+        stdin: {
+          write(data: Uint8Array) {
+            writeCalls += 1
+            written.push(new Uint8Array(data))
+            if (writeCalls === 2) {
+              return new Promise<number>((resolve) => {
+                resolvePendingWrite = resolve
+              })
+            }
+            return data.byteLength
+          },
+          flush() {
+            return 0
+          },
+          end() {},
+        },
+        exited: new Promise<number>(() => {}),
+        kill() {},
+      } as unknown as Bun.Subprocess
+    }) as unknown as typeof Bun.spawn
+
+    const sink = createPlaybackSink(1, { kind: 'encoded' })
+    const write = sink
+      .writeStream(streamFrom([new Uint8Array([1]), new Uint8Array([2])]))
+      .then(() => {
+        writeCompleted = true
+      })
+
+    await flushMicrotasks()
+
+    expect(written).toEqual([new Uint8Array([1]), new Uint8Array([2])])
+    expect(writeCompleted).toBe(false)
+
+    resolvePendingWrite!(1)
+    await write
+
+    expect(writeCompleted).toBe(true)
+    sink.kill()
+  })
+
+  it('starts stalled raw PCM playback after the preroll timeout without losing chunks', async () => {
+    const written: Uint8Array[] = []
+    let spawned = false
+
+    const { createPlaybackSink } = await importModule()
+
+    Bun.which = mock(() => '/usr/local/bin/mpv') as unknown as typeof Bun.which
+    Bun.spawn = mock(() => {
+      spawned = true
+      return {
+        stdin: {
+          write(data: Uint8Array) {
+            written.push(new Uint8Array(data))
+            return data.byteLength
+          },
+          flush() {
+            return 0
+          },
+          end() {},
+        },
+        exited: new Promise<number>(() => {}),
+        kill() {},
+      } as unknown as Bun.Subprocess
+    }) as unknown as typeof Bun.spawn
+
+    const sink = createPlaybackSink(1, {
+      kind: 'raw-pcm',
+      sampleRate: 24000,
+      channels: 1,
+      sampleWidth: 2,
+      pcmFormat: 's16le',
+    })
+
+    let feed: ReadableStreamDefaultController<Uint8Array>
+    const stalledStream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        feed = controller
+        controller.enqueue(new Uint8Array(100)) // far below the 14400-byte preroll target
+      },
+    })
+
+    const write = sink.writeStream(stalledStream)
+
+    await flushMicrotasks()
+    expect(spawned).toBe(false)
+
+    const deadline = Date.now() + 5000
+    while (!spawned && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    }
+    expect(spawned).toBe(true)
+
+    // The read that was in flight when the preroll timed out must still be
+    // delivered to the player, not dropped.
+    feed!.enqueue(new Uint8Array([7, 8, 9]))
+    feed!.close()
+    await write
+
+    expect(written).toHaveLength(2)
+    expect(written[0]!.byteLength).toBe(100)
+    expect(written[1]).toEqual(new Uint8Array([7, 8, 9]))
+    sink.kill()
+  })
+
   it('kills the active player and tolerates pause/resume calls', async () => {
     let killed = false
 
