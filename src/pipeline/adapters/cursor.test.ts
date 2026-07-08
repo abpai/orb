@@ -241,7 +241,9 @@ describe('Cursor stream mapper', () => {
       ' is the answer.',
     ])
     expect(deltas.at(-1)).toEqual(
-      expect.objectContaining({ accumulatedText: 'Loading the transcript.\n\nHere is the answer.' }),
+      expect.objectContaining({
+        accumulatedText: 'Loading the transcript.\n\nHere is the answer.',
+      }),
     )
   })
 

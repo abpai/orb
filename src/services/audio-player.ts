@@ -20,8 +20,8 @@ interface PlayerConfig {
 
 export interface PlayerProcess {
   writer: {
-    write: (data: Uint8Array) => void
-    end: () => void
+    write: (data: Uint8Array) => Promise<void>
+    end: () => Promise<void>
   }
   exited: Promise<number>
   kill: () => void
@@ -42,6 +42,83 @@ export type StreamAudioFormat =
     }
 
 export const ENCODED_STREAM_AUDIO_FORMAT: StreamAudioFormat = { kind: 'encoded' }
+
+async function writeBunSink(sink: Bun.FileSink, data: Uint8Array): Promise<void> {
+  await sink.write(data)
+  if (typeof sink.flush === 'function') {
+    await sink.flush()
+  }
+}
+
+async function endBunSink(sink: Bun.FileSink): Promise<void> {
+  await sink.end()
+}
+
+function writeNodeWritable(stream: Writable, data: Uint8Array): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const canListen = typeof stream.once === 'function' && typeof stream.off === 'function'
+
+    const finish = (err?: Error | null) => {
+      if (settled) return
+      settled = true
+      if (canListen) {
+        stream.off('error', onError)
+        stream.off('drain', onDrain)
+      }
+      if (err) reject(err)
+      else resolve()
+    }
+
+    const onError = (err: Error) => finish(err)
+    const onDrain = () => finish()
+
+    try {
+      if (stream.write.length < 2) {
+        const ready = stream.write(data)
+        if (ready === false && canListen) {
+          stream.once('drain', onDrain)
+        } else {
+          finish()
+        }
+        return
+      }
+      if (canListen) stream.once('error', onError)
+      stream.write(data, finish)
+    } catch (err) {
+      finish(err instanceof Error ? err : new Error(String(err)))
+    }
+  })
+}
+
+function endNodeWritable(stream: Writable): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const canListen = typeof stream.once === 'function' && typeof stream.off === 'function'
+
+    const finish = (err?: Error | null) => {
+      if (settled) return
+      settled = true
+      if (canListen) stream.off('error', onError)
+      if (err) reject(err)
+      else resolve()
+    }
+
+    const onError = (err: Error) => finish(err)
+
+    try {
+      if (stream.end.length < 1) {
+        stream.end()
+        finish()
+        return
+      }
+      if (canListen) stream.once('error', onError)
+      stream.end(finish)
+    } catch (err) {
+      finish(err instanceof Error ? err : new Error(String(err)))
+    }
+  })
+}
 
 const PLAYERS: PlayerConfig[] = [
   { binary: 'mpv', spawn: spawnMpv },
@@ -176,11 +253,11 @@ function createFfplayProcess(args: string[]): PlayerProcess {
 
   return {
     writer: {
-      write(data: Uint8Array) {
-        audioWriter.write(data)
+      async write(data: Uint8Array) {
+        await writeNodeWritable(audioWriter, data)
       },
-      end() {
-        audioWriter.end()
+      async end() {
+        await endNodeWritable(audioWriter)
       },
     },
     exited: new Promise<number>((resolve, reject) => {
@@ -208,7 +285,14 @@ function createMpvProcess(args: string[], ipcSocket: string): PlayerProcess {
   })
 
   return {
-    writer: proc.stdin,
+    writer: {
+      async write(data: Uint8Array) {
+        await writeBunSink(proc.stdin, data)
+      },
+      async end() {
+        await endBunSink(proc.stdin)
+      },
+    },
     exited: proc.exited,
     kill() {
       proc.kill()

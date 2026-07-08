@@ -404,6 +404,57 @@ describe('createPlaybackSink', () => {
     expect(finished).toBe(true)
   })
 
+  it('waits for player pipe backpressure before completing a stream write', async () => {
+    const written: Uint8Array[] = []
+    let writeCalls = 0
+    let resolvePendingWrite: ((bytes: number) => void) | null = null
+    let writeCompleted = false
+
+    const { createPlaybackSink } = await importModule()
+
+    Bun.which = mock(() => '/usr/local/bin/mpv') as unknown as typeof Bun.which
+    Bun.spawn = mock(() => {
+      return {
+        stdin: {
+          write(data: Uint8Array) {
+            writeCalls += 1
+            written.push(new Uint8Array(data))
+            if (writeCalls === 2) {
+              return new Promise<number>((resolve) => {
+                resolvePendingWrite = resolve
+              })
+            }
+            return data.byteLength
+          },
+          flush() {
+            return 0
+          },
+          end() {},
+        },
+        exited: new Promise<number>(() => {}),
+        kill() {},
+      } as unknown as Bun.Subprocess
+    }) as unknown as typeof Bun.spawn
+
+    const sink = createPlaybackSink(1, { kind: 'encoded' })
+    const write = sink
+      .writeStream(streamFrom([new Uint8Array([1]), new Uint8Array([2])]))
+      .then(() => {
+        writeCompleted = true
+      })
+
+    await flushMicrotasks()
+
+    expect(written).toEqual([new Uint8Array([1]), new Uint8Array([2])])
+    expect(writeCompleted).toBe(false)
+
+    resolvePendingWrite!(1)
+    await write
+
+    expect(writeCompleted).toBe(true)
+    sink.kill()
+  })
+
   it('kills the active player and tolerates pause/resume calls', async () => {
     let killed = false
 

@@ -34,6 +34,40 @@ export interface PlaybackSink {
   readonly wasKilled: boolean
 }
 
+const RAW_PCM_PREROLL_MS = 300
+
+interface AudioStreamReader {
+  read(): Promise<{ done: boolean; value?: Uint8Array }>
+  cancel(reason?: unknown): Promise<void>
+  releaseLock(): void
+}
+
+function getRawPcmPrerollBytes(format: StreamAudioFormat): number {
+  if (format.kind !== 'raw-pcm') return 0
+  return Math.ceil(
+    (format.sampleRate * format.channels * format.sampleWidth * RAW_PCM_PREROLL_MS) / 1000,
+  )
+}
+
+async function readPrerollChunks(
+  reader: AudioStreamReader,
+  format: StreamAudioFormat,
+  shouldStop: () => boolean,
+): Promise<{ chunks: Uint8Array[]; done: boolean }> {
+  const targetBytes = getRawPcmPrerollBytes(format)
+  const chunks: Uint8Array[] = []
+  let bufferedBytes = 0
+
+  while (!shouldStop() && bufferedBytes < targetBytes) {
+    const { done, value } = await reader.read()
+    if (done || !value) return { chunks, done: true }
+    chunks.push(value)
+    bufferedBytes += value.byteLength
+  }
+
+  return { chunks, done: false }
+}
+
 export function createStreamSession(
   audioStream: ReadableStream<Uint8Array>,
   speed: number,
@@ -42,7 +76,7 @@ export function createStreamSession(
 ): StreamSession {
   let killed = false
   let proc: PlayerProcess | null = null
-  let activeReader: ReturnType<ReadableStream<Uint8Array>['getReader']> | null = null
+  let activeReader: AudioStreamReader | null = null
 
   const player = detectPlayer()
 
@@ -52,21 +86,35 @@ export function createStreamSession(
       return
     }
 
-    proc = player.spawn(speed, format)
-    const writer = proc.writer
     const reader = audioStream.getReader()
     activeReader = reader
+    let streamEnded = false
 
     try {
-      while (true) {
+      const preroll = await readPrerollChunks(reader, format, () => killed)
+      streamEnded = preroll.done
+
+      if (gate.isPaused() || controlVersion !== gate.snapshotVersion()) {
+        if (!(await gate.waitUntilReady(controlVersion))) return
+      }
+      if (killed) return
+
+      proc = player.spawn(speed, format)
+      const writer = proc.writer
+
+      for (const chunk of preroll.chunks) {
+        await writer.write(chunk)
+      }
+
+      while (!streamEnded) {
         if (gate.isPaused() || controlVersion !== gate.snapshotVersion()) {
           if (!(await gate.waitUntilReady(controlVersion))) break
         }
         if (killed) break
         const { done: readerDone, value } = await reader.read()
-        if (readerDone || killed) break
+        if (readerDone || killed || !value) break
         try {
-          writer.write(value)
+          await writer.write(value)
         } catch {
           break // Pipe broken (player exited); fall through to exit-code check
         }
@@ -82,11 +130,13 @@ export function createStreamSession(
       }
       activeReader = null
       try {
-        writer.end()
+        await proc?.writer.end()
       } catch {
         /* pipe may already be closed */
       }
     }
+
+    if (!proc) return
 
     const exitCode = await proc.exited
     await proc.cleanup?.()
@@ -126,7 +176,7 @@ export function createPlaybackSink(
   let killed = false
   let finished = false
   let proc: PlayerProcess | null = null
-  let activeReader: ReturnType<ReadableStream<Uint8Array>['getReader']> | null = null
+  let activeReader: AudioStreamReader | null = null
   let exitCode: number | null = null
   let exitError: unknown = null
 
@@ -164,24 +214,36 @@ export function createPlaybackSink(
       throw new TTSError('Playback sink already finished', 'audio_playback')
     }
 
-    const started = await ensureStarted()
-    if (!started) return
-
-    const writer = started.writer
     const reader = stream.getReader()
     activeReader = reader
+    let streamEnded = false
 
     try {
-      while (true) {
+      const preroll = proc
+        ? { chunks: [], done: false }
+        : await readPrerollChunks(reader, format, () => killed)
+      streamEnded = preroll.done
+
+      const started = await ensureStarted()
+      if (!started) return
+
+      const writer = started.writer
+
+      for (const chunk of preroll.chunks) {
+        throwIfExited()
+        await writer.write(chunk)
+      }
+
+      while (!streamEnded) {
         throwIfExited()
         if (gate.isPaused() || controlVersion !== gate.snapshotVersion()) {
           if (!(await gate.waitUntilReady(controlVersion))) break
         }
         if (killed) break
         const { done: readerDone, value } = await reader.read()
-        if (readerDone || killed) break
+        if (readerDone || killed || !value) break
         try {
-          writer.write(value)
+          await writer.write(value)
         } catch (err) {
           if (!killed) {
             const original = err instanceof Error ? err : undefined
@@ -212,7 +274,7 @@ export function createPlaybackSink(
     if (!started) return
 
     try {
-      started.writer.end()
+      await started.writer.end()
     } catch {
       /* pipe may already be closed */
     }
