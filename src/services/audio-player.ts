@@ -64,6 +64,7 @@ function writeNodeWritable(stream: Writable, data: Uint8Array): Promise<void> {
       settled = true
       if (canListen) {
         stream.off('error', onError)
+        stream.off('close', onClose)
         stream.off('drain', onDrain)
       }
       if (err) reject(err)
@@ -71,7 +72,20 @@ function writeNodeWritable(stream: Writable, data: Uint8Array): Promise<void> {
     }
 
     const onError = (err: Error) => finish(err)
+    const onClose = () => finish(new Error('Player pipe closed'))
     const onDrain = () => finish()
+
+    // Bun does not settle a pending pipe write when the reading process dies:
+    // no callback, no 'error'. The player's kill/exit paths destroy the stream
+    // instead, so 'close' is the signal that keeps this promise from hanging.
+    if (stream.destroyed) {
+      finish(new Error('Player pipe closed'))
+      return
+    }
+    if (canListen) {
+      stream.once('error', onError)
+      stream.once('close', onClose)
+    }
 
     try {
       if (stream.write.length < 2) {
@@ -83,7 +97,6 @@ function writeNodeWritable(stream: Writable, data: Uint8Array): Promise<void> {
         }
         return
       }
-      if (canListen) stream.once('error', onError)
       stream.write(data, finish)
     } catch (err) {
       finish(err instanceof Error ? err : new Error(String(err)))
@@ -99,12 +112,26 @@ function endNodeWritable(stream: Writable): Promise<void> {
     const finish = (err?: Error | null) => {
       if (settled) return
       settled = true
-      if (canListen) stream.off('error', onError)
+      if (canListen) {
+        stream.off('error', onError)
+        stream.off('close', onClose)
+      }
       if (err) reject(err)
       else resolve()
     }
 
     const onError = (err: Error) => finish(err)
+    // Ending a pipe whose reader died is done, not an error worth surfacing.
+    const onClose = () => finish()
+
+    if (stream.destroyed) {
+      finish()
+      return
+    }
+    if (canListen) {
+      stream.once('error', onError)
+      stream.once('close', onClose)
+    }
 
     try {
       if (stream.end.length < 1) {
@@ -112,7 +139,6 @@ function endNodeWritable(stream: Writable): Promise<void> {
         finish()
         return
       }
-      if (canListen) stream.once('error', onError)
       stream.end(finish)
     } catch (err) {
       finish(err instanceof Error ? err : new Error(String(err)))
@@ -232,9 +258,24 @@ function normalizeExitCode(code: number | null, signal: NodeJS.Signals | null): 
 }
 
 function createFfplayProcess(args: string[]): PlayerProcess {
-  const proc = spawnChildProcess('ffplay', args, {
-    stdio: ['pipe', 'ignore', 'ignore', 'pipe'],
-  })
+  return wrapFfplayProcess(
+    spawnChildProcess('ffplay', args, {
+      stdio: ['pipe', 'ignore', 'ignore', 'pipe'],
+    }),
+  )
+}
+
+/** Structural subset of ChildProcess so tests can drive the wiring with fakes. */
+export interface FfplayProcessLike {
+  stdin: Writable | null
+  stdio: ReadonlyArray<unknown>
+  once(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): this
+  once(event: 'error', listener: (err: Error) => void): this
+  kill(): void
+  pid?: number | undefined
+}
+
+export function wrapFfplayProcess(proc: FfplayProcessLike): PlayerProcess {
   const control = proc.stdin
   const audioWriter = proc.stdio[3] as Writable | null
 
@@ -251,6 +292,25 @@ function createFfplayProcess(args: string[]): PlayerProcess {
     }
   }
 
+  // On Bun, a pipe write pending on a full buffer never settles once ffplay
+  // stops reading — killing the process fires neither the write callback nor
+  // an 'error'/'close' on the stream. Destroying the writer does, so any
+  // in-flight writeNodeWritable resolves instead of hanging playback forever.
+  const destroyPipes = () => {
+    try {
+      audioWriter.destroy()
+    } catch {
+      /* already closed */
+    }
+    try {
+      control.destroy()
+    } catch {
+      /* already closed */
+    }
+  }
+  proc.once('exit', destroyPipes)
+  proc.once('error', destroyPipes)
+
   return {
     writer: {
       async write(data: Uint8Array) {
@@ -266,6 +326,7 @@ function createFfplayProcess(args: string[]): PlayerProcess {
     }),
     kill() {
       proc.kill()
+      destroyPipes()
     },
     pause() {
       togglePause()

@@ -35,11 +35,24 @@ export interface PlaybackSink {
 }
 
 const RAW_PCM_PREROLL_MS = 300
+// A slow gateway must degrade to the old start-immediately behavior, not push
+// the start of speech out indefinitely while preroll waits for bytes.
+const RAW_PCM_PREROLL_TIMEOUT_MS = 1000
 
 interface AudioStreamReader {
   read(): Promise<{ done: boolean; value?: Uint8Array }>
   cancel(reason?: unknown): Promise<void>
   releaseLock(): void
+}
+
+type AudioRead = Promise<{ done: boolean; value?: Uint8Array }>
+
+interface PrerollResult {
+  chunks: Uint8Array[]
+  done: boolean
+  // Read that was in flight when the preroll timed out. The caller must
+  // consume it before calling reader.read() again or its chunk is lost.
+  pendingRead: AudioRead | null
 }
 
 function getRawPcmPrerollBytes(format: StreamAudioFormat): number {
@@ -53,19 +66,34 @@ async function readPrerollChunks(
   reader: AudioStreamReader,
   format: StreamAudioFormat,
   shouldStop: () => boolean,
-): Promise<{ chunks: Uint8Array[]; done: boolean }> {
+): Promise<PrerollResult> {
   const targetBytes = getRawPcmPrerollBytes(format)
   const chunks: Uint8Array[] = []
   let bufferedBytes = 0
+  if (targetBytes === 0) return { chunks, done: false, pendingRead: null }
 
-  while (!shouldStop() && bufferedBytes < targetBytes) {
-    const { done, value } = await reader.read()
-    if (done || !value) return { chunks, done: true }
-    chunks.push(value)
-    bufferedBytes += value.byteLength
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<'timeout'>((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), RAW_PCM_PREROLL_TIMEOUT_MS)
+  })
+
+  try {
+    while (!shouldStop() && bufferedBytes < targetBytes) {
+      const read = reader.read()
+      const result = await Promise.race([read, timeout])
+      if (result === 'timeout') {
+        read.catch(() => {}) // may be abandoned if playback stops first
+        return { chunks, done: false, pendingRead: read }
+      }
+      const { done, value } = result
+      if (done || !value) return { chunks, done: true, pendingRead: null }
+      chunks.push(value)
+      bufferedBytes += value.byteLength
+    }
+    return { chunks, done: false, pendingRead: null }
+  } finally {
+    clearTimeout(timer)
   }
-
-  return { chunks, done: false }
 }
 
 export function createStreamSession(
@@ -93,6 +121,7 @@ export function createStreamSession(
     try {
       const preroll = await readPrerollChunks(reader, format, () => killed)
       streamEnded = preroll.done
+      let pendingRead = preroll.pendingRead
 
       if (gate.isPaused() || controlVersion !== gate.snapshotVersion()) {
         if (!(await gate.waitUntilReady(controlVersion))) return
@@ -101,17 +130,24 @@ export function createStreamSession(
 
       proc = player.spawn(speed, format)
       const writer = proc.writer
+      let pipeBroken = false
 
       for (const chunk of preroll.chunks) {
-        await writer.write(chunk)
+        try {
+          await writer.write(chunk)
+        } catch {
+          pipeBroken = true
+          break // Pipe broken (player exited); fall through to exit-code check
+        }
       }
 
-      while (!streamEnded) {
+      while (!streamEnded && !pipeBroken) {
         if (gate.isPaused() || controlVersion !== gate.snapshotVersion()) {
           if (!(await gate.waitUntilReady(controlVersion))) break
         }
         if (killed) break
-        const { done: readerDone, value } = await reader.read()
+        const { done: readerDone, value } = await (pendingRead ?? reader.read())
+        pendingRead = null
         if (readerDone || killed || !value) break
         try {
           await writer.write(value)
@@ -219,10 +255,11 @@ export function createPlaybackSink(
     let streamEnded = false
 
     try {
-      const preroll = proc
-        ? { chunks: [], done: false }
+      const preroll: PrerollResult = proc
+        ? { chunks: [], done: false, pendingRead: null }
         : await readPrerollChunks(reader, format, () => killed)
       streamEnded = preroll.done
+      let pendingRead = preroll.pendingRead
 
       const started = await ensureStarted()
       if (!started) return
@@ -231,7 +268,16 @@ export function createPlaybackSink(
 
       for (const chunk of preroll.chunks) {
         throwIfExited()
-        await writer.write(chunk)
+        try {
+          await writer.write(chunk)
+        } catch (err) {
+          if (!killed) {
+            const original = err instanceof Error ? err : undefined
+            throw new TTSError('Player pipe closed during playback', 'audio_playback', original)
+          }
+          streamEnded = true
+          break
+        }
       }
 
       while (!streamEnded) {
@@ -240,7 +286,8 @@ export function createPlaybackSink(
           if (!(await gate.waitUntilReady(controlVersion))) break
         }
         if (killed) break
-        const { done: readerDone, value } = await reader.read()
+        const { done: readerDone, value } = await (pendingRead ?? reader.read())
+        pendingRead = null
         if (readerDone || killed || !value) break
         try {
           await writer.write(value)
