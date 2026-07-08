@@ -1,6 +1,6 @@
 {
   "name": "@andypai/orb",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Voice-driven code explorer for your terminal",
   "homepage": "https://github.com/abpai/orb#readme",
   "bugs": {
@@ -53,6 +53,9 @@
     "typecheck": "bunx tsc --noEmit",
     "check": "bunx prettier --check . && bun run typecheck && bun run test",
     "test": "bun test",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "changeset publish",
     "scratch:check": "for f in scratch/0*.ts scratch/99-*.ts; do echo \"→ $f\" && bun run \"$f\" >/dev/null || { echo \"FAIL: $f\"; exit 1; }; done && echo 'all scratch scripts ran'"
   },
   "dependencies": {
@@ -68,6 +71,8 @@
     "zod": "4.3.6"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^0.7.0",
+    "@changesets/cli": "^2.31.0",
     "@types/bun": "^1.3.12",
     "@types/react": "19.2.14",
     "ink-testing-library": "4.0.0",
